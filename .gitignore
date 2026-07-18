@@ -53,3 +53,6 @@ ui_*.png
 
 # Logo build output (published to gh-pages branch)
 /site/
+
+# Root-level screenshots from UAT (real assets live in subdirs)
+/*.png
