@@ -1,6 +1,8 @@
 """Source adapter tests (no network — URL matching, friendly errors, file path)."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from yoto_maker.sources import AudioFileAdapter, SourceError, YouTubeAdapter
@@ -51,6 +53,45 @@ def test_youtube_postprocessors_without_sponsorblock():
 
     pps = build_postprocessors(False, ["sponsor"])
     assert [p["key"] for p in pps] == ["FFmpegExtractAudio"]
+
+
+def test_youtube_sponsorblock_best_effort_retry(temp_config, monkeypatch, tmp_path):
+    """If the download fails with SponsorBlock on, it retries without it."""
+    import yt_dlp
+
+    from yoto_maker.sources.youtube import YouTubeAdapter
+
+    attempts = []
+
+    class FakeYDL:
+        def __init__(self, opts):
+            self.opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, url, download):
+            has_sb = any(p.get("key") == "SponsorBlock" for p in self.opts.get("postprocessors", []))
+            attempts.append(has_sb)
+            if has_sb:
+                # simulate the exact ffprobe failure the packaged build hit
+                raise yt_dlp.utils.DownloadError(
+                    "Postprocessing: Unable to determine video duration: ffprobe not found"
+                )
+            wd = Path(self.opts["outtmpl"]).parent
+            (wd / "vid.mp3").write_bytes(b"ID3fake-audio")
+            return {"id": "vid", "title": "Rainbow Magic", "duration": 123}
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYDL)
+
+    result = YouTubeAdapter().fetch("https://youtu.be/vid", tmp_path / "wk", remove_sponsors=True)
+
+    assert attempts == [True, False]        # tried WITH SponsorBlock, then WITHOUT
+    assert result.suggested_title == "Rainbow Magic"
+    assert result.audio_path.name == "vid.mp3"
 
 
 @pytest.mark.parametrize("name,ok", [

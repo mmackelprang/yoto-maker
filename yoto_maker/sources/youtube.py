@@ -92,40 +92,56 @@ class YouTubeAdapter:
                 on_progress(92, "Converting the audio…")
 
         cats = sponsor_categories or DEFAULT_SPONSOR_CATEGORIES
-        postprocessors = build_postprocessors(remove_sponsors, cats)
-
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": out_tmpl,
-            "writethumbnail": True,
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
-            "noprogress": True,
-            "restrictfilenames": True,
-            "progress_hooks": [_hook],
-            # Robustness against YouTube's frequent 403s: try multiple player
-            # clients (android/ios avoid some signature/PO-token walls the
-            # default web client hits), and retry generously.
-            "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
-            "retries": 5,
-            "fragment_retries": 5,
-            "socket_timeout": 30,
-            "postprocessors": postprocessors,
-        }
         ffmpeg = find_ffmpeg()
-        if ffmpeg:
-            ydl_opts["ffmpeg_location"] = str(Path(ffmpeg).parent)
+        ffmpeg_location = str(Path(ffmpeg).parent) if ffmpeg else None
+
+        def _attempt(sb: bool):
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": out_tmpl,
+                "writethumbnail": True,
+                "noplaylist": True,
+                "quiet": True,
+                "no_warnings": True,
+                "noprogress": True,
+                "restrictfilenames": True,
+                "progress_hooks": [_hook],
+                # Robustness against YouTube's frequent 403s: try multiple player
+                # clients (android/ios avoid some signature/PO-token walls the
+                # default web client hits), and retry generously.
+                "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
+                "retries": 5,
+                "fragment_retries": 5,
+                "socket_timeout": 30,
+                "postprocessors": build_postprocessors(sb, cats),
+            }
+            if ffmpeg_location:
+                ydl_opts["ffmpeg_location"] = ffmpeg_location
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(url, download=True)
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-        except yt_dlp.utils.DownloadError as exc:  # type: ignore[attr-defined]
-            log.warning("yt-dlp DownloadError for %s: %s", url, exc)
-            raise SourceError(_friendly_ytdlp_error(str(exc))) from exc
-        except Exception as exc:  # pragma: no cover - unexpected
-            log.exception("yt-dlp unexpected error for %s", url)
-            raise SourceError(_friendly_ytdlp_error(str(exc))) from exc
+            info = _attempt(remove_sponsors)
+        except Exception as exc:  # noqa: BLE001
+            # Best-effort SponsorBlock: if trimming failed (e.g. a postprocessing
+            # tool hiccup), get the audio anyway by retrying WITHOUT it rather
+            # than failing the whole import.
+            if remove_sponsors:
+                log.warning("Download failed with SponsorBlock on; retrying without it: %s", exc)
+                try:
+                    info = _attempt(False)
+                except yt_dlp.utils.DownloadError as exc2:  # type: ignore[attr-defined]
+                    log.warning("yt-dlp DownloadError for %s: %s", url, exc2)
+                    raise SourceError(_friendly_ytdlp_error(str(exc2))) from exc2
+                except Exception as exc2:  # pragma: no cover - unexpected
+                    log.exception("yt-dlp unexpected error for %s", url)
+                    raise SourceError(_friendly_ytdlp_error(str(exc2))) from exc2
+            elif isinstance(exc, yt_dlp.utils.DownloadError):  # type: ignore[attr-defined]
+                log.warning("yt-dlp DownloadError for %s: %s", url, exc)
+                raise SourceError(_friendly_ytdlp_error(str(exc))) from exc
+            else:
+                log.exception("yt-dlp unexpected error for %s", url)
+                raise SourceError(_friendly_ytdlp_error(str(exc))) from exc
 
         video_id = info.get("id", "audio")
         title = (info.get("title") or "Untitled").strip()
