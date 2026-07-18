@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Yoto Maker</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="icon" href="/api/icons/music.png" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">🎵</span>
+      <h1>Yoto Maker</h1>
+    </div>
+    <button id="yotoPill" class="pill" title="Yoto connection">
+      <span class="dot"></span><span id="yotoPillText">Checking…</span>
+    </button>
+  </header>
+
+  <main>
+    <!-- Tools warning (only if something is missing) -->
+    <div id="toolsWarning" class="msg-box err hidden"></div>
+
+    <!-- STEP 1: Add audio -->
+    <section class="step">
+      <h2><span class="num">1</span> Add your audio</h2>
+      <p class="hint">Paste a YouTube link, or choose an audio file from this computer. Add as many as you like.</p>
+
+      <div class="row wrap">
+        <input id="ytUrl" type="url" class="grow" placeholder="Paste a YouTube link here…" />
+        <button id="ytAdd" class="btn primary">➕ Add</button>
+      </div>
+      <div class="or">— or —</div>
+      <div class="row">
+        <button id="filePick" class="btn">📁 Choose an audio file</button>
+        <input id="fileInput" type="file" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg" class="hidden" />
+      </div>
+
+      <div id="addProgress" class="progress hidden">
+        <div class="bar"><div id="addBar"></div></div>
+        <div class="msg" id="addMsg"></div>
+      </div>
+      <div id="addError" class="msg-box err hidden"></div>
+
+      <ul id="tracks" class="tracks"></ul>
+      <p id="noTracks" class="tiny" style="margin-top:14px">No audio added yet.</p>
+    </section>
+
+    <!-- STEP 2: Name + picture -->
+    <section class="step">
+      <h2><span class="num">2</span> Name it &amp; pick a picture</h2>
+      <p class="hint">This name and picture go on the printed label and the Yoto screen.</p>
+
+      <label class="tiny">Card name</label>
+      <input id="cardName" type="text" placeholder="e.g. Bedtime Stories" />
+
+      <div class="pic-wrap" style="margin-top:18px">
+        <div class="pic-preview" id="picPreview"><span>No picture yet</span></div>
+        <div class="pic-controls">
+          <div class="tabs">
+            <button class="tab active" data-tab="auto">✨ From the audio</button>
+            <button class="tab" data-tab="upload">📤 Upload</button>
+            <button class="tab" data-tab="library">🎨 Icons</button>
+            <button class="tab hidden" data-tab="ai" id="aiTab">🤖 AI</button>
+          </div>
+
+          <div class="tabpanel" data-panel="auto">
+            <p class="tiny">Use the picture that came with your audio (YouTube thumbnail or album art).</p>
+            <button id="picAuto" class="btn">Use that picture</button>
+          </div>
+          <div class="tabpanel hidden" data-panel="upload">
+            <p class="tiny">Choose a photo or picture from this computer.</p>
+            <button id="picUploadBtn" class="btn">📤 Choose a picture</button>
+            <input id="picUploadInput" type="file" accept="image/*" class="hidden" />
+          </div>
+          <div class="tabpanel hidden" data-panel="library">
+            <p class="tiny">Pick a fun icon.</p>
+            <div id="iconGrid" class="icongrid"></div>
+          </div>
+          <div class="tabpanel hidden" data-panel="ai">
+            <p class="tiny">Describe a picture and let AI draw it.</p>
+            <div class="row wrap">
+              <input id="aiPrompt" type="text" class="grow" placeholder="e.g. a friendly dinosaur reading a book" />
+              <button id="aiGen" class="btn">Draw it</button>
+            </div>
+          </div>
+          <div id="picError" class="msg-box err hidden"></div>
+          <div id="picBusy" class="tiny hidden" style="margin-top:8px">Working on your picture…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 3: Send to Yoto -->
+    <section class="step">
+      <h2><span class="num">3</span> Send it to your Yoto</h2>
+      <p class="hint">This uploads your card to your Yoto account. You only sign in the first time.</p>
+
+      <div id="connectRow" class="hidden">
+        <div class="msg-box info">You'll need to connect your Yoto account first.</div>
+        <button id="connectBtn" class="btn primary big" style="margin-top:12px">🔗 Connect my Yoto account</button>
+      </div>
+
+      <button id="sendBtn" class="btn primary big">🚀 Send to Yoto</button>
+
+      <div id="sendProgress" class="progress hidden">
+        <div class="bar"><div id="sendBar"></div></div>
+        <div class="msg" id="sendMsg"></div>
+      </div>
+      <div id="sendError" class="msg-box err hidden"></div>
+      <div id="sendDone" class="msg-box ok hidden"></div>
+    </section>
+
+    <!-- STEP 4: Label -->
+    <section class="step">
+      <h2><span class="num">4</span> Print your label</h2>
+      <p class="hint">Make a printable label with your picture and track names to keep with the card.</p>
+      <button id="labelBtn" class="btn primary">🖨️ Make my label</button>
+      <div id="labelError" class="msg-box err hidden"></div>
+      <div id="labelDone" class="done-actions hidden">
+        <a id="labelOpen" class="btn primary" target="_blank" rel="noopener">📄 Open / print label</a>
+        <span class="tiny" style="align-self:center">Opens in a new tab — then press Print.</span>
+      </div>
+    </section>
+
+    <p class="tiny" style="text-align:center">
+      Made with Yoto Maker · <span id="ver"></span> ·
+      <a href="#" id="startOver">Start a new card</a>
+    </p>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

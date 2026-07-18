@@ -7,8 +7,13 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Callable
 
+from ..tools import find_ffmpeg
 from .base import SourceError, SourceResult
+
+# Called during download with a 0-100 percent and a short message.
+ProgressHook = Callable[[int, str], None]
 
 _YT_RE = re.compile(
     r"^(https?://)?(www\.)?(m\.)?(youtube\.com/(watch\?v=|shorts/|live/)|youtu\.be/)",
@@ -35,13 +40,30 @@ class YouTubeAdapter:
     def can_handle(self, user_input: str) -> bool:
         return bool(_YT_RE.match(user_input.strip()))
 
-    def fetch(self, user_input: str, work_dir: Path) -> SourceResult:
+    def fetch(
+        self,
+        user_input: str,
+        work_dir: Path,
+        *,
+        on_progress: ProgressHook | None = None,
+    ) -> SourceResult:
         import yt_dlp
 
         url = user_input.strip()
         work_dir = Path(work_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
         out_tmpl = str(work_dir / "%(id)s.%(ext)s")
+
+        def _hook(d: dict) -> None:
+            if not on_progress:
+                return
+            if d.get("status") == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                done = d.get("downloaded_bytes") or 0
+                pct = int(done / total * 90) if total else 0
+                on_progress(pct, "Getting the audio…")
+            elif d.get("status") == "finished":
+                on_progress(92, "Converting the audio…")
 
         ydl_opts = {
             "format": "bestaudio/best",
@@ -51,11 +73,15 @@ class YouTubeAdapter:
             "quiet": True,
             "no_warnings": True,
             "restrictfilenames": True,
+            "progress_hooks": [_hook],
             # Convert whatever we get into mp3 so the pipeline is uniform.
             "postprocessors": [
                 {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
             ],
         }
+        ffmpeg = find_ffmpeg()
+        if ffmpeg:
+            ydl_opts["ffmpeg_location"] = str(Path(ffmpeg).parent)
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
