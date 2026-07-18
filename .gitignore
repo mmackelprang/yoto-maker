@@ -21,11 +21,14 @@ runtime/
 work/
 tmp/
 
-# Bundled binaries (downloaded/built locally, not committed)
-vendor/ffmpeg*
-vendor/yt-dlp*
+# Bundled binaries (staged locally for the build, never committed — large)
+vendor/
+**/vendor/
+*.exe
+!/**/app.ico
 packaging/build/
 packaging/dist/
+.playwright-mcp/
 
 # Secrets
 .env
@@ -43,3 +46,7 @@ Thumbs.db
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Local UAT screenshots
+ui_*.png
+/work/

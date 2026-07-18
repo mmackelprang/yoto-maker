@@ -1,0 +1,93 @@
+# Setting up the Yoto connection (one-time, ~5 minutes)
+
+Yoto Maker uploads cards to a Yoto account through Yoto's official API. To let the
+app sign in, you register a free **Client ID** once at Yoto's developer
+dashboard. This is the only manual step, and only **you** (not the end user) need
+to do it.
+
+> **Who does this?** The person setting up the app (you). The end user never sees
+> any of this — after setup, they just click **Connect my Yoto account** and sign
+> in with their normal Yoto email/password.
+
+---
+
+## 1. Register an application
+
+1. Go to **https://dashboard.yoto.dev** and sign in with your Yoto account.
+2. Create a new **application** / **client**. Choose a **public client** (also
+   called *native* / *PKCE* / *no client secret*). Yoto Maker uses PKCE, so **no
+   client secret is needed**.
+3. Give it any name, e.g. *“Yoto Maker (home)”*.
+
+## 2. Set the redirect URL
+
+Add this **exact** redirect/callback URL to the client's allowed redirects:
+
+```
+http://127.0.0.1:8777/yoto/callback
+```
+
+> This must match exactly. The app always runs on port **8777** on the local
+> machine, which is why the port is fixed.
+
+## 3. Enable the scopes
+
+Enable these two scopes (permissions) for the client:
+
+- `user:content:manage` — lets the app create/upload MYO content
+- `offline_access` — lets the app stay signed in without asking every time
+
+## 4. Copy the Client ID
+
+Copy the **Client ID** string the dashboard shows you (it is **not** secret).
+
+## 5. Give the Client ID to the app
+
+Pick whichever is easiest:
+
+**Option A — paste it into the app (no rebuild).**
+Open Yoto Maker, go to step 3 (*Send it to your Yoto*), and paste the Client ID
+into the one-time **setup box**, then click **Save**. It's stored on that
+computer only. Done.
+
+**Option B — environment variable.**
+Set `YOTO_CLIENT_ID` to your Client ID before launching (useful for developers):
+
+```powershell
+$env:YOTO_CLIENT_ID = "your-client-id-here"
+```
+
+**Option C — bake it into a build (developers).**
+Set `YOTO_CLIENT_ID` in your environment and rebuild the `.exe` (see
+[DEVELOPERS.md](DEVELOPERS.md)); the app will pick it up at runtime via the same
+resolution order (env → saved setting → default).
+
+The app resolves the Client ID in this order: **`YOTO_CLIENT_ID` env var → saved
+setting (Option A) → built-in default**.
+
+---
+
+## 6. Test it
+
+Run the app and use the self-check (developers) or just click **Connect my Yoto
+account**:
+
+```
+YotoMaker.exe --check     # prints tool + Yoto status (run from a terminal)
+```
+
+You should be able to sign in, and **Send to Yoto** should upload a card. After
+uploading, open the Yoto app on a phone and tap a blank *Make Your Own* card to
+link it to the new content.
+
+---
+
+## Notes & limitations
+
+- **Linking a brand-new blank card** to content for the first time is done by
+  tapping the card in the Yoto app — that's a Yoto step, not something any
+  third-party app does for you. After the first link, updating that card's
+  content is automatic.
+- Yoto's API terms apply. This app is for personal/family use.
+- If sign-in fails with a redirect error, double-check the redirect URL in step 2
+  is exactly `http://127.0.0.1:8777/yoto/callback`.
