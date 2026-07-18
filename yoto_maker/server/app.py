@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from .. import APP_NAME, __version__
 from ..audio.normalize import AudioError
@@ -41,6 +42,27 @@ from .jobs import get_jobs
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title=APP_NAME, version=__version__)
+
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+_ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
+
+
+@app.middleware("http")
+async def _origin_guard(request, call_next):
+    """Reject state-changing requests from other websites (CSRF defense).
+
+    The server is loopback-only and unauthenticated, so a page open elsewhere in
+    the same browser could otherwise POST to it. We block any non-GET request
+    whose Origin isn't loopback. Same-origin UI calls (Origin = our host) and
+    non-browser clients (no Origin header) are unaffected.
+    """
+    from urllib.parse import urlparse
+
+    if request.method not in _SAFE_METHODS:
+        origin = request.headers.get("origin")
+        if origin and urlparse(origin).hostname not in _ALLOWED_HOSTS:
+            return JSONResponse(status_code=403, content={"error": "Blocked a cross-site request."})
+    return await call_next(request)
 
 
 # --------------------------------------------------------------------------- #
@@ -129,7 +151,10 @@ async def add_file(file: UploadFile) -> dict:
     cfg = get_config()
     uploads = cfg.work_dir / "uploads"
     uploads.mkdir(parents=True, exist_ok=True)
-    dest = uploads / (file.filename or "audio")
+    # Never trust the client-supplied filename: strip any path components so a
+    # crafted name like "..\\..\\evil.mp3" can't escape the uploads folder.
+    safe_name = Path(file.filename or "audio").name or "audio"
+    dest = uploads / safe_name
     dest.write_bytes(await file.read())
 
     adapter = AudioFileAdapter()
@@ -252,8 +277,14 @@ async def picture_ai(body: AIBody) -> dict:
     if not ai_available():
         raise AIUnavailableError("AI pictures aren't turned on. Use a YouTube picture, upload one, or pick an icon.")
     draft = get_draft()
-    img = generate_image(body.prompt.strip(), get_config().work_dir, name="card_picture_src")
-    draft.picture_path = prepare_label_image(img, get_config().work_dir, name="card_picture")
+
+    # generate_image() uses a synchronous, up-to-90s HTTP call. Run it off the
+    # event loop so the whole server doesn't freeze while a picture is drawn.
+    def _do() -> Path:
+        img = generate_image(body.prompt.strip(), get_config().work_dir, name="card_picture_src")
+        return prepare_label_image(img, get_config().work_dir, name="card_picture")
+
+    draft.picture_path = await run_in_threadpool(_do)
     draft.picture_source = "ai"
     return {"ok": True, "picture_url": "/api/picture.png"}
 
@@ -346,9 +377,9 @@ async def send_to_yoto() -> dict:
         raise SourceError("Add some audio before sending to Yoto.")
     if not draft.card_name.strip():
         raise SourceError("Give your card a name before sending it.")
-
-    client = YotoClient()
-    if not client.is_connected():
+    # Cheap precheck (token file present) — no client created here, so nothing
+    # to leak on the common "not connected yet" path.
+    if not connection_status()["connected"]:
         raise NotConnectedError("Please connect your Yoto account first.")
 
     inputs = [
@@ -362,7 +393,10 @@ async def send_to_yoto() -> dict:
             pct = int(cur / max(total, 1) * 100)
             update(stage, pct, msg)
 
-        result = client.create_card(card_name, inputs, progress=prog)
+        # One client per send, always closed — no connection-pool leak in the
+        # long-lived tray process.
+        with YotoClient() as client:
+            result = client.create_card(card_name, inputs, progress=prog)
         return {"content_id": result.content_id, "title": result.title}
 
     job_id = get_jobs().start(work)

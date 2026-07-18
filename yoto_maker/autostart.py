@@ -29,6 +29,12 @@ def _target_exe() -> Path | None:
     return None
 
 
+def _ps_quote(value) -> str:
+    """Quote a value as a PowerShell single-quoted string literal, escaping any
+    embedded single quotes (e.g. a user path like C:\\Users\\O'Brien\\...)."""
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def is_supported() -> bool:
     return sys.platform.startswith("win") and _target_exe() is not None
 
@@ -44,8 +50,8 @@ def enable() -> bool:
     _startup_dir().mkdir(parents=True, exist_ok=True)
     lnk = _shortcut_path()
     ps = (
-        f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{lnk}');"
-        f"$s.TargetPath='{exe}';$s.WorkingDirectory='{exe.parent}';"
+        f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut({_ps_quote(lnk)});"
+        f"$s.TargetPath={_ps_quote(exe)};$s.WorkingDirectory={_ps_quote(exe.parent)};"
         f"$s.Description='Yoto Maker';$s.Save()"
     )
     try:

@@ -111,10 +111,37 @@ def _probe_with_ffmpeg(path: Path) -> AudioInfo:
     )
 
 
+# Values Yoto's /content API accepts for track.format (from yoto.dev schema).
+_YOTO_FORMATS = {
+    "mp3", "aac", "alac", "flac", "pcm_s16le", "opus", "ogg", "x-m4a", "wav",
+    "aiff", "mpeg",
+}
+# Map ffprobe codec_name -> a valid Yoto format.
+_CODEC_TO_FORMAT = {
+    "mp3": "mp3", "mp4a": "aac", "aac": "aac", "alac": "alac", "flac": "flac",
+    "opus": "opus", "vorbis": "ogg", "mpeg": "mp3",
+    "pcm_s16le": "pcm_s16le", "pcm_s24le": "wav", "pcm_s32le": "wav",
+    "pcm_f32le": "wav", "pcm_u8": "wav",
+}
+# Fallback by file extension when the codec is unknown.
+_EXT_TO_FORMAT = {
+    "mp3": "mp3", "m4a": "x-m4a", "aac": "aac", "wav": "wav", "flac": "flac",
+    "ogg": "ogg", "opus": "opus", "aiff": "aiff", "aif": "aiff", "mp4": "aac",
+}
+
+
 def _friendly_format(codec: str, path: Path) -> str:
+    """Return a Yoto-accepted ``format`` string for a probed codec/extension."""
+    codec = (codec or "").lower()
+    if codec in _CODEC_TO_FORMAT:
+        return _CODEC_TO_FORMAT[codec]
+    if codec in _YOTO_FORMATS:
+        return codec
     ext = path.suffix.lower().lstrip(".")
-    mapping = {"mp4a": "aac", "mpeg": "mp3", "": ext or "mp3"}
-    return mapping.get(codec, codec or ext or "mp3")
+    if ext in _EXT_TO_FORMAT:
+        return _EXT_TO_FORMAT[ext]
+    # Anything unrecognized: default to mp3 (Yoto re-transcodes on its side).
+    return "mp3"
 
 
 def _hhmmss_to_seconds(ts: str) -> float:

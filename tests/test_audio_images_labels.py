@@ -28,6 +28,23 @@ def test_normalize_to_mp3(sample_mp3, temp_config):
     assert info.duration_s > 1.0
 
 
+def test_friendly_format_maps_to_yoto_enum():
+    from pathlib import Path
+
+    from yoto_maker.audio.normalize import _YOTO_FORMATS, _friendly_format
+
+    # ffprobe codec names that are NOT valid Yoto formats must be mapped.
+    assert _friendly_format("vorbis", Path("x.ogg")) == "ogg"
+    assert _friendly_format("pcm_s24le", Path("x.wav")) == "wav"
+    assert _friendly_format("mp4a", Path("x.m4a")) == "aac"
+    assert _friendly_format("mp3", Path("x.mp3")) == "mp3"
+    # unknown codec falls back via extension, else mp3 — always a valid enum
+    assert _friendly_format("weirdcodec", Path("x.m4a")) == "x-m4a"
+    assert _friendly_format("weirdcodec", Path("x.xyz")) == "mp3"
+    for codec in ("vorbis", "pcm_s24le", "pcm_f32le", "opus", "flac", "mp4a", ""):
+        assert _friendly_format(codec, Path("a.bin")) in _YOTO_FORMATS
+
+
 # ---- images ---------------------------------------------------------------
 def test_library_generates_ten_icons():
     icons = list_icons()

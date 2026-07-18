@@ -163,7 +163,10 @@ class YotoClient:
             raise YotoError(_friendly_http(exc, "uploading the audio")) from exc
 
     def _poll_transcode(self, upload_id: str, *, attempts: int = 60, interval: float = 1.0) -> str:
-        last = None
+        # Tolerate a few transient errors mid-poll (auth 401 is fatal, though —
+        # no point retrying that) rather than aborting the whole card.
+        consecutive_errors = 0
+        last_exc: Exception | None = None
         for _ in range(attempts):
             try:
                 resp = self._client.get(
@@ -172,13 +175,20 @@ class YotoClient:
                     headers=self._headers(),
                 )
                 resp.raise_for_status()
-                last = resp.json()
+                sha = _dig(resp.json(), "transcodedSha256")
+                if sha:
+                    return sha
+                consecutive_errors = 0
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in (401, 403):
+                    raise YotoError(_friendly_http(exc, "preparing the audio")) from exc
+                last_exc, consecutive_errors = exc, consecutive_errors + 1
+                if consecutive_errors >= 5:
+                    raise YotoError(_friendly_http(exc, "preparing the audio")) from exc
             except Exception as exc:
-                raise YotoError(_friendly_http(exc, "preparing the audio")) from exc
-
-            sha = _dig(last, "transcodedSha256")
-            if sha:
-                return sha
+                last_exc, consecutive_errors = exc, consecutive_errors + 1
+                if consecutive_errors >= 5:
+                    raise YotoError(_friendly_http(exc, "preparing the audio")) from exc
             time.sleep(interval)
         raise YotoError(
             "Preparing the audio is taking longer than expected. Please try again in a moment."
@@ -217,6 +227,12 @@ class YotoClient:
 
     def close(self) -> None:
         self._client.close()
+
+    def __enter__(self) -> "YotoClient":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
 
 
 def _safe_probe(path: Path) -> AudioInfo:

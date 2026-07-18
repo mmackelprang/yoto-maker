@@ -113,3 +113,25 @@ def test_reset(client, sample_mp3):
         client.post("/api/tracks/file", files={"file": ("s.mp3", fh, "audio/mpeg")})
     client.post("/api/draft/reset")
     assert client.get("/api/draft").json()["tracks"] == []
+
+
+def test_upload_filename_cannot_escape(client, sample_mp3, temp_config):
+    # A path-traversal filename must be reduced to its basename.
+    with open(sample_mp3, "rb") as fh:
+        r = client.post("/api/tracks/file", files={"file": (r"..\..\evil.mp3", fh, "audio/mpeg")})
+    assert r.status_code == 200
+    uploads = temp_config.work_dir / "uploads"
+    assert (uploads / "evil.mp3").exists()          # landed safely inside uploads
+    # nothing wrote outside the uploads dir
+    assert not (temp_config.work_dir.parent / "evil.mp3").exists()
+
+
+def test_origin_guard_blocks_cross_site(client):
+    # Cross-site POST is rejected...
+    r = client.post("/api/draft/reset", headers={"origin": "https://evil.example"})
+    assert r.status_code == 403
+    # ...loopback origin is allowed...
+    ok = client.post("/api/draft/reset", headers={"origin": "http://127.0.0.1:8777"})
+    assert ok.status_code == 200
+    # ...and GETs are never blocked by origin.
+    assert client.get("/api/draft", headers={"origin": "https://evil.example"}).status_code == 200
