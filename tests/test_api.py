@@ -100,6 +100,17 @@ def test_bad_youtube_link(client):
     assert "youtube" in r.json()["error"].lower()
 
 
+def test_remove_sponsors_setting(client):
+    # default on
+    assert client.get("/api/status").json()["remove_sponsors"] is True
+    # can turn off and it persists in status
+    assert client.post("/api/settings/remove-sponsors", json={"enabled": False}).json()["remove_sponsors"] is False
+    assert client.get("/api/status").json()["remove_sponsors"] is False
+    # and back on
+    client.post("/api/settings/remove-sponsors", json={"enabled": True})
+    assert client.get("/api/status").json()["remove_sponsors"] is True
+
+
 def test_picture_auto_without_source_errors(client, sample_mp3):
     # a file upload has no thumbnail, so auto should fail cleanly
     with open(sample_mp3, "rb") as fh:

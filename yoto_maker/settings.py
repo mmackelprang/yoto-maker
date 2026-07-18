@@ -12,6 +12,8 @@ from .config import get_config
 
 _DEFAULTS: dict[str, Any] = {
     "ai_model": "gpt-image-1",
+    # Skip advertising segments in YouTube audio (SponsorBlock). On by default.
+    "remove_sponsors": True,
 }
 
 

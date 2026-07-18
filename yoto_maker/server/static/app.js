@@ -47,6 +47,7 @@ async function init() {
   }
   $("#ver").textContent = "v" + STATUS.version;
   renderStatus();
+  $("#skipSponsors").checked = STATUS.remove_sponsors !== false;
   if (STATUS.ai_available) show($("#aiTab"), true);
   if (!STATUS.tools.ok) {
     showError($("#toolsWarning"),
@@ -345,6 +346,12 @@ function wire() {
   $("#ytUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") addYouTube(); });
   $("#filePick").addEventListener("click", () => $("#fileInput").click());
   $("#fileInput").addEventListener("change", (e) => { if (e.target.files[0]) addFile(e.target.files[0]); e.target.value = ""; });
+  $("#skipSponsors").addEventListener("change", (e) => {
+    api("/api/settings/remove-sponsors", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: e.target.checked }),
+    }).catch(() => {});
+  });
 
   // card name (save on change)
   let nameTimer;

@@ -90,6 +90,8 @@ async def _not_connected(_request, exc):  # noqa: ANN001
 # --------------------------------------------------------------------------- #
 @app.get("/api/status")
 async def status() -> dict:
+    from ..settings import get_settings
+
     tools = check_tools()
     return {
         "app": APP_NAME,
@@ -97,7 +99,20 @@ async def status() -> dict:
         "tools": {"ffmpeg": bool(tools.ffmpeg), "yt_dlp": tools.yt_dlp, "ok": tools.ok},
         "yoto": connection_status(),
         "ai_available": ai_available(),
+        "remove_sponsors": bool(get_settings().get("remove_sponsors", True)),
     }
+
+
+class RemoveSponsorsBody(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/settings/remove-sponsors")
+async def set_remove_sponsors(body: RemoveSponsorsBody) -> dict:
+    from ..settings import get_settings
+
+    get_settings().set("remove_sponsors", bool(body.enabled))
+    return {"ok": True, "remove_sponsors": bool(body.enabled)}
 
 
 @app.get("/api/draft")
@@ -126,12 +141,20 @@ async def add_youtube(body: YouTubeBody) -> dict:
     if not adapter.can_handle(url):
         raise SourceError("That doesn't look like a YouTube link. Copy it from the address bar and try again.")
 
+    from ..settings import get_settings
+
     cfg = get_config()
     draft = get_draft()
+    remove_sponsors = bool(get_settings().get("remove_sponsors", True))
 
     def work(update):
         update("download", 5, "Getting the audio…")
-        result = adapter.fetch(url, cfg.work_dir, on_progress=lambda p, m: update("download", max(5, p), m))
+        result = adapter.fetch(
+            url,
+            cfg.work_dir,
+            on_progress=lambda p, m: update("download", max(5, p), m),
+            remove_sponsors=remove_sponsors,
+        )
         track = draft.add_track(
             title=result.suggested_title,
             audio_path=result.audio_path,
