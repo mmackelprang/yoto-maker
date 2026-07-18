@@ -34,6 +34,23 @@ def test_build_content_payload_empty():
     assert p["metadata"]["media"]["duration"] == 0
 
 
+def test_client_id_resolution_order(temp_config, monkeypatch):
+    from yoto_maker import config as cfg
+    from yoto_maker.settings import get_settings
+
+    # 1. With no env and no saved setting, the baked-in default is used.
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    assert cfg.resolve_client_id() == "a8OGO6EfbWit5tDUUrOz0g49s49NQoU1"
+
+    # 2. A saved setting overrides the baked-in default.
+    get_settings().set("yoto_client_id", "from_setting")
+    assert cfg.resolve_client_id() == "from_setting"
+
+    # 3. The env var overrides everything.
+    monkeypatch.setenv("YOTO_CLIENT_ID", "from_env")
+    assert cfg.resolve_client_id() == "from_env"
+
+
 def test_settings_roundtrip(temp_config):
     s = get_settings()
     assert s.get("ai_model") == "gpt-image-1"  # default

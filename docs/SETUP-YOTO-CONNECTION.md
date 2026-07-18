@@ -1,13 +1,16 @@
-# Setting up the Yoto connection (one-time, ~5 minutes)
+# Setting up the Yoto connection
 
-Yoto Maker uploads cards to a Yoto account through Yoto's official API. To let the
-app sign in, you register a free **Client ID** once at Yoto's developer
-dashboard. This is the only manual step, and only **you** (not the end user) need
-to do it.
+> ✅ **As of v0.1.2 the app ships with a Yoto Client ID already built in.** Most
+> people need to do **nothing here** — just open the app, click **Connect my
+> Yoto account**, and sign in. This document is only needed if you want to run
+> the app against **your own** Yoto developer app instead of the bundled one.
 
-> **Who does this?** The person setting up the app (you). The end user never sees
-> any of this — after setup, they just click **Connect my Yoto account** and sign
-> in with their normal Yoto email/password.
+Yoto Maker uploads cards to a Yoto account through Yoto's official API. Signing
+in uses a **Client ID** registered at Yoto's developer dashboard. A working one
+is bundled; the steps below let you register and use your own.
+
+> **Who needs this?** Only someone who wants their own Yoto app credentials. End
+> users never see any of it — they just click **Connect my Yoto account**.
 
 ---
 
@@ -46,9 +49,9 @@ Copy the **Client ID** string the dashboard shows you (it is **not** secret).
 Pick whichever is easiest:
 
 **Option A — paste it into the app (no rebuild).**
-Open Yoto Maker, go to step 3 (*Send it to your Yoto*), and paste the Client ID
-into the one-time **setup box**, then click **Save**. It's stored on that
-computer only. Done.
+Open Yoto Maker, go to step 3 (*Send it to your Yoto*), click
+**⚙️ Use a different Yoto account (advanced)**, paste your Client ID, and click
+**Save**. It's stored on that computer only and overrides the bundled one.
 
 **Option B — environment variable.**
 Set `YOTO_CLIENT_ID` to your Client ID before launching (useful for developers):

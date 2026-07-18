@@ -1,9 +1,16 @@
-# Yoto Maker v0.1.1
+# Yoto Maker v0.1.2
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
 
-### 🆕 New in v0.1.1
+### 🆕 New in v0.1.2
+- **Pre-configured Yoto connection** — the app now ships with its Yoto app ID
+  built in, so there's **no setup step**: just click *Connect my Yoto account*
+  and sign in. (Advanced users can still point it at their own Yoto app via the
+  "Use a different Yoto account" link.)
+- **About popup** — a little *About* link in the footer.
+
+### New in v0.1.1
 - **Skips sponsor / ad segments in YouTube audio** automatically (using the
   community SponsorBlock database) — paid promos and "like &amp; subscribe" bits
   are cut out. There's a checkbox under the YouTube box to turn it off. It stays

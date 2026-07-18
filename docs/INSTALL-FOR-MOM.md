@@ -76,10 +76,10 @@ can rename any track by clicking its name, or remove it with the 🗑️ button.
 - When it's done, **open the Yoto app on your phone, tap a blank “Make Your Own”
   card** to link it, and press play. 🎶
 
-> ℹ️ If step 3 says it needs to be “set up,” the person who made this for you
-> needs to do a quick one-time setup — show them
-> **[SETUP-YOTO-CONNECTION.md](SETUP-YOTO-CONNECTION.md)**. Everything else
-> (adding audio, pictures, and printing labels) works without it.
+> ℹ️ Connecting your Yoto is already set up for you — you just sign in. (If you
+> ever need to use a *different* Yoto account, there's a small “Use a different
+> Yoto account (advanced)” link, but most people never need it.) And even
+> without connecting, adding audio, pictures, and printing labels all work.
 
 ### 4️⃣ Print your label
 

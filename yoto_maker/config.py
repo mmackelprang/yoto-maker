@@ -35,11 +35,13 @@ def _bundle_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-# The Yoto public client ID is registered once at dashboard.yoto.dev (PKCE = no
-# secret needed). Baked-in default is empty; it's resolved at runtime from, in
-# order: the YOTO_CLIENT_ID env var, the saved setting, then this default. This
-# lets the developer set it once on the user's machine WITHOUT rebuilding.
-DEFAULT_YOTO_CLIENT_ID = ""
+# The Yoto public client ID, registered at dashboard.yoto.dev. This is a PKCE
+# *public* client id — it is NOT a secret (it's sent in the browser sign-in URL
+# by design), so shipping it in the app and committing it is safe and standard.
+# It's resolved at runtime in order: YOTO_CLIENT_ID env var → saved setting →
+# this baked-in default, so a user can still point the app at their own Yoto app
+# without a rebuild.
+DEFAULT_YOTO_CLIENT_ID = "a8OGO6EfbWit5tDUUrOz0g49s49NQoU1"
 
 
 def resolve_client_id() -> str:
