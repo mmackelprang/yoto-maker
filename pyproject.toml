@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yoto-maker"
+version = "0.1.0"
+description = "Turn audio from YouTube or files into a Yoto Make-Your-Own card, and print a matching label."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Mark Mackelprang" }]
+dependencies = [
+    "fastapi>=0.139",
+    "uvicorn[standard]>=0.51",
+    "yt-dlp>=2026.7.4",
+    "mutagen>=1.48",
+    "pillow>=12.0",
+    "reportlab>=5.0",
+    "requests>=2.34",
+    "httpx>=0.28",
+    "pystray>=0.19",
+    "python-multipart>=0.0.32",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9.0", "pytest-asyncio>=1.4"]
+
+[project.scripts]
+yoto-maker = "yoto_maker.main:main"
+
+[tool.setuptools.packages.find]
+include = ["yoto_maker*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

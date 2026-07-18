@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.spec.bak
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# App runtime data (tokens, logs, temp downloads) — NEVER commit
+*.log
+.yoto-token.json
+yoto_token.json
+appdata/
+runtime/
+work/
+tmp/
+
+# Bundled binaries (downloaded/built locally, not committed)
+vendor/ffmpeg*
+vendor/yt-dlp*
+packaging/build/
+packaging/dist/
+
+# Secrets
+.env
+.env.local
+*.key
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Tests
+.pytest_cache/
+htmlcov/
+.coverage
