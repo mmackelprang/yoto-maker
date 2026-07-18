@@ -129,6 +129,23 @@ async def reset_draft() -> dict:
 # --------------------------------------------------------------------------- #
 # Tracks
 # --------------------------------------------------------------------------- #
+def _auto_apply_picture_if_absent() -> None:
+    """If no picture is chosen yet, use the one that came with the audio
+    (YouTube thumbnail or embedded album art). Best-effort — never raises, and
+    never overrides a picture the user already picked."""
+    draft = get_draft()
+    if draft.picture_path and Path(draft.picture_path).exists():
+        return
+    src = draft.first_suggested_image()
+    if not src:
+        return
+    try:
+        draft.picture_path = prepare_label_image(src, get_config().work_dir, name="card_picture")
+        draft.picture_source = "auto"
+    except Exception:
+        pass  # a bad thumbnail must never block adding a track
+
+
 class YouTubeBody(BaseModel):
     url: str
 
@@ -163,6 +180,7 @@ async def add_youtube(body: YouTubeBody) -> dict:
             source_ref=result.source_ref,
             suggested_image_path=result.suggested_image_path,
         )
+        _auto_apply_picture_if_absent()
         return {"track": track.view()}
 
     job_id = get_jobs().start(work)
@@ -194,6 +212,7 @@ async def add_file(file: UploadFile) -> dict:
         source_ref=result.source_ref,
         suggested_image_path=result.suggested_image_path,
     )
+    _auto_apply_picture_if_absent()
     return {"track": track.view()}
 
 

@@ -13,6 +13,9 @@ Built to be usable by someone with little computer knowledge.
 - **Clearer message** if the app window loses contact with the background app
   ("Couldn't reach the Yoto Maker app… make sure it's still running") instead of
   a cryptic *"Failed to fetch"*.
+- **The picture is now filled in automatically** from the audio (YouTube
+  thumbnail or a file's album art) the moment you add a track — no need to click
+  "Use that picture". You can still change it to Upload / Icons / AI.
 
 ### New in v0.1.2
 - **Pre-configured Yoto connection** — the app now ships with its Yoto app ID

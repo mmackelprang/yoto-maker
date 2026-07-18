@@ -119,6 +119,48 @@ def test_picture_auto_without_source_errors(client, sample_mp3):
     assert r.status_code == 400
 
 
+def test_auto_apply_picture_from_suggested(temp_config):
+    from PIL import Image
+
+    from yoto_maker.server.app import _auto_apply_picture_if_absent
+
+    draft = get_draft()
+    draft.reset()
+    img = temp_config.work_dir / "thumb.png"
+    Image.new("RGB", (400, 300), (30, 140, 90)).save(img)
+    draft.add_track("Song", temp_config.work_dir / "a.mp3", suggested_image_path=img)
+
+    assert draft.picture_path is None            # nothing yet
+    _auto_apply_picture_if_absent()
+    assert draft.picture_path is not None and draft.picture_path.exists()
+    assert draft.picture_source == "auto"
+
+
+def test_auto_apply_picture_skips_when_no_art_and_when_already_set(temp_config):
+    from PIL import Image
+
+    from yoto_maker.server.app import _auto_apply_picture_if_absent
+
+    draft = get_draft()
+    draft.reset()
+    # track with no suggested image -> stays without a picture
+    draft.add_track("Song", temp_config.work_dir / "a.mp3", suggested_image_path=None)
+    _auto_apply_picture_if_absent()
+    assert draft.picture_path is None
+
+    # if a picture is already chosen, auto-apply must NOT overwrite it
+    chosen = temp_config.work_dir / "chosen.png"
+    Image.new("RGB", (10, 10), (0, 0, 0)).save(chosen)
+    draft.picture_path = chosen
+    draft.picture_source = "upload"
+    later = temp_config.work_dir / "thumb.png"
+    Image.new("RGB", (50, 50), (1, 2, 3)).save(later)
+    draft.tracks[0].suggested_image_path = later
+    _auto_apply_picture_if_absent()
+    assert draft.picture_path == chosen           # unchanged
+    assert draft.picture_source == "upload"
+
+
 def test_reset(client, sample_mp3):
     with open(sample_mp3, "rb") as fh:
         client.post("/api/tracks/file", files={"file": ("s.mp3", fh, "audio/mpeg")})
