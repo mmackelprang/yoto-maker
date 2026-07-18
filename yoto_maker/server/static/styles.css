@@ -156,3 +156,22 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent); backgr
 /* Small helper text */
 .tiny { font-size: 13px; color: var(--muted); }
 a { color: var(--accent-dark); }
+
+/* Modal / overlay (About, per-track icon picker) */
+.overlay {
+  position: fixed; inset: 0; background: rgba(30, 20, 50, 0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 60; padding: 20px;
+}
+.modal {
+  background: #fff; border-radius: 18px; padding: 28px 32px; max-width: 400px; width: 100%;
+  box-shadow: var(--shadow);
+}
+.modal.about { text-align: center; }
+.about-logo { width: 84px; height: 84px; border-radius: 20px; }
+.modal.about h2 { margin: 12px 0 0; color: var(--ink); }
+.love {
+  font-size: 18px; color: var(--accent-dark); line-height: 1.6; margin: 18px 0;
+  padding: 16px; background: var(--accent-soft); border-radius: 14px;
+}
+.love strong { font-size: 20px; }
+.modal.about .btn { margin-top: 8px; }

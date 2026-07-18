@@ -100,10 +100,11 @@
       <h2><span class="num">3</span> Send it to your Yoto</h2>
       <p class="hint">This uploads your card to your Yoto account. You only sign in the first time.</p>
 
-      <!-- One-time setup (shown only if the app has no Yoto Client ID yet) -->
+      <!-- Client ID box: shown automatically only if the app has none baked in;
+           otherwise reachable via the "advanced" link below. -->
       <div id="setupRow" class="hidden">
         <div class="msg-box info">
-          <strong>One-time setup.</strong> Paste your Yoto <em>Client ID</em> (from
+          Paste a Yoto <em>Client ID</em> to use your own Yoto app (from
           <a href="https://dashboard.yoto.dev" target="_blank" rel="noopener">dashboard.yoto.dev</a>).
           See <a href="https://github.com/mmackelprang/yoto-maker/blob/main/docs/SETUP-YOTO-CONNECTION.md" target="_blank" rel="noopener">the setup guide</a>.
         </div>
@@ -117,6 +118,9 @@
       <div id="connectRow" class="hidden">
         <div class="msg-box info">You'll need to connect your Yoto account first.</div>
         <button id="connectBtn" class="btn primary big" style="margin-top:12px">🔗 Connect my Yoto account</button>
+        <div id="advRow" style="margin-top:10px">
+          <a href="#" id="advToggle" class="tiny">⚙️ Use a different Yoto account (advanced)</a>
+        </div>
       </div>
 
       <button id="sendBtn" class="btn primary big">🚀 Send to Yoto</button>
@@ -143,9 +147,23 @@
 
     <p class="tiny" style="text-align:center">
       Made with Yoto Maker · <span id="ver"></span> ·
+      <a href="#" id="aboutLink">About</a> ·
       <a href="#" id="startOver">Start a new card</a>
     </p>
   </main>
+
+  <!-- About popup -->
+  <div id="aboutOverlay" class="overlay hidden">
+    <div class="modal about">
+      <img src="/static/logo.png" alt="Yoto Maker" class="about-logo" />
+      <h2>Yoto Maker</h2>
+      <p class="tiny" style="margin-top:-8px">Version <span id="aboutVer"></span></p>
+      <p class="love">Made with love for<br><strong>Princess Aurora</strong><br>by Grandpa Mark 💜</p>
+      <p><a href="https://github.com/mmackelprang/yoto-maker" target="_blank" rel="noopener">View the project on GitHub&nbsp;↗</a></p>
+      <p class="tiny">Not affiliated with Yoto.</p>
+      <button class="btn" id="aboutClose">Close</button>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

@@ -46,6 +46,7 @@ async function init() {
     return;
   }
   $("#ver").textContent = "v" + STATUS.version;
+  $("#aboutVer").textContent = STATUS.version;
   renderStatus();
   $("#skipSponsors").checked = STATUS.remove_sponsors !== false;
   if (STATUS.ai_available) show($("#aiTab"), true);
@@ -387,6 +388,17 @@ function wire() {
   });
 
   $("#clientIdSave").addEventListener("click", saveClientId);
+  $("#advToggle").addEventListener("click", (e) => {
+    e.preventDefault();
+    show($("#setupRow"), true);
+    $("#clientIdInput").focus();
+  });
+  // About popup
+  const about = $("#aboutOverlay");
+  $("#aboutLink").addEventListener("click", (e) => { e.preventDefault(); show(about, true); });
+  $("#aboutClose").addEventListener("click", () => show(about, false));
+  about.addEventListener("click", (e) => { if (e.target === about) show(about, false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") show(about, false); });
   $("#connectBtn").addEventListener("click", connectYoto);
   $("#yotoPill").addEventListener("click", () => {
     if (STATUS.yoto.configured && !STATUS.yoto.connected) connectYoto();
