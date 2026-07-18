@@ -34,6 +34,25 @@ def test_youtube_friendly_errors():
     assert "age" in _friendly_ytdlp_error("Sign in to confirm your age").lower()
 
 
+def test_youtube_postprocessors_with_sponsorblock():
+    from yoto_maker.sources.youtube import DEFAULT_SPONSOR_CATEGORIES, build_postprocessors
+
+    pps = build_postprocessors(True, DEFAULT_SPONSOR_CATEGORIES)
+    keys = [p["key"] for p in pps]
+    # SponsorBlock fetches, ModifyChapters cuts, THEN we extract audio (order).
+    assert keys == ["SponsorBlock", "ModifyChapters", "FFmpegExtractAudio"]
+    assert pps[0]["categories"] == DEFAULT_SPONSOR_CATEGORIES
+    assert pps[0]["when"] == "after_filter"
+    assert pps[1]["remove_sponsor_segments"] == DEFAULT_SPONSOR_CATEGORIES
+
+
+def test_youtube_postprocessors_without_sponsorblock():
+    from yoto_maker.sources.youtube import build_postprocessors
+
+    pps = build_postprocessors(False, ["sponsor"])
+    assert [p["key"] for p in pps] == ["FFmpegExtractAudio"]
+
+
 @pytest.mark.parametrize("name,ok", [
     ("song.mp3", True), ("a.M4A", True), ("x.wav", True),
     ("clip.mp4", True), ("doc.pdf", False), ("image.png", False),

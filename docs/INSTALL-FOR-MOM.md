@@ -54,6 +54,10 @@ You'll see **four numbered steps** on the screen. Just go top to bottom.
 You can add **as many as you like** — each one becomes a track on the card. You
 can rename any track by clicking its name, or remove it with the 🗑️ button.
 
+> ✂️ **The “Skip sponsor / ad segments” checkbox** (under the YouTube box) is on
+> by default. It automatically cuts out paid promos and “like & subscribe”
+> reminders from YouTube audio. Leave it on unless you have a reason not to.
+
 ### 2️⃣ Name it & pick a picture
 
 - Type a **name** for the card (for example, *“Bedtime Stories”*).

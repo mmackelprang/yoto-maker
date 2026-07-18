@@ -23,6 +23,27 @@ _YT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Segments to cut when "skip sponsor/ad segments" is on. Deliberately
+# conservative: only advertising-type segments, never intros/outros/music, so we
+# never accidentally trim actual story or song content. Uses the community
+# SponsorBlock database (queried by yt-dlp); if it has no data for a video, the
+# download simply proceeds unchanged.
+DEFAULT_SPONSOR_CATEGORIES = ["sponsor", "selfpromo", "interaction"]
+
+
+def build_postprocessors(remove_sponsors: bool, categories: list[str]) -> list[dict]:
+    """The yt-dlp post-processing chain.
+
+    When sponsor-skipping is on: fetch SponsorBlock segments (after_filter), cut
+    them out (ModifyChapters), then extract to mp3 — order matters.
+    """
+    pps: list[dict] = []
+    if remove_sponsors and categories:
+        pps.append({"key": "SponsorBlock", "categories": categories, "when": "after_filter"})
+        pps.append({"key": "ModifyChapters", "remove_sponsor_segments": categories})
+    pps.append({"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"})
+    return pps
+
 
 def _friendly_ytdlp_error(message: str) -> str:
     low = message.lower()
@@ -49,6 +70,8 @@ class YouTubeAdapter:
         work_dir: Path,
         *,
         on_progress: ProgressHook | None = None,
+        remove_sponsors: bool = True,
+        sponsor_categories: list[str] | None = None,
     ) -> SourceResult:
         import yt_dlp
 
@@ -68,6 +91,9 @@ class YouTubeAdapter:
             elif d.get("status") == "finished":
                 on_progress(92, "Converting the audio…")
 
+        cats = sponsor_categories or DEFAULT_SPONSOR_CATEGORIES
+        postprocessors = build_postprocessors(remove_sponsors, cats)
+
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": out_tmpl,
@@ -85,10 +111,7 @@ class YouTubeAdapter:
             "retries": 5,
             "fragment_retries": 5,
             "socket_timeout": 30,
-            # Convert whatever we get into mp3 so the pipeline is uniform.
-            "postprocessors": [
-                {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
-            ],
+            "postprocessors": postprocessors,
         }
         ffmpeg = find_ffmpeg()
         if ffmpeg:

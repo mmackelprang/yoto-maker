@@ -1,7 +1,18 @@
-# Yoto Maker v0.1.0
+# Yoto Maker v0.1.1
 
-The first release — turn audio into a Yoto card and print a matching label, from
-one simple screen. Built to be usable by someone with little computer knowledge.
+Turn audio into a Yoto card and print a matching label, from one simple screen.
+Built to be usable by someone with little computer knowledge.
+
+### 🆕 New in v0.1.1
+- **Skips sponsor / ad segments in YouTube audio** automatically (using the
+  community SponsorBlock database) — paid promos and "like &amp; subscribe" bits
+  are cut out. There's a checkbox under the YouTube box to turn it off. It stays
+  conservative (only advertising-type segments) so it never trims real story or
+  song content. *Note: ads the creator baked into the recording still can't be
+  detected; YouTube's own interruptive ads were never included anyway.*
+
+---
+
 
 ## 📥 Install (Windows)
 
