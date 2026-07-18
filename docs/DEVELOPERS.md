@@ -68,13 +68,14 @@ Everything else works with no key.
 ```bash
 pip install pyinstaller
 python packaging/make_icon.py                    # regenerate app.ico (committed)
-# stage ffmpeg.exe for bundling (any recent static build works):
-#   copy an ffmpeg.exe to packaging/vendor/ffmpeg.exe
+# stage ffmpeg.exe AND ffprobe.exe for bundling (any recent static build):
+#   copy ffmpeg.exe  -> packaging/vendor/ffmpeg.exe
+#   copy ffprobe.exe -> packaging/vendor/ffprobe.exe   (needed by SponsorBlock)
 pyinstaller packaging/YotoMaker.spec --distpath packaging/dist --workpath packaging/build --noconfirm
 ```
 
 Output: `packaging/dist/YotoMaker.exe` — a one-file, windowed build that bundles
-the UI, the pixel-icon library, `ffmpeg.exe`, and all of `yt_dlp`.
+the UI, the pixel-icon library, `ffmpeg.exe` + `ffprobe.exe`, and all of `yt_dlp`.
 
 ### Publishing a release
 

@@ -15,6 +15,9 @@ ytd_datas, ytd_binaries, ytd_hidden = collect_all("yt_dlp")
 datas = [
     (os.path.join(ROOT, "yoto_maker", "server", "static"), os.path.join("yoto_maker", "server", "static")),
     (os.path.join(ROOT, "packaging", "vendor", "ffmpeg.exe"), "vendor"),
+    # ffprobe is required by yt-dlp's SponsorBlock/ModifyChapters step to read
+    # media duration for some audio formats — bundle it too, not just ffmpeg.
+    (os.path.join(ROOT, "packaging", "vendor", "ffprobe.exe"), "vendor"),
 ]
 datas += ytd_datas
 datas += collect_data_files("certifi")

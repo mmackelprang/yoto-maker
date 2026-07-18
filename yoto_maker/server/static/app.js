@@ -5,7 +5,17 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 async function api(path, opts = {}) {
-  const res = await fetch(path, opts);
+  let res;
+  try {
+    res = await fetch(path, opts);
+  } catch (e) {
+    // fetch() throws "Failed to fetch" when the local app server can't be
+    // reached — turn that into something a non-technical user can act on.
+    throw new Error(
+      "Couldn't reach the Yoto Maker app. Make sure it's still running " +
+      "(look for the 🎵 icon near the clock), then try again."
+    );
+  }
   let data = null;
   try { data = await res.json(); } catch (_) { /* some routes return files */ }
   if (!res.ok) {
