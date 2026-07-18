@@ -37,7 +37,11 @@ class AudioFileAdapter:
 
         dest = work_dir / src.name
         try:
-            shutil.copy2(src, dest)
+            # If the file is already where we'd copy it, just use it in place.
+            if src.resolve() != dest.resolve():
+                shutil.copy2(src, dest)
+        except shutil.SameFileError:
+            dest = src
         except OSError as exc:
             raise SourceError("We couldn't read that file — it may be open in another program.") from exc
 
