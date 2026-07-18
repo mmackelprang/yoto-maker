@@ -50,3 +50,6 @@ htmlcov/
 # Local UAT screenshots
 ui_*.png
 /work/
+
+# Logo build output (published to gh-pages branch)
+/site/
