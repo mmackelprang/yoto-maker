@@ -31,8 +31,16 @@ def run_tray(url: str, on_quit) -> None:
     import pystray
     from pystray import MenuItem as Item
 
+    from . import autostart
+
     def _open(icon, item):  # noqa: ANN001
         webbrowser.open(url)
+
+    def _toggle_autostart(icon, item):  # noqa: ANN001
+        if autostart.is_enabled():
+            autostart.disable()
+        else:
+            autostart.enable()
 
     def _quit(icon, item):  # noqa: ANN001
         try:
@@ -40,13 +48,12 @@ def run_tray(url: str, on_quit) -> None:
         finally:
             icon.stop()
 
-    icon = pystray.Icon(
-        "yoto_maker",
-        _tray_image(),
-        "Yoto Maker",
-        menu=pystray.Menu(
-            Item("Open Yoto Maker", _open, default=True),
-            Item("Quit", _quit),
-        ),
-    )
+    menu_items = [Item("Open Yoto Maker", _open, default=True)]
+    if autostart.is_supported():
+        menu_items.append(
+            Item("Start with Windows", _toggle_autostart, checked=lambda item: autostart.is_enabled())
+        )
+    menu_items.append(Item("Quit", _quit))
+
+    icon = pystray.Icon("yoto_maker", _tray_image(), "Yoto Maker", menu=pystray.Menu(*menu_items))
     icon.run()

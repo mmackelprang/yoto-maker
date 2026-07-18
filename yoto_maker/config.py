@@ -35,10 +35,27 @@ def _bundle_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-# The Yoto public client ID is registered once at dashboard.yoto.dev and shipped
-# with the app (PKCE = no secret needed). It can be overridden via env var so
-# the developer can test with their own client without editing code.
-DEFAULT_YOTO_CLIENT_ID = os.environ.get("YOTO_CLIENT_ID", "")
+# The Yoto public client ID is registered once at dashboard.yoto.dev (PKCE = no
+# secret needed). Baked-in default is empty; it's resolved at runtime from, in
+# order: the YOTO_CLIENT_ID env var, the saved setting, then this default. This
+# lets the developer set it once on the user's machine WITHOUT rebuilding.
+DEFAULT_YOTO_CLIENT_ID = ""
+
+
+def resolve_client_id() -> str:
+    """Client ID from env var, then saved setting, then the baked-in default."""
+    env = os.environ.get("YOTO_CLIENT_ID")
+    if env:
+        return env.strip()
+    try:
+        from .settings import get_settings  # lazy import to avoid a cycle
+
+        saved = get_settings().get("yoto_client_id")
+        if saved:
+            return str(saved).strip()
+    except Exception:
+        pass
+    return DEFAULT_YOTO_CLIENT_ID
 
 YOTO_AUTH_BASE = "https://login.yotoplay.com"
 YOTO_API_BASE = "https://api.yotoplay.com"
@@ -52,7 +69,7 @@ YOTO_REDIRECT_PATH = "/yoto/callback"
 class Config:
     data_dir: Path = field(default_factory=_local_appdata)
     bundle_root: Path = field(default_factory=_bundle_root)
-    yoto_client_id: str = DEFAULT_YOTO_CLIENT_ID
+    yoto_client_id: str = field(default_factory=resolve_client_id)
     # Bind the local UI server to loopback only — never exposed to the network.
     host: str = "127.0.0.1"
     port: int = 8777

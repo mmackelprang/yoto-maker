@@ -22,6 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 @pytest.fixture(autouse=True)
 def temp_config(tmp_path, monkeypatch):
     """Point the app at a temp data dir; keep bundle_root at the repo root."""
+    # Client ID is resolved live from env → settings → default, so set it here.
+    monkeypatch.setenv("YOTO_CLIENT_ID", "test_client_id")
     cfg = Config(
         data_dir=tmp_path / "data",
         bundle_root=REPO_ROOT,

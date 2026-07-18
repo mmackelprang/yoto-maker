@@ -5,12 +5,15 @@ title. Errors are translated into plain language for a non-technical user.
 """
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Callable
 
 from ..tools import find_ffmpeg
 from .base import SourceError, SourceResult
+
+log = logging.getLogger("yoto_maker.youtube")
 
 # Called during download with a 0-100 percent and a short message.
 ProgressHook = Callable[[int, str], None]
@@ -72,8 +75,16 @@ class YouTubeAdapter:
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
+            "noprogress": True,
             "restrictfilenames": True,
             "progress_hooks": [_hook],
+            # Robustness against YouTube's frequent 403s: try multiple player
+            # clients (android/ios avoid some signature/PO-token walls the
+            # default web client hits), and retry generously.
+            "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
+            "retries": 5,
+            "fragment_retries": 5,
+            "socket_timeout": 30,
             # Convert whatever we get into mp3 so the pipeline is uniform.
             "postprocessors": [
                 {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
@@ -87,8 +98,10 @@ class YouTubeAdapter:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
         except yt_dlp.utils.DownloadError as exc:  # type: ignore[attr-defined]
+            log.warning("yt-dlp DownloadError for %s: %s", url, exc)
             raise SourceError(_friendly_ytdlp_error(str(exc))) from exc
         except Exception as exc:  # pragma: no cover - unexpected
+            log.exception("yt-dlp unexpected error for %s", url)
             raise SourceError(_friendly_ytdlp_error(str(exc))) from exc
 
         video_id = info.get("id", "audio")

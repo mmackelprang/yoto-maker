@@ -96,6 +96,20 @@
       <h2><span class="num">3</span> Send it to your Yoto</h2>
       <p class="hint">This uploads your card to your Yoto account. You only sign in the first time.</p>
 
+      <!-- One-time setup (shown only if the app has no Yoto Client ID yet) -->
+      <div id="setupRow" class="hidden">
+        <div class="msg-box info">
+          <strong>One-time setup.</strong> Paste your Yoto <em>Client ID</em> (from
+          <a href="https://dashboard.yoto.dev" target="_blank" rel="noopener">dashboard.yoto.dev</a>).
+          See <a href="https://github.com/mmackelprang/yoto-maker/blob/main/docs/SETUP-YOTO-CONNECTION.md" target="_blank" rel="noopener">the setup guide</a>.
+        </div>
+        <div class="row wrap" style="margin-top:10px">
+          <input id="clientIdInput" type="text" class="grow" placeholder="Paste Yoto Client ID here" />
+          <button id="clientIdSave" class="btn">Save</button>
+        </div>
+        <div id="setupError" class="msg-box err hidden"></div>
+      </div>
+
       <div id="connectRow" class="hidden">
         <div class="msg-box info">You'll need to connect your Yoto account first.</div>
         <button id="connectBtn" class="btn primary big" style="margin-top:12px">🔗 Connect my Yoto account</button>

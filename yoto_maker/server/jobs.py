@@ -6,11 +6,13 @@ has a couple of jobs in flight.
 """
 from __future__ import annotations
 
+import logging
 import threading
-import traceback
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
+
+log = logging.getLogger("yoto_maker.jobs")
 
 
 @dataclass
@@ -68,7 +70,7 @@ class JobManager:
             except Exception as exc:  # noqa: BLE001 - surface friendly message
                 job.status = "error"
                 job.error = str(exc) or "Something went wrong."
-                traceback.print_exc()
+                log.exception("Job %s failed: %s", job.id, exc)
 
         threading.Thread(target=run, daemon=True).start()
         return job.id

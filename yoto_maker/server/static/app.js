@@ -60,10 +60,28 @@ function renderStatus() {
   const pill = $("#yotoPill");
   const text = $("#yotoPillText");
   const connected = STATUS.yoto.connected;
+  const configured = STATUS.yoto.configured;
   pill.classList.toggle("connected", connected);
   text.textContent = connected ? "Yoto connected" : "Yoto not connected";
-  show($("#connectRow"), !connected);
+  // Setup box only when there's no Client ID yet; connect only when configured.
+  show($("#setupRow"), !configured);
+  show($("#connectRow"), configured && !connected);
   $("#sendBtn").disabled = !connected;
+}
+
+async function saveClientId() {
+  const cid = $("#clientIdInput").value.trim();
+  if (!cid) return;
+  clearError($("#setupError"));
+  try {
+    await api("/api/yoto/client-id", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: cid }),
+    });
+    await refreshStatus();
+  } catch (e) {
+    showError($("#setupError"), e.message);
+  }
 }
 
 async function refreshStatus() {
@@ -361,8 +379,11 @@ function wire() {
     }));
   });
 
+  $("#clientIdSave").addEventListener("click", saveClientId);
   $("#connectBtn").addEventListener("click", connectYoto);
-  $("#yotoPill").addEventListener("click", () => { if (!STATUS.yoto.connected) connectYoto(); });
+  $("#yotoPill").addEventListener("click", () => {
+    if (STATUS.yoto.configured && !STATUS.yoto.connected) connectYoto();
+  });
   $("#sendBtn").addEventListener("click", sendToYoto);
   $("#labelBtn").addEventListener("click", makeLabel);
 

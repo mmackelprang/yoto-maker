@@ -285,6 +285,22 @@ async def get_icon(icon_id: str):
 # --------------------------------------------------------------------------- #
 # Yoto connection
 # --------------------------------------------------------------------------- #
+class ClientIdBody(BaseModel):
+    client_id: str
+
+
+@app.post("/api/yoto/client-id")
+async def set_client_id(body: ClientIdBody) -> dict:
+    """One-time setup: save the Yoto Client ID (registered at dashboard.yoto.dev)."""
+    from ..settings import get_settings
+
+    cid = body.client_id.strip()
+    if not cid:
+        raise HTTPException(400, "Please paste a Client ID.")
+    get_settings().set("yoto_client_id", cid)
+    return {"ok": True, "configured": True}
+
+
 @app.get("/api/yoto/login")
 async def yoto_login() -> dict:
     return {"url": start_login()}

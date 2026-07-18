@@ -48,11 +48,11 @@ def _redirect_uri() -> str:
 
 
 def _client_id() -> str:
-    cid = get_config().yoto_client_id
+    cid = config_mod.resolve_client_id()
     if not cid:
         raise AuthError(
             "This copy of the app hasn't been set up with a Yoto Client ID yet. "
-            "(Developer step — see docs/SETUP-YOTO-CONNECTION.md.)"
+            "(One-time setup step — see docs/SETUP-YOTO-CONNECTION.md.)"
         )
     return cid
 
@@ -175,6 +175,6 @@ def get_access_token() -> str:
 def connection_status() -> dict:
     """A UI-friendly summary: connected? configured?"""
     return {
-        "configured": bool(get_config().yoto_client_id),
+        "configured": bool(config_mod.resolve_client_id()),
         "connected": _load_tokens() is not None,
     }
