@@ -46,3 +46,7 @@ Thumbs.db
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Local UAT screenshots
+ui_*.png
+/work/
