@@ -66,6 +66,7 @@ async function init() {
       "Some tools this app needs are missing. Please reinstall Yoto Maker or ask for help.");
   }
   await loadIcons();
+  await loadEmojis();
   await refreshDraft();
   checkUpdate();  // non-blocking
 }
@@ -390,26 +391,36 @@ async function setPicture(fn) {
   }
 }
 
+// Pixel icons are still used by the per-track device-icon picker (window.__icons).
 async function loadIcons() {
-  const { icons } = await api("/api/icons");
-  const grid = $("#iconGrid");
+  try {
+    const { icons } = await api("/api/icons");
+    window.__icons = icons;
+  } catch (_) { /* ignore */ }
+}
+
+// Emoticons for the label picture.
+async function loadEmojis() {
+  const grid = $("#emojiGrid");
+  let data;
+  try { data = await api("/api/emoji"); } catch (_) { return; }
+  if (!data.available) {
+    grid.innerHTML = '<p class="tiny">Emoticons aren’t available on this computer.</p>';
+    return;
+  }
   grid.innerHTML = "";
-  icons.forEach((ic) => {
-    const img = document.createElement("img");
-    img.src = ic.url;
-    img.title = ic.label;
-    img.dataset.id = ic.id;
-    img.addEventListener("click", () => {
-      $$("#iconGrid img").forEach((x) => x.classList.remove("sel"));
-      img.classList.add("sel");
-      setPicture(() => api("/api/picture/library", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ icon_id: ic.id }),
-      }));
-    });
-    grid.appendChild(img);
+  data.emojis.forEach((em) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "emojibtn";
+    b.textContent = em;
+    b.title = "Use this emoticon";
+    b.addEventListener("click", () => setPicture(() => api("/api/picture/emoji", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emoji: em }),
+    })));
+    grid.appendChild(b);
   });
-  window.__icons = icons;
 }
 
 // ---- per-track icon modal -------------------------------------------------

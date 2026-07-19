@@ -1,9 +1,14 @@
-# Yoto Maker v0.1.7
+# Yoto Maker v0.1.8
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
 
-### 🆕 New in v0.1.7
+### 🆕 New in v0.1.8
+- **Emoticons.** The picture tab is now **😊 Emoticons** — pick from a big set of
+  colorful emoji (animals, faces, nature, treats, and more) for the label and the
+  Yoto screen. Combine with **✏️ Adjust** to zoom/position it just right.
+
+### New in v0.1.7
 - **Adjust the picture.** After a picture is set, click **✏️ Adjust** to **drag
   it around and zoom** to frame exactly the part you want — great for getting the
   best crop out of a wide thumbnail or photo. What you frame is used on both the

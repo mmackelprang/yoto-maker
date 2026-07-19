@@ -161,6 +161,22 @@ def test_auto_apply_picture_skips_when_no_art_and_when_already_set(temp_config):
     assert draft.picture_source == "upload"
 
 
+def test_emoji_list_and_set(client):
+    r = client.get("/api/emoji")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["available"] is True          # Segoe UI Emoji present on Windows CI
+    assert len(body["emojis"]) > 20 and "🐶" in body["emojis"]
+
+    # picking an emoji sets the label picture (and an editable source)
+    r = client.post("/api/picture/emoji", json={"emoji": "🐶"})
+    assert r.status_code == 200
+    draft = client.get("/api/draft").json()
+    assert draft["has_picture"] is True and draft["has_source"] is True
+    assert draft["picture_source"] == "emoji"
+    assert client.get("/api/picture.png").status_code == 200
+
+
 def test_picture_crop_and_source(client):
     # picking a library icon stores an editable source
     assert client.post("/api/picture/library", json={"icon_id": "star"}).status_code == 200
