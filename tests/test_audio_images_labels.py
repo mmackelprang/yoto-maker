@@ -28,6 +28,32 @@ def test_normalize_to_mp3(sample_mp3, temp_config):
     assert info.duration_s > 1.0
 
 
+def test_split_audio_short_file_passthrough(sample_mp3, temp_config):
+    from yoto_maker.audio.normalize import split_audio
+
+    parts = split_audio(sample_mp3, temp_config.work_dir / "parts", max_seconds=3600)
+    assert parts == [sample_mp3]  # short file → single track, unchanged
+
+
+def test_split_audio_long_file_splits(temp_config, has_ffmpeg):
+    import subprocess
+
+    from yoto_maker.audio.normalize import probe_audio, split_audio
+    from yoto_maker.tools import require_ffmpeg
+
+    src = temp_config.work_dir / "long.mp3"
+    subprocess.run(
+        [require_ffmpeg(), "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=9",
+         "-b:a", "64k", str(src)],
+        capture_output=True, check=True,
+    )
+    parts = split_audio(src, temp_config.work_dir / "parts", max_seconds=3)
+    assert len(parts) >= 3                      # ~9s at 3s each → ~3 parts
+    for p in parts:
+        assert p.exists()
+        assert probe_audio(p).duration_s <= 4   # each part under the limit (+tolerance)
+
+
 def test_friendly_format_maps_to_yoto_enum():
     from pathlib import Path
 

@@ -1,9 +1,18 @@
-# Yoto Maker v0.1.5
+# Yoto Maker v0.1.6
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
 
-### 🐛 Fixed in v0.1.5
+### 🐛 Fixed in v0.1.6
+- **Long files (audiobooks) now work.** Yoto can't process a single track longer
+  than ~60 minutes — a long file would get stuck "Preparing the audio…". The app
+  now **automatically splits long audio into parts** (each a track on the card),
+  so a whole audiobook uploads cleanly and is easy to navigate on the player.
+- **Preparing large tracks waits properly.** The transcode step used to give up
+  after 60 seconds; it now waits up to 10 minutes and shows a live "Yoto is
+  processing…" progress message so it never looks stuck.
+
+### Fixed in v0.1.5
 - **"Something went wrong while uploading the audio"** is fixed. The upload used
   a 60-second limit that a larger file on a home connection could exceed — now
   the upload isn't time-capped, so big files upload fine. (Verified end-to-end
