@@ -361,6 +361,26 @@ async def picture_library(body: IconBody) -> dict:
     return {"ok": True, "picture_url": "/api/picture.png"}
 
 
+@app.get("/api/emoji")
+async def get_emoji() -> dict:
+    from ..images.emoji import emoji_supported, list_emojis
+
+    return {"emojis": list_emojis(), "available": emoji_supported()}
+
+
+class EmojiBody(BaseModel):
+    emoji: str
+
+
+@app.post("/api/picture/emoji")
+async def picture_emoji(body: EmojiBody) -> dict:
+    from ..images.emoji import render_emoji
+
+    img = render_emoji(body.emoji.strip(), get_config().work_dir, name="emoji_src")
+    _set_picture(img, "emoji")
+    return {"ok": True, "picture_url": "/api/picture.png"}
+
+
 class AIBody(BaseModel):
     prompt: str
 

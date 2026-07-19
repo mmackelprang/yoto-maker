@@ -44,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--no-tray", action="store_true")
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--port", type=int, default=None,
+                        help="Run on a non-default port (dev/testing; Yoto sign-in needs the default 8777).")
     args = parser.parse_args(argv)
 
     cfg = get_config()
@@ -54,10 +56,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         return _self_check()
 
-    url = f"http://{cfg.host}:{cfg.port}"
+    port = args.port or cfg.port
 
     try:
-        handle = start_server(wait=True)
+        handle = start_server(wait=True, port=port)
     except AlreadyRunningError as running:
         # Another copy is already up — just open it.
         if not args.no_browser:
