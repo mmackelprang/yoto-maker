@@ -18,7 +18,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .. import APP_NAME, __version__
 from .. import updater
-from ..audio.normalize import AudioError
+from ..audio.normalize import MAX_TRACK_SECONDS, AudioError, probe_audio, split_audio
 from ..config import get_config
 from ..images import make_device_icon, prepare_label_image, save_upload
 from ..images.ai import AIUnavailableError, ai_available, generate_image
@@ -172,6 +172,37 @@ def _auto_apply_picture_if_absent() -> None:
         pass  # a bad thumbnail must never block adding a track
 
 
+def _add_result_as_tracks(result, source_kind: str) -> list:
+    """Add a fetched source to the draft as one or more tracks.
+
+    Audio longer than Yoto's per-track limit is split into parts (each becomes a
+    track), so long audiobooks work instead of getting stuck in Yoto transcode.
+    """
+    draft = get_draft()
+    cfg = get_config()
+    parts = split_audio(result.audio_path, cfg.work_dir / "parts", max_seconds=MAX_TRACK_SECONDS)
+    multi = len(parts) > 1
+    added = []
+    for i, part in enumerate(parts, start=1):
+        try:
+            duration = probe_audio(part).duration_s
+        except Exception:
+            duration = 0.0
+        title = f"{result.suggested_title} (part {i})" if multi else result.suggested_title
+        added.append(
+            draft.add_track(
+                title=title,
+                audio_path=part,
+                duration_s=duration,
+                source_kind=source_kind,
+                source_ref=result.source_ref,
+                suggested_image_path=result.suggested_image_path,
+            )
+        )
+    _auto_apply_picture_if_absent()
+    return added
+
+
 class YouTubeBody(BaseModel):
     url: str
 
@@ -198,16 +229,9 @@ async def add_youtube(body: YouTubeBody) -> dict:
             on_progress=lambda p, m: update("download", max(5, p), m),
             remove_sponsors=remove_sponsors,
         )
-        track = draft.add_track(
-            title=result.suggested_title,
-            audio_path=result.audio_path,
-            duration_s=result.duration_s,
-            source_kind="youtube",
-            source_ref=result.source_ref,
-            suggested_image_path=result.suggested_image_path,
-        )
-        _auto_apply_picture_if_absent()
-        return {"track": track.view()}
+        update("split", 95, "Getting it ready…")
+        added = _add_result_as_tracks(result, "youtube")
+        return {"count": len(added), "track": added[0].view() if added else None}
 
     job_id = get_jobs().start(work)
     return {"job_id": job_id}
@@ -230,16 +254,8 @@ async def add_file(file: UploadFile) -> dict:
         raise SourceError("That file type isn't supported. Try an MP3, M4A or WAV file.")
 
     result = adapter.fetch(str(dest), cfg.work_dir)
-    track = get_draft().add_track(
-        title=result.suggested_title,
-        audio_path=result.audio_path,
-        duration_s=result.duration_s,
-        source_kind="file",
-        source_ref=result.source_ref,
-        suggested_image_path=result.suggested_image_path,
-    )
-    _auto_apply_picture_if_absent()
-    return {"track": track.view()}
+    added = _add_result_as_tracks(result, "file")
+    return {"count": len(added), "track": added[0].view() if added else None}
 
 
 class RenameBody(BaseModel):

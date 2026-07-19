@@ -184,3 +184,64 @@ def normalize_to_mp3(
             f"file.\n\nTechnical detail: {tail}"
         )
     return out_path, probe_audio(out_path)
+
+
+# Yoto rejects / gets stuck on tracks longer than its ~60-minute per-track limit,
+# so we split a bit under that. Each piece becomes its own track on the card.
+MAX_TRACK_SECONDS = 50 * 60  # 3000s (safe margin under Yoto's 60-min limit)
+
+
+def split_audio(
+    input_path: str | Path,
+    out_dir: str | Path,
+    *,
+    max_seconds: int = MAX_TRACK_SECONDS,
+) -> list[Path]:
+    """Split a long file into ``<= max_seconds`` segments; return ordered paths.
+
+    Short files pass straight through (returns ``[input_path]``). Uses fast
+    stream-copy where possible, falling back to a re-encode for containers that
+    don't stream-copy into valid standalone segments.
+    """
+    input_path = Path(input_path)
+    try:
+        if probe_audio(input_path).duration_s <= max_seconds + 1:
+            return [input_path]
+    except Exception:
+        return [input_path]  # can't probe → treat as a single track
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = input_path.stem
+    suffix = input_path.suffix or ".mp3"
+    ffmpeg = require_ffmpeg()
+
+    def _segment(pattern: Path, extra: list[str]) -> list[Path]:
+        _run([
+            ffmpeg, "-y", "-i", str(input_path), "-vn", "-f", "segment",
+            "-segment_time", str(int(max_seconds)), "-reset_timestamps", "1",
+            *extra, str(pattern),
+        ])
+        found = sorted(pattern.parent.glob(pattern.name.replace("%03d", "*")))
+        # The segment muxer can emit a spurious empty trailing segment (e.g. a
+        # file whose length is an exact multiple of max_seconds). Drop any
+        # segment shorter than ~1s so we never add an un-transcodable empty track.
+        kept = []
+        for p in found:
+            try:
+                if probe_audio(p).duration_s >= 1.0:
+                    kept.append(p)
+                else:
+                    p.unlink(missing_ok=True)
+            except Exception:
+                kept.append(p)  # if we can't probe, keep it rather than lose audio
+        return kept
+
+    # 1) fast: stream copy into same-format segments
+    parts = _segment(out_dir / f"{stem}_part%03d{suffix}", ["-c", "copy"])
+    # 2) fallback: re-encode to mp3 (always valid standalone segments)
+    if not parts:
+        parts = _segment(out_dir / f"{stem}_part%03d.mp3", ["-c:a", "libmp3lame", "-b:a", "128k"])
+    if not parts:
+        raise AudioError("We couldn't split that long audio file into parts.")
+    return parts

@@ -112,7 +112,13 @@ class YotoClient:
             self._put_audio(upload_url, tr.audio_path)
 
             emit("transcode", i, total, f"Preparing track {i} of {total}…")
-            sha = self._poll_transcode(upload_id)
+            sha = self._poll_transcode(
+                upload_id,
+                on_wait=lambda secs: emit(
+                    "transcode", i, total,
+                    f"Preparing track {i} of {total}… (Yoto is processing — {secs}s)",
+                ),
+            )
 
             info = _safe_probe(tr.audio_path)
             icon_ref = None
@@ -173,12 +179,25 @@ class YotoClient:
             log.warning("Yoto audio PUT failed (%s, %d bytes): %r", audio_path.name, size, exc)
             raise YotoError(_friendly_http(exc, "uploading the audio")) from exc
 
-    def _poll_transcode(self, upload_id: str, *, attempts: int = 60, interval: float = 1.0) -> str:
-        # Tolerate a few transient errors mid-poll (auth 401 is fatal, though —
-        # no point retrying that) rather than aborting the whole card.
+    def _poll_transcode(
+        self,
+        upload_id: str,
+        *,
+        timeout_s: float = 600.0,
+        interval: float = 2.0,
+        on_wait=None,
+    ) -> str:
+        """Poll until Yoto finishes transcoding (returns the sha).
+
+        Yoto transcodes server-side and returns 202 (with no sha) while working;
+        a large track can take minutes, so we wait up to ``timeout_s`` (default
+        10 min) and report elapsed time via ``on_wait``. Transient errors are
+        tolerated; auth failures are fatal.
+        """
+        deadline = time.time() + timeout_s
+        start = time.time()
         consecutive_errors = 0
-        last_exc: Exception | None = None
-        for _ in range(attempts):
+        while time.time() < deadline:
             try:
                 resp = self._client.get(
                     f"{self._base}/media/upload/{upload_id}/transcoded",
@@ -193,16 +212,20 @@ class YotoClient:
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code in (401, 403):
                     raise YotoError(_friendly_http(exc, "preparing the audio")) from exc
-                last_exc, consecutive_errors = exc, consecutive_errors + 1
-                if consecutive_errors >= 5:
+                consecutive_errors += 1
+                if consecutive_errors >= 8:
                     raise YotoError(_friendly_http(exc, "preparing the audio")) from exc
             except Exception as exc:
-                last_exc, consecutive_errors = exc, consecutive_errors + 1
-                if consecutive_errors >= 5:
+                consecutive_errors += 1
+                if consecutive_errors >= 8:
                     raise YotoError(_friendly_http(exc, "preparing the audio")) from exc
+            if on_wait:
+                on_wait(int(time.time() - start))
             time.sleep(interval)
         raise YotoError(
-            "Preparing the audio is taking longer than expected. Please try again in a moment."
+            "Yoto is taking too long to prepare this audio. Very long tracks can time "
+            "out — this app now splits long files into parts automatically, so please "
+            "try again. If it keeps happening, the file may be too large for Yoto."
         )
 
     def _upload_icon_best_effort(self, icon_path: Path) -> str | None:
