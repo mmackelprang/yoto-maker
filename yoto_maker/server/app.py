@@ -20,7 +20,7 @@ from .. import APP_NAME, __version__
 from .. import updater
 from ..audio.normalize import MAX_TRACK_SECONDS, AudioError, probe_audio, split_audio
 from ..config import get_config
-from ..images import make_device_icon, prepare_label_image, save_upload
+from ..images import crop_image, make_device_icon, prepare_label_image, save_source_image, save_upload
 from ..images.ai import AIUnavailableError, ai_available, generate_image
 from ..images.library import ensure_library, icon_path, list_icons
 from ..images.picture import ImageError
@@ -166,8 +166,7 @@ def _auto_apply_picture_if_absent() -> None:
     if not src:
         return
     try:
-        draft.picture_path = prepare_label_image(src, get_config().work_dir, name="card_picture")
-        draft.picture_source = "auto"
+        _set_picture(src, "auto")
     except Exception:
         pass  # a bad thumbnail must never block adding a track
 
@@ -316,23 +315,35 @@ async def set_card_name(body: CardNameBody) -> dict:
     return {"ok": True}
 
 
+def _set_picture(src_path: Path, source_kind: str) -> None:
+    """Store a normalized editable source + a prepared display picture."""
+    draft = get_draft()
+    cfg = get_config()
+    draft.picture_source_path = save_source_image(src_path, cfg.work_dir)
+    draft.picture_path = prepare_label_image(draft.picture_source_path, cfg.work_dir, name="card_picture")
+    draft.picture_source = source_kind
+
+
 @app.post("/api/picture/auto")
 async def picture_auto() -> dict:
     draft = get_draft()
     src = draft.first_suggested_image()
     if not src:
         raise ImageError("None of your audio came with a picture. Upload one or pick from the icon library.")
-    draft.picture_path = prepare_label_image(src, get_config().work_dir, name="card_picture")
-    draft.picture_source = "auto"
+    _set_picture(src, "auto")
     return {"ok": True, "picture_url": "/api/picture.png"}
 
 
 @app.post("/api/picture/upload")
 async def picture_upload(file: UploadFile) -> dict:
-    draft = get_draft()
+    cfg = get_config()
     data = await file.read()
-    draft.picture_path = save_upload(data, get_config().work_dir, name="card_picture")
-    draft.picture_source = "upload"
+    raw = cfg.work_dir / "picture_upload_raw"
+    raw.write_bytes(data)
+    try:
+        _set_picture(raw, "upload")
+    finally:
+        raw.unlink(missing_ok=True)
     return {"ok": True, "picture_url": "/api/picture.png"}
 
 
@@ -343,12 +354,10 @@ async def picture_library(body: IconBody) -> dict:
     p = icon_path(body.icon_id)
     if not p:
         raise HTTPException(400, "Unknown icon")
-    draft = get_draft()
     # Upscale the 16x16 icon with nearest-neighbor for crisp pixel-art on the label.
-    big = get_config().work_dir / "card_picture_src.png"
+    big = get_config().work_dir / "library_src.png"
     Image.open(p).resize((640, 640), Image.NEAREST).save(big)
-    draft.picture_path = prepare_label_image(big, get_config().work_dir, name="card_picture")
-    draft.picture_source = "library"
+    _set_picture(big, "library")
     return {"ok": True, "picture_url": "/api/picture.png"}
 
 
@@ -360,16 +369,35 @@ class AIBody(BaseModel):
 async def picture_ai(body: AIBody) -> dict:
     if not ai_available():
         raise AIUnavailableError("AI pictures aren't turned on. Use a YouTube picture, upload one, or pick an icon.")
-    draft = get_draft()
 
     # generate_image() uses a synchronous, up-to-90s HTTP call. Run it off the
     # event loop so the whole server doesn't freeze while a picture is drawn.
-    def _do() -> Path:
-        img = generate_image(body.prompt.strip(), get_config().work_dir, name="card_picture_src")
-        return prepare_label_image(img, get_config().work_dir, name="card_picture")
+    def _do() -> None:
+        img = generate_image(body.prompt.strip(), get_config().work_dir, name="ai_src")
+        _set_picture(img, "ai")
 
-    draft.picture_path = await run_in_threadpool(_do)
-    draft.picture_source = "ai"
+    await run_in_threadpool(_do)
+    return {"ok": True, "picture_url": "/api/picture.png"}
+
+
+class CropBody(BaseModel):
+    x: float
+    y: float
+    w: float
+    h: float
+
+
+@app.post("/api/picture/crop")
+async def picture_crop(body: CropBody) -> dict:
+    draft = get_draft()
+    if not draft.picture_source_path or not Path(draft.picture_source_path).exists():
+        raise ImageError("There's no picture to adjust yet.")
+    draft.picture_path = crop_image(
+        draft.picture_source_path,
+        (int(body.x), int(body.y), int(body.w), int(body.h)),
+        get_config().work_dir,
+        name="card_picture",
+    )
     return {"ok": True, "picture_url": "/api/picture.png"}
 
 
@@ -379,6 +407,14 @@ async def get_picture():
     if not draft.picture_path or not Path(draft.picture_path).exists():
         raise HTTPException(404, "No picture yet")
     return FileResponse(draft.picture_path, media_type="image/png")
+
+
+@app.get("/api/picture/source.png")
+async def get_picture_source():
+    draft = get_draft()
+    if not draft.picture_source_path or not Path(draft.picture_source_path).exists():
+        raise HTTPException(404, "No source picture")
+    return FileResponse(draft.picture_source_path, media_type="image/png")
 
 
 # --------------------------------------------------------------------------- #

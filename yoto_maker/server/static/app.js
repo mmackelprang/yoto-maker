@@ -163,6 +163,101 @@ async function refreshDraft() {
   $("#cardName").value = draft.card_name || "";
   renderTracks(draft.tracks);
   renderPicture(draft.has_picture ? draft.picture_url + "?t=" + Date.now() : null);
+  show($("#adjustPic"), !!(draft.has_picture && draft.has_source));
+}
+
+// ---- picture crop editor (pan + zoom) -------------------------------------
+function openCropEditor() {
+  const V = 300; // square viewport size in CSS px
+  const overlay = document.createElement("div");
+  overlay.className = "overlay";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:360px">
+      <h3 style="margin:0 0 4px">Adjust the picture</h3>
+      <p class="tiny" style="margin-top:0">Drag to move it around, and use the slider to zoom.</p>
+      <div id="cropView" style="width:${V}px;height:${V}px;max-width:100%;margin:0 auto;overflow:hidden;
+        position:relative;border-radius:12px;background:#eee;cursor:grab;touch-action:none">
+        <img id="cropImg" alt="" style="position:absolute;left:0;top:0;-webkit-user-drag:none;user-select:none" />
+      </div>
+      <div class="row" style="align-items:center;gap:10px;margin-top:12px">
+        <span class="tiny">🔍</span>
+        <input id="cropZoom" type="range" min="1" max="4" step="0.02" value="1" style="flex:1;accent-color:var(--accent)" />
+      </div>
+      <div id="cropError" class="msg-box err hidden"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+        <button class="btn ghost" id="cropCancel">Cancel</button>
+        <button class="btn primary" id="cropApply">Apply</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const view = overlay.querySelector("#cropView");
+  const img = overlay.querySelector("#cropImg");
+  const zoom = overlay.querySelector("#cropZoom");
+  let W = 0, H = 0, base = 1, scale = 1, tx = 0, ty = 0;
+
+  const clamp = () => {
+    tx = Math.min(0, Math.max(V - W * scale, tx));
+    ty = Math.min(0, Math.max(V - H * scale, ty));
+  };
+  const render = () => {
+    img.style.width = W * scale + "px";
+    img.style.height = H * scale + "px";
+    img.style.left = tx + "px";
+    img.style.top = ty + "px";
+  };
+  img.onload = () => {
+    W = img.naturalWidth; H = img.naturalHeight;
+    base = V / Math.min(W, H);          // zoom=1 → image covers the square
+    scale = base;
+    tx = (V - W * scale) / 2; ty = (V - H * scale) / 2;
+    clamp(); render();
+  };
+  img.src = "/api/picture/source.png?t=" + Date.now();
+
+  zoom.addEventListener("input", () => {
+    const cx = (V / 2 - tx) / scale, cy = (V / 2 - ty) / scale;  // keep center fixed
+    scale = base * parseFloat(zoom.value);
+    tx = V / 2 - cx * scale; ty = V / 2 - cy * scale;
+    clamp(); render();
+  });
+
+  const pt = (e) => {
+    const t = e.touches ? e.touches[0] : e;
+    const r = view.getBoundingClientRect();
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  };
+  let dragging = false, ox = 0, oy = 0;
+  const start = (e) => { dragging = true; const p = pt(e); ox = p.x - tx; oy = p.y - ty; view.style.cursor = "grabbing"; };
+  const move = (e) => { if (!dragging) return; const p = pt(e); tx = p.x - ox; ty = p.y - oy; clamp(); render(); e.preventDefault(); };
+  const end = () => { dragging = false; view.style.cursor = "grab"; };
+  view.addEventListener("mousedown", start);
+  window.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", end);
+  view.addEventListener("touchstart", start);
+  view.addEventListener("touchmove", move, { passive: false });
+  view.addEventListener("touchend", end);
+
+  const close = () => {
+    window.removeEventListener("mousemove", move);
+    window.removeEventListener("mouseup", end);
+    document.body.removeChild(overlay);
+  };
+  overlay.querySelector("#cropCancel").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector("#cropApply").addEventListener("click", async () => {
+    const x = -tx / scale, y = -ty / scale, w = V / scale, h = V / scale;
+    try {
+      await api("/api/picture/crop", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ x, y, w, h }),
+      });
+      close();
+      await refreshDraft();
+    } catch (e) {
+      showError(overlay.querySelector("#cropError"), e.message);
+    }
+  });
 }
 
 function renderTracks(tracks) {
@@ -438,6 +533,7 @@ function wire() {
     tab.classList.add("active");
     $$(".tabpanel").forEach((p) => show(p, p.dataset.panel === tab.dataset.tab));
   }));
+  $("#adjustPic").addEventListener("click", openCropEditor);
   $("#picAuto").addEventListener("click", () => setPicture(() => api("/api/picture/auto", { method: "POST" })));
   $("#picUploadBtn").addEventListener("click", () => $("#picUploadInput").click());
   $("#picUploadInput").addEventListener("change", (e) => {
