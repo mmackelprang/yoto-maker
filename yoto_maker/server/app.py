@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from .. import APP_NAME, __version__
+from .. import updater
 from ..audio.normalize import AudioError
 from ..config import get_config
 from ..images import make_device_icon, prepare_label_image, save_upload
@@ -76,6 +77,7 @@ FRIENDLY_ERRORS = (SourceError, YotoError, AudioError, ImageError, AIUnavailable
 @app.exception_handler(AudioError)
 @app.exception_handler(ImageError)
 @app.exception_handler(AIUnavailableError)
+@app.exception_handler(updater.UpdateError)
 async def _friendly_handler(_request, exc):  # noqa: ANN001
     return JSONResponse(status_code=400, content={"error": str(exc)})
 
@@ -101,6 +103,30 @@ async def status() -> dict:
         "ai_available": ai_available(),
         "remove_sponsors": bool(get_settings().get("remove_sponsors", True)),
     }
+
+
+@app.get("/api/update")
+async def update_check() -> dict:
+    return await run_in_threadpool(updater.check_for_update)
+
+
+@app.post("/api/update/apply")
+async def update_apply() -> dict:
+    info = await run_in_threadpool(updater.check_for_update)
+    if not info.get("can_self_update"):
+        raise updater.UpdateError("This version can't update itself. Please download the new one from the website.")
+    if not info.get("update_available") or not info.get("download_url"):
+        raise updater.UpdateError("No update is available right now.")
+
+    dl = info["download_url"]
+
+    def work(update):
+        update("download", 0, "Downloading the update…")
+        updater.apply_update(dl, progress=lambda p: update("download", p, f"Downloading the update… {p}%"))
+        return {"restarting": True}
+
+    job_id = get_jobs().start(work)
+    return {"job_id": job_id}
 
 
 class RemoveSponsorsBody(BaseModel):

@@ -1,9 +1,15 @@
-# Yoto Maker v0.1.3
+# Yoto Maker v0.1.4
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
 
-### 🐛 Fixed in v0.1.3
+### 🆕 New in v0.1.4
+- **Automatic updates.** When a newer version is out, the app shows a banner at
+  the top. Click **Update now** and it downloads the new version, closes itself,
+  swaps in the update, and reopens — no more "file is in use" errors from trying
+  to replace it by hand. (There's also a *What's new* link.)
+
+### Fixed in v0.1.3
 - **Some YouTube videos failed to download** (introduced in v0.1.1 with sponsor
   skipping). The sponsor-skipping step needs `ffprobe`, which wasn't bundled —
   now it is. This was intermittent (it depended on the audio format YouTube
