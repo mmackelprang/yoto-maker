@@ -19,6 +19,21 @@
   </header>
 
   <main>
+    <!-- Update banner (only if a newer version exists) -->
+    <div id="updateBanner" class="update-banner hidden">
+      <div class="update-row">
+        <span id="updateText">A new version is available.</span>
+        <span class="update-actions" id="updateActions">
+          <button id="updateNow" class="btn small">⬇️ Update now</button>
+          <a id="updateWhatsNew" class="tiny" target="_blank" rel="noopener">What's new</a>
+        </span>
+      </div>
+      <div id="updateProgress" class="progress hidden">
+        <div class="bar"><div id="updateBar"></div></div>
+        <div class="msg" id="updateMsg"></div>
+      </div>
+    </div>
+
     <!-- Tools warning (only if something is missing) -->
     <div id="toolsWarning" class="msg-box err hidden"></div>
 

@@ -50,6 +50,17 @@ header .logo { font-size: 30px; }
 /* Layout */
 main { max-width: 720px; margin: 0 auto; padding: 24px 18px 80px; }
 
+/* Update banner */
+.update-banner {
+  background: linear-gradient(120deg, #efeafb, #e6ddfa);
+  border: 1.5px solid #d3c6f2; border-radius: 14px;
+  padding: 14px 18px; margin-bottom: 18px; box-shadow: var(--shadow);
+}
+.update-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.update-row #updateText { font-weight: 600; color: var(--accent-dark); }
+.update-actions { display: flex; align-items: center; gap: 14px; }
+.btn.small { padding: 9px 15px; font-size: 15px; }
+
 .step {
   background: var(--card);
   border-radius: var(--radius);

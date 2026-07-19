@@ -45,6 +45,7 @@ async function pollJob(jobId, onProgress) {
 
 // ---- state ----------------------------------------------------------------
 let STATUS = null;
+let UPD = null;
 
 // ---- startup --------------------------------------------------------------
 async function init() {
@@ -66,6 +67,47 @@ async function init() {
   }
   await loadIcons();
   await refreshDraft();
+  checkUpdate();  // non-blocking
+}
+
+// ---- update banner --------------------------------------------------------
+async function checkUpdate() {
+  try {
+    UPD = await api("/api/update");
+  } catch (_) {
+    return;  // offline / no update info — stay quiet
+  }
+  if (!UPD || !UPD.update_available) return;
+  $("#updateText").textContent = `🎉 A new version (v${UPD.latest}) is available.`;
+  $("#updateWhatsNew").href = UPD.release_url;
+  $("#updateNow").textContent = UPD.can_self_update ? "⬇️ Update now" : "⬇️ Get the update";
+  show($("#updateBanner"), true);
+}
+
+async function doUpdate() {
+  // Running from source (or non-Windows): just open the download page.
+  if (!UPD || !UPD.can_self_update) {
+    window.open(UPD ? UPD.release_url : "https://github.com/mmackelprang/yoto-maker/releases/latest", "_blank");
+    return;
+  }
+  show($("#updateActions"), false);
+  show($("#updateProgress"), true);
+  $("#updateBar").style.width = "2%";
+  $("#updateMsg").textContent = "Starting…";
+  try {
+    const { job_id } = await api("/api/update/apply", { method: "POST" });
+    await pollJob(job_id, (p, m) => {
+      $("#updateBar").style.width = Math.max(2, p) + "%";
+      $("#updateMsg").textContent = m;
+    });
+    $("#updateBar").style.width = "100%";
+    $("#updateMsg").textContent =
+      "Updating… the app will close and reopen in a new window in a moment. You can close this tab.";
+  } catch (e) {
+    // The app exits mid-restart, so the last poll may fail — that's expected.
+    $("#updateMsg").textContent =
+      "Updating… the app will reopen in a new window shortly. You can close this tab.";
+  }
 }
 
 function renderStatus() {
@@ -397,6 +439,7 @@ function wire() {
     }));
   });
 
+  $("#updateNow").addEventListener("click", doUpdate);
   $("#clientIdSave").addEventListener("click", saveClientId);
   $("#advToggle").addEventListener("click", (e) => {
     e.preventDefault();
