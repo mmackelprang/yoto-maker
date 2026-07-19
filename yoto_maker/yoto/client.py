@@ -17,6 +17,7 @@ docs/SETUP-YOTO-CONNECTION.md).
 """
 from __future__ import annotations
 
+import logging
 import mimetypes
 import time
 from dataclasses import dataclass
@@ -28,6 +29,13 @@ import httpx
 from .. import config as config_mod
 from ..audio.normalize import AudioInfo, probe_audio
 from . import auth
+
+log = logging.getLogger("yoto_maker.yoto")
+
+# Uploading the audio can take minutes on a slow home connection, so the write
+# must NOT use the short default timeout (that caused 60s WriteTimeouts). Connect
+# and read stay bounded so a genuinely dead connection still fails cleanly.
+UPLOAD_TIMEOUT = httpx.Timeout(connect=30.0, read=180.0, write=None, pool=30.0)
 from .models import TrackMeta, build_content_payload
 
 ProgressCb = Callable[[str, int, int, str], None]
@@ -151,15 +159,18 @@ class YotoClient:
     def _put_audio(self, upload_url: str, audio_path: Path) -> None:
         audio_path = Path(audio_path)
         content_type = mimetypes.guess_type(str(audio_path))[0] or "audio/mpeg"
+        size = audio_path.stat().st_size if audio_path.exists() else 0
         try:
             with open(audio_path, "rb") as fh:
                 resp = self._client.put(
                     upload_url,
                     content=fh.read(),
                     headers={"Content-Type": content_type},
+                    timeout=UPLOAD_TIMEOUT,  # don't 60s-timeout a large/slow upload
                 )
             resp.raise_for_status()
         except Exception as exc:
+            log.warning("Yoto audio PUT failed (%s, %d bytes): %r", audio_path.name, size, exc)
             raise YotoError(_friendly_http(exc, "uploading the audio")) from exc
 
     def _poll_transcode(self, upload_id: str, *, attempts: int = 60, interval: float = 1.0) -> str:
@@ -195,18 +206,28 @@ class YotoClient:
         )
 
     def _upload_icon_best_effort(self, icon_path: Path) -> str | None:
-        """Upload a 16x16 icon; return 'yoto:#<id>' or None on any failure."""
+        """Upload a 16x16 icon; return 'yoto:#<mediaId>' or None on any failure.
+
+        Yoto's display-icon endpoint wants the **raw image bytes** as the body
+        (Content-Type image/png), NOT a multipart form — a multipart request is
+        rejected with 400 "A binary image file is required".
+        """
         try:
             with open(icon_path, "rb") as fh:
-                resp = self._client.post(
-                    f"{self._base}/media/displayIcons/user/me/upload",
-                    headers=self._headers(),
-                    files={"file": (Path(icon_path).name, fh.read(), "image/png")},
-                )
+                data = fh.read()
+            resp = self._client.post(
+                f"{self._base}/media/displayIcons/user/me/upload",
+                headers={**self._headers(), "Content-Type": "image/png"},
+                content=data,
+            )
             resp.raise_for_status()
             media_id = _dig(resp.json(), "mediaId", "displayIconId", "id")
-            return f"yoto:#{media_id}" if media_id else None
-        except Exception:
+            if media_id:
+                return f"yoto:#{media_id}"
+            log.warning("Icon upload returned no mediaId: %s", resp.text[:200])
+            return None
+        except Exception as exc:
+            log.warning("Icon upload failed (best-effort, continuing without icon): %r", exc)
             return None  # icons are a nice-to-have, never fail the card over one
 
     def _create_content(self, card_title: str, metas: list[TrackMeta]) -> CardResult:
@@ -252,4 +273,9 @@ def _friendly_http(exc: Exception, doing: str) -> str:
             return "That audio file is too big for Yoto (max 5 hours per card)."
         if 500 <= code < 600:
             return f"Yoto had a problem while {doing}. Please try again shortly."
+    if isinstance(exc, httpx.TimeoutException):
+        return (
+            f"The connection to Yoto timed out while {doing}. This usually means a slow "
+            "internet connection — please try again, ideally on a faster connection."
+        )
     return f"Something went wrong while {doing}. Please check your internet and try again."

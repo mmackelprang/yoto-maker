@@ -1,9 +1,23 @@
-# Yoto Maker v0.1.4
+# Yoto Maker v0.1.5
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
 
-### 🆕 New in v0.1.4
+### 🐛 Fixed in v0.1.5
+- **"Something went wrong while uploading the audio"** is fixed. The upload used
+  a 60-second limit that a larger file on a home connection could exceed — now
+  the upload isn't time-capped, so big files upload fine. (Verified end-to-end
+  against a real Yoto account.)
+- **The little on-screen (pixel) icons now attach to each track.** They were
+  being sent to Yoto in the wrong format and silently dropped; fixed.
+
+### 🆕 Also new in v0.1.5
+- **Automatic updates.** When the app is opened and a newer version exists, it
+  now updates itself automatically (downloads + restarts) — as long as you
+  haven't started a card yet. If you're mid-card, it waits and shows the
+  "Update now" banner instead so nothing is lost.
+
+### New in v0.1.4
 - **Automatic updates.** When a newer version is out, the app shows a banner at
   the top. Click **Update now** and it downloads the new version, closes itself,
   swaps in the update, and reopens — no more "file is in use" errors from trying
