@@ -82,6 +82,20 @@ async function checkUpdate() {
   $("#updateWhatsNew").href = UPD.release_url;
   $("#updateNow").textContent = UPD.can_self_update ? "⬇️ Update now" : "⬇️ Get the update";
   show($("#updateBanner"), true);
+
+  // Auto-update: if we can self-update, do it automatically on startup — but
+  // ONLY when the card is empty (so we never interrupt work in progress), and
+  // never twice for the same version (guards against a bad-release loop).
+  if (UPD.can_self_update && localStorage.getItem("autoUpdatedTo") !== UPD.latest) {
+    let draft = null;
+    try { draft = await api("/api/draft"); } catch (_) { /* ignore */ }
+    const idle = draft && (!draft.tracks || draft.tracks.length === 0);
+    if (idle) {
+      localStorage.setItem("autoUpdatedTo", UPD.latest);
+      $("#updateText").textContent = `⬇️ Updating to v${UPD.latest} automatically…`;
+      doUpdate();
+    }
+  }
 }
 
 async function doUpdate() {

@@ -45,10 +45,14 @@ class FakeClient:
         self.calls.append(("PUT", url, len(content or b"")))
         return FakeResponse({})
 
-    def post(self, url, json=None, files=None, headers=None, **k):
+    def post(self, url, json=None, files=None, headers=None, content=None, **k):
         self.calls.append(("POST", url, json))
         if url.endswith("/displayIcons/user/me/upload"):
-            return FakeResponse({"mediaId": "ICON1"})
+            # Yoto requires raw bytes, not multipart — record how we sent it.
+            self.icon_sent_content = content
+            self.icon_sent_files = files
+            self.icon_content_type = (headers or {}).get("Content-Type")
+            return FakeResponse({"displayIcon": {"mediaId": "ICON1"}})
         if url.endswith("/content"):
             self.last_content = json
             return FakeResponse({"cardId": "CARD123"})
@@ -85,6 +89,11 @@ def test_create_card_happy_path(sample_mp3, temp_config):
     chapters = fake.last_content["content"]["chapters"]
     assert chapters[0]["tracks"][0]["trackUrl"] == "yoto:#SHA123"
     assert chapters[0]["display"]["icon16x16"] == "yoto:#ICON1"
+    # icon must be sent as RAW BYTES (image/png), never multipart — Yoto rejects
+    # multipart with 400 "A binary image file is required".
+    assert fake.icon_sent_content is not None
+    assert fake.icon_sent_files is None
+    assert fake.icon_content_type == "image/png"
     # progress was reported and ended at 'done'
     assert events and events[-1][0] == "done"
 
