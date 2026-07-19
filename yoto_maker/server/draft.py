@@ -37,7 +37,8 @@ class Track:
 @dataclass
 class DraftCard:
     card_name: str = ""
-    picture_path: Path | None = None
+    picture_path: Path | None = None            # the prepared label image
+    picture_source_path: Path | None = None      # the original, for re-cropping
     picture_source: str = ""  # "auto" | "upload" | "library" | "ai"
     tracks: list[Track] = field(default_factory=list)
 
@@ -85,6 +86,7 @@ class DraftCard:
     def reset(self) -> None:
         self.card_name = ""
         self.picture_path = None
+        self.picture_source_path = None
         self.picture_source = ""
         self.tracks = []
 
@@ -93,6 +95,7 @@ class DraftCard:
         return {
             "card_name": self.card_name,
             "has_picture": self.picture_path is not None and Path(self.picture_path).exists(),
+            "has_source": self.picture_source_path is not None and Path(self.picture_source_path).exists(),
             "picture_source": self.picture_source,
             "picture_url": "/api/picture.png" if self.picture_path else None,
             "tracks": [t.view() for t in self.tracks],

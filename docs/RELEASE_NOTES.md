@@ -1,9 +1,15 @@
-# Yoto Maker v0.1.6
+# Yoto Maker v0.1.7
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
 
-### 🐛 Fixed in v0.1.6
+### 🆕 New in v0.1.7
+- **Adjust the picture.** After a picture is set, click **✏️ Adjust** to **drag
+  it around and zoom** to frame exactly the part you want — great for getting the
+  best crop out of a wide thumbnail or photo. What you frame is used on both the
+  printed label and the Yoto screen.
+
+### Fixed in v0.1.6
 - **Long files (audiobooks) now work.** Yoto can't process a single track longer
   than ~60 minutes — a long file would get stuck "Preparing the audio…". The app
   now **automatically splits long audio into parts** (each a track on the card),

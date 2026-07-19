@@ -1,4 +1,4 @@
 """Yoto Maker — turn audio into a Yoto Make-Your-Own card + printable label."""
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 APP_NAME = "Yoto Maker"

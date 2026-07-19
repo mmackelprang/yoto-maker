@@ -161,6 +161,27 @@ def test_auto_apply_picture_skips_when_no_art_and_when_already_set(temp_config):
     assert draft.picture_source == "upload"
 
 
+def test_picture_crop_and_source(client):
+    # picking a library icon stores an editable source
+    assert client.post("/api/picture/library", json={"icon_id": "star"}).status_code == 200
+    draft = client.get("/api/draft").json()
+    assert draft["has_picture"] is True and draft["has_source"] is True
+    assert client.get("/api/picture/source.png").status_code == 200
+
+    # crop it (coords in source pixels) → picture updates, no error
+    r = client.post("/api/picture/crop", json={"x": 20, "y": 20, "w": 200, "h": 200})
+    assert r.status_code == 200
+    assert client.get("/api/picture.png").status_code == 200
+    # out-of-bounds box is clamped, not an error
+    assert client.post("/api/picture/crop", json={"x": -50, "y": 0, "w": 99999, "h": 99999}).status_code == 200
+
+
+def test_picture_crop_without_source_errors(client):
+    client.post("/api/draft/reset")
+    assert client.post("/api/picture/crop", json={"x": 0, "y": 0, "w": 10, "h": 10}).status_code == 400
+    assert client.get("/api/picture/source.png").status_code == 404
+
+
 def test_reset(client, sample_mp3):
     with open(sample_mp3, "rb") as fh:
         client.post("/api/tracks/file", files={"file": ("s.mp3", fh, "audio/mpeg")})
