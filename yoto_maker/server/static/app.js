@@ -193,16 +193,67 @@ function leaveSettings() {
 // find-in-page for free. This is a page, not a dialog — and the user may be
 // mid-way through pasting a Client ID, which a stray Escape must not discard.
 
-// Filled in by the two setting sections below.
+// ---- settings section registry --------------------------------------------
+// The only coordination the .setting primitive needs, and the one place the
+// "no coordination with other sections" promise (overview.md §4.4) used to
+// leak: openSettings(), closeSettings() and the Escape handler each hardcoded
+// every section by name, so adding setting #3 meant editing three shared
+// functions — and forgetting the Escape chain would silently ship a
+// confirmation that could not be dismissed with the keyboard.
+//
+// Now each section registers itself once, next to its own code:
+//
+//   registerSetting({
+//     onOpen,        // settings view shown — render current state here
+//     onClose,       // settings view left — tear down timers, clear messages
+//     confirm,       // this section's .setting-confirm element, if it has one
+//     closeConfirm,  // (restoreFocus) => void — dismisses `confirm`
+//   });
+//
+// Nothing below is keyed to a specific setting's id.
+const SETTINGS_SECTIONS = [];
+
+function registerSetting(section) { SETTINGS_SECTIONS.push(section); }
+
+// Dismisses whichever confirmation is open. Returns true if one was, so the
+// caller can tell "Escape closed something" from "Escape did nothing".
+function closeOpenConfirms(restoreFocus = true) {
+  let closed = false;
+  for (const s of SETTINGS_SECTIONS) {
+    if (s.confirm && !s.confirm.classList.contains("hidden")) {
+      s.closeConfirm(restoreFocus);
+      closed = true;
+    }
+  }
+  return closed;
+}
+
+// Catches the failure mode this registry exists to prevent: a confirmation
+// added to the markup but never registered. It would look and behave correctly
+// until a keyboard user pressed Escape, which is exactly the kind of gap that
+// ships unnoticed.
+function auditSettingConfirms() {
+  const registered = new Set(SETTINGS_SECTIONS.map((s) => s.confirm).filter(Boolean));
+  document.querySelectorAll("#settingsView .setting-confirm").forEach((el) => {
+    if (!registered.has(el)) {
+      console.warn(
+        `[settings] #${el.id || "(unnamed)"} is a .setting-confirm but was never ` +
+        `passed to registerSetting(); Escape will not dismiss it.`
+      );
+    }
+  });
+}
+
 function openSettings() {
-  renderClientId();
-  checkAccount();
+  for (const s of SETTINGS_SECTIONS) if (s.onOpen) s.onOpen();
 }
 
 function closeSettings() {
-  stopSignInPoll();
-  closeAccountConfirm();
-  closeClientIdConfirm();
+  for (const s of SETTINGS_SECTIONS) if (s.onClose) s.onClose();
+  // restoreFocus: false — focusing a confirmation's opener would be wrong and
+  // would also lose a race: applyRoute() restores focus to `returnFocusTo` (the
+  // control that opened Settings) immediately after this returns.
+  closeOpenConfirms(false);
 }
 
 // ---- setting 1: your Yoto account -----------------------------------------
@@ -445,15 +496,31 @@ function renderClientId() {
 
   $("#clientIdStatus").className = "setting-status " + s.cls;
   $("#clientIdStatusHead").textContent = s.head;
-  $("#clientIdStatusSub").textContent =
-    source === "saved" ? `Ends in ${masked.slice(-3)}. Saved on this computer only.` : s.sub;
+  // The last-3 fragment is dropped rather than rendered empty: a masked value
+  // the server didn't send would otherwise read "Ends in . Saved on this
+  // computer only." The remaining sentence is still true and still useful.
+  let sub = s.sub;
+  if (source === "saved") {
+    const last3 = masked.slice(-3);
+    sub = last3
+      ? `Ends in ${last3}. Saved on this computer only.`
+      : "Saved on this computer only.";
+  }
+  $("#clientIdStatusSub").textContent = sub;
 
   const isEnv = source === "env";
   // Disabled and explained, not hidden. Hiding the input would make the section
   // look broken to the person who came here specifically to change this.
-  $("#clientIdInput").disabled = isEnv;
+  const input = $("#clientIdInput");
+  input.disabled = isEnv;
   $("#clientIdSave").disabled = isEnv;
   show($("#clientIdEnvNote"), isEnv);
+  // Tie the note to the field it explains, so a screen-reader user hears *why*
+  // the field is disabled instead of just finding it dead. Set only while the
+  // note is visible — a description pointing at a display:none element is
+  // dropped from the accessibility tree anyway.
+  if (isEnv) input.setAttribute("aria-describedby", "clientIdEnvNote");
+  else input.removeAttribute("aria-describedby");
 
   const actions = $("#clientIdActions");
   if (actions) {
@@ -966,6 +1033,17 @@ function wire() {
     startSignIn();
   });
   $("#accountCancel").addEventListener("click", cancelSignIn);
+  registerSetting({
+    onOpen: checkAccount,
+    onClose: () => {
+      stopSignInPoll();
+      // Clear stale feedback: without this, leaving after a save and coming
+      // back leaves an old success message sitting under a fresh "Checking…".
+      clearError($("#accountMsg"));
+    },
+    confirm: $("#accountConfirm"),
+    closeConfirm: closeAccountConfirm,
+  });
 
   // Client ID setting.
   const trySave = () => {
@@ -984,6 +1062,16 @@ function wire() {
   $("#clientIdConfirmNo").addEventListener("click", () => closeClientIdConfirm());
   $("#clientIdConfirmYes").addEventListener("click", () =>
     submitClientId($("#clientIdConfirm").dataset.kind));
+  registerSetting({
+    onOpen: renderClientId,
+    onClose: () => clearError($("#clientIdMsg")),
+    confirm: $("#clientIdConfirm"),
+    closeConfirm: closeClientIdConfirm,
+  });
+
+  // Fails loudly in the console if a future .setting-confirm forgets to
+  // register. Runs after every section above has registered.
+  auditSettingConfirms();
   // About popup
   const about = $("#aboutOverlay");
   $("#aboutLink").addEventListener("click", (e) => { e.preventDefault(); show(about, true); });
@@ -994,9 +1082,10 @@ function wire() {
     show(about, false);
     if (!inSettings()) return;
     // Inside settings, Escape does exactly one thing: dismiss an open
-    // confirmation. Anywhere else on this surface it does nothing.
-    if (!$("#accountConfirm").classList.contains("hidden")) { closeAccountConfirm(); return; }
-    if (!$("#clientIdConfirm").classList.contains("hidden")) { closeClientIdConfirm(); return; }
+    // confirmation. Anywhere else on this surface it does nothing. Driven off
+    // the section registry, so a new setting's confirmation is covered the
+    // moment it registers — no edit here.
+    closeOpenConfirms();
   });
   $("#connectBtn").addEventListener("click", connectYoto);
   // The pill now always goes to Settings. It used to be a dead click whenever
