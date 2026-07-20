@@ -28,10 +28,13 @@ from ..labels import LabelTrack, generate_label_pdf
 from ..sources import AudioFileAdapter, SourceError, YouTubeAdapter
 from ..tools import check_tools
 from ..yoto import (
+    AuthError,
+    AuthNetworkError,
     NotConnectedError,
     TrackInput,
     YotoClient,
     YotoError,
+    check_connection,
     connection_status,
     finish_login,
     logout,
@@ -85,6 +88,18 @@ async def _friendly_handler(_request, exc):  # noqa: ANN001
 @app.exception_handler(NotConnectedError)
 async def _not_connected(_request, exc):  # noqa: ANN001
     return JSONResponse(status_code=409, content={"error": "Please connect your Yoto account first.", "need_connect": True})
+
+
+@app.exception_handler(AuthError)
+async def _auth_error(_request, exc):  # noqa: ANN001
+    """Sign-in failures were previously unhandled and surfaced as a bare 500.
+
+    ``reason`` lets the UI choose its own wording (see the copy handoff) instead
+    of echoing a message written for a different context. AuthNetworkError is a
+    subclass of AuthError, so this handler catches both.
+    """
+    reason = "offline" if isinstance(exc, AuthNetworkError) else "rejected"
+    return JSONResponse(status_code=400, content={"error": str(exc), "reason": reason})
 
 
 # --------------------------------------------------------------------------- #
@@ -462,19 +477,56 @@ class ClientIdBody(BaseModel):
 
 @app.post("/api/yoto/client-id")
 async def set_client_id(body: ClientIdBody) -> dict:
-    """One-time setup: save the Yoto Client ID (registered at dashboard.yoto.dev)."""
+    """Save a Client ID — and sign out, which is not optional.
+
+    Tokens are minted for one specific Client ID. get_access_token() refreshes
+    using the *currently resolved* ID alongside the *previously stored* refresh
+    token, and once the ID changes those two no longer belong to each other, so
+    Yoto rejects the refresh. Keeping the old sign-in would leave the header pill
+    saying "Yoto connected" while every upload failed — which is precisely the
+    broken state this settings screen exists to rescue people from.
+    """
     from ..settings import get_settings
 
     cid = body.client_id.strip()
     if not cid:
-        raise HTTPException(400, "Please paste a Client ID.")
+        raise HTTPException(400, "Please paste a Client ID first.")
     get_settings().set("yoto_client_id", cid)
-    return {"ok": True, "configured": True}
+    logout()
+    return {"ok": True, "yoto": connection_status()}
+
+
+@app.delete("/api/yoto/client-id")
+async def clear_client_id() -> dict:
+    """Forget a saved Client ID, falling back down the resolution chain.
+
+    Signs out for the same reason as saving one. Note the UI hides the control
+    that calls this whenever YOTO_CLIENT_ID is set, because in that case the
+    fallback is the env var rather than the built-in default and the button's
+    label would be untrue. This endpoint stays honest either way: it removes the
+    saved value and reports whatever the chain now resolves to.
+    """
+    from ..settings import get_settings
+
+    get_settings().delete("yoto_client_id")
+    logout()
+    return {"ok": True, "yoto": connection_status()}
 
 
 @app.get("/api/yoto/login")
 async def yoto_login() -> dict:
     return {"url": start_login()}
+
+
+@app.post("/api/yoto/check")
+async def yoto_check() -> dict:
+    """Actually ask Yoto whether the saved sign-in still works.
+
+    POST rather than GET because it performs a network round trip and may rotate
+    the stored sign-in — and because the origin guard only vets non-GET requests.
+    Run off the event loop: check_connection() uses blocking httpx.
+    """
+    return await run_in_threadpool(check_connection)
 
 
 @app.get("/yoto/callback", response_class=HTMLResponse)
