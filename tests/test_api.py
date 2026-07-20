@@ -330,3 +330,28 @@ def test_deleting_when_nothing_is_saved_is_harmless(client, monkeypatch):
     r = client.request("DELETE", "/api/yoto/client-id")
     assert r.status_code == 200
     assert r.json()["yoto"]["client_id_source"] == "builtin"
+
+
+def test_callback_renders_the_cancel_page_on_error(client, temp_config):
+    """A denied/cancelled sign-in renders the cancel page and never touches tokens.
+
+    This is the automated stand-in for a manual "press Cancel on Yoto's site"
+    step, which is unrunnable: Yoto's hosted sign-in is Auth0 universal login,
+    which exposes no Cancel/Deny control for a first-party client. The only
+    route to a consent screen is completing an authentication, so no agent or
+    human can reach the cancel path through the browser. The handler branches
+    purely on the ``error`` query param, so driving it directly is faithful.
+    """
+    r = client.get("/yoto/callback", params={"error": "access_denied"})
+    assert r.status_code == 200
+    assert "Sign-in was cancelled. You can close this tab and try again." in r.text
+    # The error branch returns before finish_login(), so no sign-in is written.
+    assert not temp_config.token_path.exists()
+
+
+def test_callback_error_branch_ignores_any_code(client, temp_config):
+    """``error`` wins over ``code`` — the handler must not try to redeem it."""
+    r = client.get("/yoto/callback", params={"error": "access_denied", "code": "ignored"})
+    assert r.status_code == 200
+    assert "Sign-in was cancelled." in r.text
+    assert not temp_config.token_path.exists()

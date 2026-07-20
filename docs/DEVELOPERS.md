@@ -43,6 +43,19 @@ python -m yoto_maker --no-tray --no-browser   # headless dev server on :8777
 python -m yoto_maker --check      # tool + connection self-check
 ```
 
+### Testing UI changes in a browser — clear the cache first
+
+The static assets under `yoto_maker/server/static/` are served **without cache-busting**, so a browser will reuse a
+stale `app.js` / `style.css` straight across a rebuild. This reliably produces *false* UI failures: a CSS custom
+property that reads empty, a control that behaves like its previous version, a focus ring that looks like the UA
+default.
+
+Before measuring anything in the browser, clear the cache and keep it disabled — `Network.clearBrowserCache` plus
+`Network.setCacheDisabled {cacheDisabled: true}` over CDP, or DevTools open with "Disable cache" ticked.
+
+**The tell is a size mismatch:** compare the byte count of the served asset against the file on disk. If they
+disagree, you are testing a build that no longer exists — clear the cache and re-run the check.
+
 ## Tests
 
 ```bash

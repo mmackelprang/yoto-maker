@@ -45,6 +45,8 @@ The designer caught three correctness bugs (`overview.md` §7.3, §7.4, §7.5) a
 Two strings in `copy.md` §3 have no trigger the frontend can observe in this PR. **Do not invent one.**
 
 - **"Sign-in was cancelled. You can try again whenever you're ready."** — cancellation happens on Yoto's site and lands on `/yoto/callback?error=…`, which renders its own page *in the other browser tab* and tells the user there. The Settings tab never learns about it; it simply times out after 3 minutes and shows the `timed_out` message, which is written to cover exactly this case. Making this reachable would mean adding server-side callback state, which is new surface the handoff does not specify. Recommend a follow-up, not this PR.
+
+  **The Yoto-side cancel cannot be exercised through a browser at all — do not re-add a manual step for it.** UAT confirmed this against live Yoto on a freed port: Yoto's hosted sign-in is Auth0 universal login, which exposes **no Cancel/Deny control** for a first-party client. Exhaustive DOM enumeration of the sign-in page found zero cancel affordances, and the only route to a consent screen is *completing* an authentication. So neither an agent nor a human can reach `?error=access_denied` by clicking. The branch is covered instead by two server-side tests — `test_callback_renders_the_cancel_page_on_error` and `test_callback_error_branch_ignores_any_code` in `tests/test_api.py` — which is faithful coverage because `app.py`'s `/yoto/callback` handler branches purely on the `error` param and returns before `finish_login()` ever runs.
 - **"App unreachable"** — `copy.md` explicitly says to inherit the existing `api()` message from `app.js:15-17` unchanged, which the code already does. Nothing to build.
 
 ---
@@ -1997,6 +1999,20 @@ Run from a clean checkout of the branch. Start the app with
 
 Back both up before you start, and restore them at the end.
 
+> **Clear the browser cache before any UAT on this repo — or you will measure a build that isn't there.**
+> The static assets are served without cache-busting, so a browser will happily reuse a stale `app.js`/`style.css`
+> across a rebuild. During PR #10's UAT this produced **three false failures** in a row — `--focus-ring` reading
+> empty, the header pill showing a UA-default dark outline, and the pill triggering sign-in instead of routing to
+> Settings — all three of which were artifacts of a pre-fix cached bundle, not real defects.
+>
+> - **Before you measure anything:** issue `Network.clearBrowserCache` and `Network.setCacheDisabled {cacheDisabled: true}`
+>   over CDP (or hard-reload with DevTools open and "Disable cache" ticked).
+> - **The tell is a size mismatch.** Compare the served asset's byte count against the file on disk — the stale run
+>   served `app.js` at 22706 bytes while disk had 43353. If those two disagree, every measurement you just took is
+>   suspect; clear the cache and start the section over.
+> - Treat a surprising CSS/JS failure as a cache miss until proven otherwise, *especially* a custom property that
+>   reads empty or a control that behaves like its previous version.
+
 ### A. The everyday path is not heavier
 
 1. Load `/` with no hash. **Expect:** four numbered steps, exactly as before. No tab strip, no fifth step, no new banner.
@@ -2050,6 +2066,14 @@ Requires a real Yoto sign-in.
 
 ### G. The account setting — `not_connected` and signing in
 
+> **Two different "cancels" live in this section — do not conflate them.**
+> - **The app's own `Cancel` button** (`#accountCancel`, steps 35-36) is in the *same tab* as the poller, so it
+>   stops polling **immediately**: `cancelSignIn()` → `stopSignInPoll()` → `clearInterval`. That is the poller-leak
+>   fix, and steps 35-36 assert it correctly.
+> - **Cancelling on Yoto's site** cannot stop polling, because the Settings tab has no way to observe the other tab.
+>   That path degrades to the 3-minute timeout (steps 39-40) — and, per § "Known copy gaps", it is not reachable
+>   through a browser anyway, so there is no manual step for it.
+
 31. Stop the app, delete `yoto_token.json`, restart, open Settings. **Expect:** a grey dot, "Not connected yet", "Connect your Yoto account to send cards to it.", and the button reads `🔗 Connect my Yoto account` — word-for-word identical to step 3's button.
 32. Click it. **Expect: no confirmation** — there is nothing to forget, so it goes straight to Yoto's sign-in in a new tab.
 33. **Expect** the Settings tab shows an **amber** dot, "Waiting for you to sign in…", a disabled `Waiting for Yoto…` button, and a `Cancel` button beside it.
@@ -2060,6 +2084,13 @@ Requires a real Yoto sign-in.
 38. Block popups for `127.0.0.1` in the browser, then click the button. **Expect:** the section does **not** enter the waiting state; instead a blue message appears with a clickable "Open Yoto's sign-in page ↗" link that actually opens Yoto.
 39. Start a sign-in, leave it, and wait three minutes without completing it. **Expect:** the section returns to its previous state and shows the timeout message. Confirm in DevTools that polling has stopped.
 40. On the **card view** (step 3, not connected), press `🔗 Connect my Yoto account`, then close the Yoto tab without signing in. Watch Network for 30 seconds. **Expect: polling stops within three minutes and never runs forever** — the same leak, fixed in `connectYoto()` too.
+
+**Measured baseline for the timeout path (steps 39-40).** Because the tab that abandoned the sign-in cannot be
+observed, polling does **not** stop early here — it *continues* at a **2.00s cadence until the 3-minute deadline**,
+then stops. UAT measured the request count freeze at exactly **91 `/api/status` requests** (180s ÷ 2s = 90 intervals,
+plus the initial poll), held flat for **120 consecutive seconds** afterwards. If you see the count keep climbing past
+91, the deadline branch is broken; if you see it stop well short of 91, something cancelled the poll early and you are
+not testing the timeout path.
 
 ### H. The Client ID setting — `builtin`
 
