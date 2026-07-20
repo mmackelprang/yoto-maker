@@ -14,7 +14,7 @@ Status key: 📋 queued · 🚧 in flight · ⛔ blocked · ✅ shipped
 
 | # | Status | Item | Spec | Plan | Depends on | Notes |
 |---|--------|------|------|------|-----------|-------|
-| 1 | 📋 | **Configuration surface** — full-page Settings view built on the reusable `.setting` primitive, plus the three backend correctness fixes it depends on | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) | [`superpowers/plans/2026-07-20-configuration-surface.md`](superpowers/plans/2026-07-20-configuration-surface.md) | — | 12 tasks. **One PR — do not split.** Backend (Tasks 1-5) before frontend (Tasks 6-10). Branch `feat/configuration-surface`. |
+| 1 | 🚀 | **Configuration surface** — full-page Settings view built on the reusable `.setting` primitive, plus the three backend correctness fixes it depends on | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) | [`superpowers/plans/2026-07-20-configuration-surface.md`](superpowers/plans/2026-07-20-configuration-surface.md) | — | 12 tasks. **One PR — do not split.** Backend (Tasks 1-5) before frontend (Tasks 6-10). Branch `feat/configuration-surface`. In review — awaiting Tester + Polisher gates before merge. |
 
 ### Item 1 — briefing notes for Builder
 
