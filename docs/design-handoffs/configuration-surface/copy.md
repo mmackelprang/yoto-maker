@@ -19,10 +19,82 @@ Typographic apostrophes (`'`) throughout, matching existing markup
 | Header pill, connected | `Yoto connected` *(unchanged)* |
 | Header pill, not connected | `Yoto not connected` *(unchanged)* |
 | Header pill, checking | `Checking…` *(unchanged)* |
-| Header pill `aria-label` | `Yoto connection settings` |
+| Header pill `aria-label` | ~~`Yoto connection settings`~~ — **removed 2026-07-20, see §1a** |
 | Header pill `title` | `Yoto connection settings` |
 | Footer link | `Settings` |
-| Step 3 advanced link (replaces `#advToggle` copy) | `⚙️ Yoto connection settings` |
+| Step 3 link (`#advToggle`) | **state-dependent as of 2026-07-20 — see §1a** |
+
+## 1a. Entry points — amendment (2026-07-20)
+
+`overview.md` §12. Ships in v0.1.10.
+
+### The step 3 link (`#advToggle`) — now state-dependent, and always rendered
+
+`#advRow` moves out of `#connectRow` and becomes the last child of step 3, so
+the link exists in **both** connection states. Its text is set by
+`renderStatus()` from `STATUS.yoto.connected`:
+
+| State | String, verbatim |
+| --- | --- |
+| connected | `⚙️ Connect a different Yoto account` |
+| not connected | `⚙️ Yoto connection settings` |
+
+**Why the connected variant names the account, not the destination.** The user
+who reported this was searching, in his own words, for *"the option to connect to
+a different account."* No string on the connected screen contained *account*,
+*different* or *change* — the pill names a **state**, the footer names a
+**category**, and this link named a **destination**. A link is only findable by
+scanning if it contains a word the scanner is holding, and none of the three did.
+Full argument in `overview.md` §12.2–12.3.
+
+**Why not one string for both states.** `a different` is **false** before there
+is a current one — she hasn't connected any account yet — and in that state the
+big `🔗 Connect my Yoto account` button directly above already owns that intent.
+This is the same rule already applied in §4 to the Client ID label
+(`Paste a Client ID` / `Paste a different Client ID`), for the same reason, in the
+`884fa6a` amendment. It is not a new pattern.
+
+**Why `Connect` rather than v0.1.8's `Use`.** Closer to the words the user
+actually used, and it is the app's established verb — `#connectBtn`, the settings
+view's `🔗 Connect my Yoto account` (§3). "Use" was never wrong; "Connect" simply
+matches better.
+
+**The `⚙️` stays on both variants.** The glyph is the constant and the words are
+the variable, so a user who found the control in one state can recognise it in the
+other. If the icon tracked the copy there would be nothing stable to recognise.
+
+**`(advanced)` is not restored.** PR #10 dropped it correctly: it labelled a link
+that revealed a Client ID input inline, which this link no longer does, and it is
+a discouragement marker pointed at exactly the user we now need to click. The
+Client ID section carries its own `(advanced)` in §4 where it is still true.
+
+### Strings retired by this amendment
+
+| Location | Old string | Fate |
+| --- | --- | --- |
+| `index.html:129` | `⚙️ Yoto connection settings` *(as the only variant)* | Kept, but now the **not-connected** variant only |
+| `index.html:16` | `aria-label="Yoto connection settings"` | **Deleted.** It overrode the visible text as the accessible name, so the name did not contain the label — WCAG 2.1 AA **2.5.3 Label in Name**. With the attribute gone, the pill's text content becomes the name and `title` becomes the description: *"Yoto connected, button, Yoto connection settings."* `overview.md` §12.6. |
+
+### The pill's chevron carries no string
+
+The trailing `›` (`tokens.md` §2b) is `aria-hidden="true"` and has no accessible
+text. It is an affordance mark, not a label — the pill's own text names the state
+and `title` names the destination, so there is nothing left for it to say. Do not
+give it an `aria-label`; anything it said would duplicate one of those two.
+
+**Explicitly not a gear.** An icon is a string (§4a makes the same argument about
+👁). `⚙️` on the pill would say *settings* — the category vocabulary that already
+failed to match above — and to a reader who has not learned the convention it says
+*machinery, technical, don't touch*, which repels the `INSTALL-FOR-MOM.md` user.
+`›` claims only that there is somewhere to go, which is true and is the one thing
+that was missing. Full reasoning in `overview.md` §12.6.
+
+### Strings explicitly unchanged by this amendment
+
+The pill's own text (`Yoto connected` / `Yoto not connected` / `Checking…`), its
+`title`, and the footer `Settings` link. The pill reports state and must keep
+doing so; the footer's weakness is vocabulary, not visibility, and adding weight
+to it would be permanent chrome for a twice-ever surface (`overview.md` §12.7).
 
 ## 2. View chrome
 
@@ -319,7 +391,7 @@ to go, rather than leaving her to discover a scary red state on her own.
 | --- | --- | --- |
 | `index.html:126-127` | `Paste a Yoto Client ID to use your own Yoto app…` | Replaced by §4 description |
 | `index.html:130` | `Paste Yoto Client ID here` | Replaced by §4 placeholder |
-| `index.html:140` | `⚙️ Use a different Yoto account (advanced)` | Replaced by §1 step-3 link |
+| `index.html:140` | `⚙️ Use a different Yoto account (advanced)` | Replaced by §1 step-3 link — **and that was a mistake; see §1a.** The user later went looking for almost exactly this sentence. `(advanced)` stays retired, but the *account* vocabulary is restored in the connected-state variant. |
 
 ## 6. Strings explicitly unchanged
 

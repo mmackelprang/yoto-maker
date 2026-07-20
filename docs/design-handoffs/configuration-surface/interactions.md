@@ -9,8 +9,9 @@ Copy for every state is in [`copy.md`](copy.md).
 
 ### 1.1 Enter
 
-Triggered by: header pill click, footer `Settings` link, step 3's
-`⚙️ Yoto connection settings` link, or a `#settings` hash on load / `hashchange`.
+Triggered by: header pill click, footer `Settings` link, step 3's `⚙️` link
+(§1.4 — its text is state-dependent as of 2026-07-20), or a `#settings` hash on
+load / `hashchange`.
 
 1. Record the element that triggered it in a module-level `returnFocusTo`.
    (For a hash-driven entry with no opener, leave it `null`.)
@@ -50,6 +51,85 @@ Triggered by: `← Back to my card`, browser Back, or any hash change away from
 tab order, the accessibility tree, and browser find-in-page. No `inert`, no trap,
 no scrim. This is the main accessibility argument for the view swap over a
 modal — see `overview.md` §3.1.
+
+---
+
+### 1.4 The step-3 entry point — always rendered (amendment, 2026-07-20)
+
+Required by [`overview.md` §12.4](overview.md). This is the only behavioral
+change in that amendment; everything else is CSS, copy and one attribute.
+
+#### Markup
+
+`#advRow` moves **out of `#connectRow`** and becomes the **last child** of step
+3's `<section class="step">`, after `#sendDone`.
+
+```html
+<!-- ...#sendProgress, #sendError, #sendDone... -->
+<div id="advRow" class="tiny">
+  <a href="#settings" id="advToggle">⚙️ Connect a different Yoto account</a>
+</div>
+```
+
+Three structural notes, each load-bearing:
+
+1. **Last child, not before `#sendBtn`.** Ahead of the primary button it would
+   push `🚀 Send to Yoto` down and take a tab stop before it — a cost paid on
+   every card-making visit for a control used twice ever. Last child also means
+   its position never shifts as `#sendProgress` / `#sendError` / `#sendDone`
+   appear and disappear, so the user learns one location.
+2. **It lands directly beneath `#sendError` on a failed send.** That adjacency
+   is the follow-the-symptom path `overview.md` §5.1 claimed for the pill and
+   never had — the pill is at the top of the page, the error is at the bottom of
+   step 3, and the user's eyes are on the error.
+3. **`.tiny` moves to the wrapper; the anchor is left bare.** On the anchor,
+   `.tiny`'s `color: var(--muted)` (0-1-0) beat `a { color: var(--accent-dark) }`
+   (0-0-1), so the link rendered grey and read as a caption. On the wrapper it
+   sets only the 13px size, and the anchor takes accent purple by inheritance-free
+   direct rule — 7.20:1 on `--card`, underlined, obviously a link. **This is the
+   exact construction the footer's `#settingsLink` already uses**, and it adds no
+   CSS.
+
+#### Render rule
+
+One line in `renderStatus()`, beside the two `show()` calls already there:
+
+```
+#advToggle text  ←  connected ? "⚙️ Connect a different Yoto account"
+                              : "⚙️ Yoto connection settings"
+```
+
+Verbatim strings and their rationale in [`copy.md` §1a](copy.md). `#advRow`
+itself is **never** hidden — no `show()` call, no `.hidden`. The whole point of
+the amendment is that this control does not disappear.
+
+Note that `renderStatus()` currently also does `show($("#connectRow"), !connected)`.
+After the move, that call no longer reaches `#advRow`, which is the fix.
+
+#### Behavior
+
+Unchanged from today: it is an `<a href="#settings">` whose click handler calls
+`gotoSettings(e.currentTarget)` (§1.1). It is therefore already an entry point in
+the sense §1.1 defines — including recording itself as `returnFocusTo`, so
+`← Back to my card` returns the user to the link she came from, at the bottom of
+step 3, exactly where she left. That return behavior is worth stating because it
+is now reachable in the connected state for the first time.
+
+#### Tab order (card view)
+
+Step 3's order becomes, by state:
+
+```
+connected      →  #sendBtn  →  #advToggle
+not connected  →  #connectBtn  →  #sendBtn (disabled, skipped)  →  #advToggle
+```
+
+In both states the primary action comes first and the link is the last stop in
+step 3. No `tabindex` anywhere; plain document order.
+
+`#advToggle` is an `<a>` on `--card` (inside `.step`), which is **row 1** of
+`tokens.md` §4's focus-ring table — `--accent` at 4.82:1, already certified. No
+new row and no `--focus-ring` override.
 
 ---
 
@@ -478,6 +558,14 @@ The header is `display: flex; justify-content: space-between`, holding the brand
 and the pill. **This spec adds no new header controls** — the pill is repurposed,
 not supplemented — so header crowding is unchanged from today. This was a factor
 in choosing the pill over a separate gear button.
+
+**Amendment 2026-07-20.** Still no new header *control*, but the pill gains a
+trailing `›` (`tokens.md` §2b) — roughly 16px including the pill's existing gap,
+added inside the control rather than beside it. The claim above is therefore
+weakened, not void: **confirm at 320px** that `🎵 Yoto Maker` and
+`● Yoto not connected ›` (the longest combination) neither wrap nor overflow. If
+they do, the escalation is dropping the chevron's leading gap — never a second
+header row, and never moving the brand.
 
 ### 5.2 Confirmation at narrow widths
 

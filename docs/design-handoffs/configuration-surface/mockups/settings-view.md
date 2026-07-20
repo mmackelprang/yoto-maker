@@ -10,7 +10,7 @@ indicative; the authoritative geometry is the existing `styles.css` plus
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
-│  🎵  Yoto Maker                            ( ● Yoto connected )   │  ← existing
+│  🎵  Yoto Maker                          ( ● Yoto connected › )   │  ← existing
 └───────────────────────────────────────────────────────────────────┘        │
                                                                              │
                         clicking the pill — in any state — goes to Settings ─┘
@@ -18,6 +18,29 @@ indicative; the authoritative geometry is the existing `styles.css` plus
 
 No new header control. The pill already occupied this space and, when connected,
 previously did nothing on click.
+
+**Amended 2026-07-20** (`../overview.md` §12.5–12.6, `../tokens.md` §2b). Two
+changes to the pill, both inside the existing control:
+
+```
+  before:  ( ● Yoto connected )     fill rgba(255,255,255,0.18)  — label 2.56:1 ❌
+   after:  ( ● Yoto connected › )   fill rgba(36,29,56,0.28)     — label 4.97:1 ✅
+                              ▲
+                              └─ affordance mark only; aria-hidden.
+                                 NOT a gear — ⚙️ would say "settings",
+                                 which is the vocabulary that already
+                                 failed to match. › says only "there is
+                                 somewhere to go", which is the true and
+                                 missing signal.
+```
+
+Inverting the fill from white-over-gradient to ink-over-gradient does two jobs at
+once: it fixes the AA failure, and it turns a translucent *wash* into a *filled*
+shape with a hard edge — which is what makes a pill read as pressable rather than
+printed.
+
+**The pill is no longer the only connected-state entry point.** §7 below is now
+the one that carries the words.
 
 ---
 
@@ -213,6 +236,75 @@ implementation polls forever with no way out.
 
 Step 3 ends up **shorter** than it is today. The everyday path gets lighter, not
 heavier, which is the constraint this placement was chosen to satisfy.
+
+### 7a. Step 3, as amended 2026-07-20
+
+The shipped version above has a defect: `#advRow` sits **inside** `#connectRow`,
+which is `.hidden` whenever connected — so the link drawn at the arrow simply
+does not exist in the state where "use a different account" is a coherent thing
+to want. `../overview.md` §12.4 moves it out and to the end of the step.
+
+**Connected — the everyday state, and the one that failed:**
+
+```
+   ┌─────────────────────────────────────────────────────────────┐
+   │ (3) Send it to your Yoto                                    │
+   │ This uploads your card to your Yoto account. You only sign  │
+   │ in the first time.                                          │
+   │                                                             │
+   │ ┌─────────────────────────────────────────────────────────┐ │
+   │ │              🚀 Send to Yoto                            │ │
+   │ └─────────────────────────────────────────────────────────┘ │
+   │                                                             │
+   │ ⚙️ Connect a different Yoto account                          │  ← 13px,
+   └─────────────────────────────────────────────────────────────┘    accent
+                                                                      purple,
+        The whole fix, in one line of 13px text. It contains the       underlined
+        words the user was scanning for — account, different — which
+        no string on the connected screen previously did.
+```
+
+**Not connected — unchanged in substance, link relabelled and relocated:**
+
+```
+   ┌─────────────────────────────────────────────────────────────┐
+   │ (3) Send it to your Yoto                                    │
+   │ …hint…                                                      │
+   │ ┌─────────────────────────────────────────────────────────┐ │
+   │ │ You'll need to connect your Yoto account first.          │ │
+   │ └─────────────────────────────────────────────────────────┘ │
+   │ ┌─────────────────────────────────────────────────────────┐ │
+   │ │           🔗 Connect my Yoto account                    │ │
+   │ └─────────────────────────────────────────────────────────┘ │
+   │ ┌─────────────────────────────────────────────────────────┐ │
+   │ │              🚀 Send to Yoto        (disabled)          │ │
+   │ └─────────────────────────────────────────────────────────┘ │
+   │                                                             │
+   │ ⚙️ Yoto connection settings                                 │  ← "a different"
+   └─────────────────────────────────────────────────────────────┘    would be a
+                                                                      lie here —
+                                                                      there is no
+                                                                      current one
+```
+
+**After a failed send — the adjacency the pill never had:**
+
+```
+   │ ┌─────────────────────────────────────────────────────────┐ │
+   │ │ ⚠ …send error…                             .msg-box err │ │
+   │ └─────────────────────────────────────────────────────────┘ │
+   │ ⚙️ Connect a different Yoto account                          │  ← directly
+   └─────────────────────────────────────────────────────────────┘    beneath the
+                                                                      symptom
+```
+
+Placing `#advRow` **last** — after `#sendDone`, not before `#sendBtn` — is what
+buys this. It keeps the primary action first in reading and tab order, keeps the
+link's position fixed as the transient boxes above it come and go, and lands it
+under the error when there is one.
+
+**Net weight versus the shipped v0.1.9 step 3: one 13px line.** Versus v0.1.8,
+step 3 is still down a text input, an explainer box and an error div.
 
 ---
 

@@ -41,7 +41,7 @@ day because these two states shared one word.
 | 2 | 📋 | **`--port` flag doesn't move the OAuth redirect URI** — the flag changes the listening port but not `cfg.port`, so Yoto sign-in always redirects to 8777 | _needs Planner pass_ | _needs Planner pass_ | — | Pre-existing in v0.1.8 and documented in `--help`. Small fix, but it touches the OAuth redirect — wants a plan before someone changes it blind. |
 | 3 | 📋 | **`test_youtube_sponsorblock_best_effort_retry` fails without the optional `yt_dlp` dep** — wants a `pytest.importorskip` guard | _needs Planner pass_ | _needs Planner pass_ | — | One-line test fix. The only red in an otherwise green suite, so it costs every future Builder a moment of "is this me?". |
 | 4 | 📋 | **The crop editor modal has no focus trap** — Tab escapes the modal into the page behind it | _needs Planner pass_ | _needs Planner pass_ | — | MEDIUM. Pre-existing from the v0.1.7 crop editor; **not** a PR #10 regression. Observed Tab order below. |
-| 5 | 📋 | **`#yotoPill` white label fails WCAG AA at rest** — 2.56:1 against the gradient's light end, needs 4.5:1 | _needs Designer pass_ | _needs Planner pass_ | — | Pre-existing and independent of PR #10, but PR #10 promotes this control to primary entry point. **Needs a Designer pass, not a Builder hex pick.** |
+| 5 | ⛔ | ~~**`#yotoPill` white label fails WCAG AA at rest**~~ — **ABSORBED 2026-07-20** into the Settings-discoverability spec | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12.5–12.6 + `tokens.md` §2b | folds into the discoverability PR | — | **Blocked on purpose — do not ship this row on its own.** The Designer pass it was waiting for is done, and concluded the contrast defect and the connected-state discoverability defect are **one defect measured two ways**: the fix for both is a single fill inversion (`rgba(255,255,255,0.18)` → `rgba(36,29,56,0.28)`, 2.56:1 → 4.97:1). Shipping contrast separately would leave the discoverability fix's primary entry point illegible, and shipping discoverability separately would contradict this row. Retire the row when the discoverability PR merges. |
 | 6 | 📋 | **`favicon.ico` 404 on the callback page** | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic. Logged so it isn't rediscovered; safe to leave sitting. |
 | 8 | 📋 | **Browsers serve a stale `app.js`/`styles.css` after auto-update** — new HTML runs against old JavaScript, which is what made Settings unreachable on v0.1.9 | brief in plan §The defect | [`superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`](superpowers/plans/2026-07-20-stale-asset-cache-after-update.md) | — | **HIGH — ships in v0.1.10.** Shipping bug, silent and partial, plausibly degrading every release since v0.1.5. 7 tasks. **This PR owns the `0.1.10` version bump** — Designer's Settings-discoverability PR must not also bump. |
 
@@ -137,6 +137,37 @@ day because these two states shared one word.
   drop white entirely). That is a visual-language decision with knock-on effects
   for the pill's connected/not-connected states — not a Builder picking a darker
   hex in isolation. Route to Designer before Planner writes the plan.
+
+**Designer pass complete, 2026-07-20 — and it took the row with it.**
+
+- **Outcome: absorbed, not scheduled.** Specified in
+  `design-handoffs/configuration-surface/overview.md` §12.5–12.6 and
+  `tokens.md` §2b, as part of the connected-state Settings-discoverability fix.
+- **Why absorbed rather than left as its own row.** A label at 2.56:1 is not only
+  an accessibility finding — it is *literally harder to see*, and a control whose
+  label is hard to see does not get scanned. The discoverability spec had to
+  respecify this same control anyway; leaving a row reading *needs Designer pass*
+  against a control that now has one would put the queue in contradiction with a
+  shipped spec.
+- **The chosen fix, for the record.** Not the gradient stop (constrained by
+  `tokens.md` §2a's focus-ring invariant, and it is the app's visual signature)
+  and not the label (abandons `header { color: #fff }`). **Invert the fill**:
+  `rgba(255,255,255,0.18)` → `rgba(36,29,56,0.28)`. The pill was failing because
+  its fill was *white over an already-light gradient* — it lightened the
+  background behind white text. Worst-case label contrast **2.56:1 → 4.97:1**;
+  hover **3.28:1 → 5.81:1**; both status dots improve; full 1%-interval sweep and
+  the rejected alphas are in `tokens.md` §2b.
+- **Two knock-ons Planner should carry into the plan.** (1) The long
+  `.pill:hover` derivation comment at `styles.css:87-104` should be **deleted**,
+  not preserved — it derives a two-layer grey composite that exists only because
+  the rest state was white, and hover becomes the same ink at a higher alpha.
+  (2) `tokens.md` §2a's `outline-offset: 0` hazard note is now superseded (the
+  2.57:1 figure becomes 4.97:1); it has been amended in place. **Keep the
+  offset** regardless — it is still visually correct.
+- **One further defect found on the same control and folded in:** the pill's
+  `aria-label` overrides its visible text as the accessible name, so the name
+  does not contain the label — WCAG 2.1 AA **2.5.3 Label in Name**. Introduced by
+  PR #10, not pre-existing. Fix is a deletion; `title` alone is correct.
 
 ---
 
