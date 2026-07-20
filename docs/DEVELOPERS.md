@@ -43,18 +43,43 @@ python -m yoto_maker --no-tray --no-browser   # headless dev server on :8777
 python -m yoto_maker --check      # tool + connection self-check
 ```
 
-### Testing UI changes in a browser — clear the cache first
+### Testing UI changes in a browser — you may be measuring a build that isn't there
 
-The static assets under `yoto_maker/server/static/` are served **without cache-busting**, so a browser will reuse a
-stale `app.js` / `style.css` straight across a rebuild. This reliably produces *false* UI failures: a CSS custom
-property that reads empty, a control that behaves like its previous version, a focus ring that looks like the UA
-default.
+Two independent causes, and the second one survives every fix for the first. Rule out both before you believe a UI
+failure.
+
+**1. A stale browser cache.** The static assets under `yoto_maker/server/static/` are served **without
+cache-busting**, so a browser will reuse a stale `app.js` / `styles.css` straight across a rebuild. This reliably
+produces *false* UI failures: a CSS custom property that reads empty, a control that behaves like its previous
+version, a focus ring that looks like the UA default.
 
 Before measuring anything in the browser, clear the cache and keep it disabled — `Network.clearBrowserCache` plus
 `Network.setCacheDisabled {cacheDisabled: true}` over CDP, or DevTools open with "Disable cache" ticked.
 
 **The tell is a size mismatch:** compare the byte count of the served asset against the file on disk. If they
 disagree, you are testing a build that no longer exists — clear the cache and re-run the check.
+
+**2. A stale server — the app is single-instance.** If an installed `YotoMaker.exe` or an earlier
+`python -m yoto_maker` already owns port 8777, your new dev server **prints one line and exits 0**
+(`main.py:63-68`). There is no traceback and no non-zero exit, so nothing looks wrong — but every byte you are
+measuring comes from the *old* process. Without `--no-browser` it also opens a browser at the running instance, so
+the tab handed to you is the stale one.
+
+**The tell is in the launch output:** `Yoto Maker is already running at http://127.0.0.1:8777`. Read the launch log
+before trusting the session — exit code 0 is not evidence your server started.
+
+**Identify the build positively rather than trusting the absence of an error.** `GET /api/status` is the cheapest
+proof of which version answered:
+
+```bash
+curl -s http://127.0.0.1:8777/api/status | python -m json.tool
+```
+
+v0.1.9+ returns `client_id_source` and `client_id_full` inside `yoto`; **v0.1.8 returns only
+`{configured, connected}`**. If those fields are missing you are on an old server, and no amount of cache clearing
+will help — the bytes are coming from a different process. Don't kill someone else's running app to free the port;
+use `--port` for a second instance (but see the `--port` OAuth-redirect caveat in the queue — the redirect URI
+still points at 8777).
 
 ## Tests
 

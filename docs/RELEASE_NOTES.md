@@ -144,3 +144,12 @@ Adding audio, pictures, and printing labels all work without it.
   library, per-track icons, and label PDF are all verified end-to-end.
 - The Yoto upload flow is implemented against Yoto's documented API and covered
   by tests with mocked responses; live upload needs your Client ID (above).
+
+## ❓ Not verified in v0.1.9
+
+- **How the new "Show the whole thing" button sounds in a screen reader.** The
+  button is built as a standard disclosure and reports the right state to
+  assistive software when inspected programmatically, but no one has actually
+  listened to it with NVDA or Narrator. If you use a screen reader and it
+  announces something confusing, that's worth reporting — it hasn't been ruled
+  out.
