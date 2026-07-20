@@ -41,6 +41,31 @@ class _Settings:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
+    def delete(self, key: str) -> bool:
+        """Remove a *saved* key. Returns True if something was actually removed.
+
+        Reads the raw file rather than _load(), because _load() merges _DEFAULTS
+        in — so a key that has a default would look present even when nothing was
+        ever saved, and would reappear at its default value on the next read.
+        Nothing in _DEFAULTS is deletable in that stronger sense; `yoto_client_id`
+        is not a default, so for it this really is "forget it".
+        """
+        path = get_config().settings_path
+        raw: dict[str, Any] = {}
+        if path.exists():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    raw = dict(loaded)
+            except Exception:
+                raw = {}
+        if key not in raw:
+            return False
+        raw.pop(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+        return True
+
     def all(self) -> dict[str, Any]:
         return _load()
 

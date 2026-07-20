@@ -59,3 +59,24 @@ def test_settings_roundtrip(temp_config):
     assert s.get("ai_api_key") == "secret"
     # persisted to the temp data dir
     assert temp_config.settings_path.exists()
+
+
+def test_settings_delete_removes_saved_key(temp_config):
+    s = get_settings()
+    s.set("yoto_client_id", "mine")
+    assert s.get("yoto_client_id") == "mine"
+
+    assert s.delete("yoto_client_id") is True
+    assert s.get("yoto_client_id") is None
+
+    # Deleting again is a no-op, not an error.
+    assert s.delete("yoto_client_id") is False
+
+
+def test_settings_delete_leaves_other_keys_alone(temp_config):
+    s = get_settings()
+    s.set("yoto_client_id", "mine")
+    s.set("ai_api_key", "secret")
+    s.delete("yoto_client_id")
+    assert s.get("ai_api_key") == "secret"
+    assert s.get("ai_model") == "gpt-image-1"  # default still resolves
