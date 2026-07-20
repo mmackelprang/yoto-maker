@@ -172,8 +172,17 @@ section is not for her without hiding it from the person helping her.)*
 | `client_id_source` | Dot | Headline | Sub-line |
 | --- | --- | --- | --- |
 | `builtin` | green | `Using the built-in Client ID` | `This is what most people use. Nothing to do here.` |
-| `saved` | green | `Using your own Client ID` | `Ends in {last3}. Saved on this computer only.` |
+| `saved` | green | `Using your own Client ID` | `Saved on this computer only.` |
 | `env` | amber | `Set outside the app` | `Someone set this up on this computer using YOTO_CLIENT_ID, and that takes priority. To change it, they'll need to change it there.` |
+
+**The `saved` sub-line changed 2026-07-20** (`overview.md` §11.6). It was
+`Ends in {last3}. Saved on this computer only.` The value fragment moves to the
+body (§4a), where the whole mask is shown instead of three characters — so the
+sentence is not losing information, it is losing a worse copy of it. This also
+retires a mild breach of the primitive's rule §4.3.2 (*never surface a raw
+stored value* in the status slot) and the `last3` slicing at `app.js:499-508`,
+including its empty-string fallback, which no longer has anything to fall back
+from.
 
 **The `env` sub-line is the only place in the app where an environment variable
 name is spoken to the user.** That is a deliberate, narrow exception: the state
@@ -182,13 +191,63 @@ and the person who can act on it is by definition technical enough to recognize
 the name. The sentence is addressed to *her* about *them* — "they'll need to
 change it" — so she knows the fix isn't hers to make.
 
+### 4a. Body — the value in effect *(amendment, 2026-07-20)*
+
+Shown only when `client_id_source` is `saved` or `env`; absent for `builtin`
+(`overview.md` §11.4). Behavior in [`interactions.md` §3.5](interactions.md).
+
+| Element | String |
+| --- | --- |
+| Label (`.tiny`, above the value) | `The one you're using now` |
+| Value, collapsed | *(the masked value, e.g.* `a8OG…oU1` *— rendered, not written)* |
+| Value, revealed | *(the full Client ID)* |
+| Toggle, collapsed | `Show the whole thing` |
+| Toggle, revealed | `Show the short version` |
+
+**One label for both sources.** `The one you're using now` is true whether she
+saved it or someone set it in an env var, and the status line directly above has
+already said which. A second variant would add a conditional to buy nothing.
+
+**Why not an eye icon, and why these two strings.** Full argument in
+`overview.md` §11.2; the copy consequence is the part that belongs here. This
+value is **not a secret** — it is a public client ID, sent in plaintext in every
+sign-in URL and displayed openly on the Yoto dashboard the user is comparing it
+against. So no string in this section may imply otherwise, and **an icon is a
+string**: 👁 is the password-field convention and states "this is secret" more
+forcefully, and to more people, than any sentence here could walk back.
+
+The pair above is chosen to say **shortened, not hidden** — the difference
+between an abbreviation and a redaction. Both name a length, neither names
+visibility. Specifically rejected:
+
+| Rejected | Why |
+| --- | --- |
+| 👁 icon, no text | States "secret". Also unlabelled for screen readers without inventing an `aria-label` that would have to say something. |
+| `Reveal` | The verb of exposing something concealed. |
+| `Hide it again` | Pairs "show" with "hide", which frames the default state as concealment. |
+| `Show more` / `Show less` | Neutral and safe, but generic — reads as a paragraph expander, not as *this string is abbreviated*. |
+| `Show the full Client ID` | Accurate, but "Client ID" already appears three times in this section; a fourth is noise. |
+
+**Register note.** `Show the whole thing` is deliberately colloquial. This
+section is `(advanced)` and its readers are the helper and the user relaying to
+the helper — but the register still has to hold for the primary user who wanders
+in, and "the whole thing" is what a person says out loud.
+
 ### Body — the input
 
 | Element | String |
 | --- | --- |
-| Label (`.tiny`, above input) | `Paste a Client ID` |
+| Label (`.tiny`, above input) — `builtin`, `env` | `Paste a Client ID` |
+| Label (`.tiny`, above input) — `saved` | `Paste a different Client ID` |
 | Input placeholder | `Paste your Yoto Client ID here` |
 | Save button | `Save` |
+
+**The label became state-dependent 2026-07-20.** With the current value now
+displayed directly above it, the `saved` state stacks two Client-ID-shaped
+things, and `Paste a Client ID` no longer distinguishes the one you have from
+the one you would replace it with. `a different` is three words and removes the
+ambiguity the amendment introduced. `builtin` and `env` are unchanged — in
+neither case is there a saved value of hers to differ from.
 
 When `client_id_source` is `env`: the input and Save button are **disabled**,
 and this line appears below them in `.tiny`:

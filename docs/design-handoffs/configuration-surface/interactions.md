@@ -209,6 +209,167 @@ This is the one state where the surface tells the user she cannot do the thing
 she came to do. It does so plainly, explains why, and says who can fix it —
 rather than silently accepting a value that `resolve_client_id()` would ignore.
 
+**Amendment 2026-07-20 — the value block is exempt from this state's
+disabling.** `#clientIdCurrent` and its toggle are **shown and fully enabled**
+when `client_id_source == "env"`. They are read-only; there is nothing to
+disable. See [`overview.md` §11.4](overview.md) for why this is the state where
+the value matters most — it is the only one where the user cannot discover it
+anywhere else.
+
+Note the existing env `.tiny` note reads *"…it won't be used while the one above
+is set."* With the value block inserted above the input, **"the one above" gains
+a literal on-screen referent** and becomes more concrete. The string is unchanged
+and still true.
+
+---
+
+### 3.5 The value in effect, and its disclosure — NEW (amendment, 2026-07-20)
+
+Specified by [`overview.md` §11](overview.md). Copy in
+[`copy.md` §4](copy.md); CSS in [`tokens.md` §3a](tokens.md).
+
+#### 3.5.1 Markup
+
+Nested inside the existing `#clientIdBody`, **above** the `Paste a…` label.
+Nothing outside `#clientIdBody` changes.
+
+```html
+<div id="clientIdCurrent" class="hidden" style="margin-bottom:14px">
+  <p class="tiny">The one you’re using now</p>
+  <div class="row wrap" style="margin-top:6px">
+    <span class="mono-value grow" id="clientIdValue"></span>
+    <button class="btn small" id="clientIdReveal"
+            aria-expanded="false" aria-controls="clientIdValue">Show the whole thing</button>
+  </div>
+</div>
+```
+
+Inline margins match the file's existing convention at `index.html:253` rather
+than introducing a class for one gap.
+
+#### 3.5.2 Render rules
+
+`renderClientId()` decides all of this from `STATUS.yoto`:
+
+| Condition | Block | Toggle |
+| --- | --- | --- |
+| `client_id_source === "builtin"` | hidden | — |
+| `client_id_full` is null / absent | shown, mask only | **omitted** |
+| `client_id_masked === client_id_full` | shown, value only | **omitted** |
+| otherwise (`saved` / `env`) | shown | shown |
+
+Row 2 is the version-skew case (a frontend newer than its server). Degrade to
+the mask alone rather than rendering a toggle that cannot do anything — the same
+graceful-drop discipline already applied at `app.js:499-508`.
+
+Row 3 is the short-value case: `mask_client_id()` returns the input unchanged at
+≤8 characters (`config.py:88-89`), so a user who pasted something short or wrong
+sees the whole value already. Offering to "show the whole thing" when the whole
+thing is on screen is a lie the frontend can detect without duplicating the
+server's length rule — **compare the two strings, never re-implement the
+threshold.**
+
+If `client_id_masked` is also missing, hide the block entirely. The status line
+still carries the state, so nothing is lost.
+
+#### 3.5.3 Toggle behavior
+
+Synchronous. Both strings are already in `STATUS`; **the toggle makes no network
+request and has no failure mode** (`overview.md` §7.8).
+
+| From | Click | To |
+| --- | --- | --- |
+| collapsed | → | `#clientIdValue` ← `client_id_full`; label ← `Show the short version`; `aria-expanded="true"` |
+| expanded | → | `#clientIdValue` ← `client_id_masked`; label ← `Show the whole thing`; `aria-expanded="false"` |
+
+**Focus never moves.** The button stays focused across the toggle; the content
+it controls is adjacent, and the button is also the way back. No focus
+management, no restoration, nothing to get wrong — a direct benefit of choosing
+a disclosure over a modal-ish reveal.
+
+#### 3.5.4 Persistence — no auto-hide
+
+**The revealed state persists until the user collapses it or one of the three
+resets below fires. It does not time out.**
+
+An auto-hide timer is the password-field reflex, and it is wrong twice over
+here. It defends against a bystander reading the screen — a threat that does not
+exist for a value printed in the user's own sign-in URL and on a public
+dashboard. And it would **break the one task the feature exists for**: the user
+is mid-comparison against another screen, or reading the string aloud over the
+phone, and the value would vanish under her. It would also flip `aria-expanded`
+with no user action, which is an unannounced state change a screen reader user
+has no way to anticipate — a real defect traded for theatre.
+
+Reset to collapsed on exactly three events, tracked in a module-level
+`clientIdRevealed` flag that `renderClientId()` honors:
+
+1. **Entering the settings view** (§1.1) — a fresh view starts in its default
+   state, consistent with the existing `scrollTo(0,0)` and account re-check.
+2. **A successful save or reset** — the value has changed; continuing to display
+   the previous revealed string would be actively wrong.
+3. **Source becoming `builtin`** — the block is removed. (Subsumed by 2 in
+   practice; listed so the rule is complete.)
+
+**Explicitly not a reset:** cancelling a confirmation, or any `refreshStatus()`
+that did not change the value. `closeClientIdConfirm()` calls `renderClientId()`
+to restore the input and actions (`app.js:565`); without the flag that call
+would silently collapse a reveal the user had opened, for no reason she caused.
+The flag exists to prevent precisely that.
+
+#### 3.5.5 While a confirmation is open
+
+**The toggle stays enabled** — unlike the input, Save, and the reset action,
+which are all disabled per the one-live-choice-set rule. The toggle commits
+nothing, so that rule does not reach it; see the scope clarification at
+[`overview.md` §4.3.3](overview.md).
+
+This is a deliberate behavior, not an oversight to be tidied up: a user reading
+*"Yoto Maker will start using the Client ID you pasted"* has an obvious next
+question — *"what is it using now?"* — and this is the control that answers it.
+
+#### 3.5.6 Accessibility contract
+
+**Pattern: disclosure.** `aria-expanded` on the button, `aria-controls` naming
+the region whose content changes.
+
+`aria-pressed` is **rejected.** A toggle-button role would announce "pressed" /
+"not pressed", which describes a control that is switched on — it says nothing
+about whether the text beside it is long or short. `aria-expanded` describes
+exactly what changed.
+
+**Accessible name in both states** — the visible label, no `aria-label`, no
+`title`. The name is the *action*; `aria-expanded` is the *state*:
+
+| State | Announced |
+| --- | --- |
+| collapsed | `Show the whole thing, button, collapsed` |
+| expanded | `Show the short version, button, expanded` |
+
+The label changes with the state, which is the deliberate choice over the
+constant-label variant of this pattern. A constant `Show the whole thing` while
+the whole thing is already displayed is straightforwardly confusing to a sighted
+user, and the sighted user is the majority case here. The pairing reads
+correctly because a button label names an action and a state names a state:
+"show the short version" (what pressing does) + "expanded" (where we are) is
+coherent, not contradictory.
+
+**On toggle, a screen reader announces the `aria-expanded` change and nothing
+else.** No live region on `#clientIdValue`. Deliberate, and required by §4.3 of
+this file: `.setting-status` in this section already carries `role="status"`,
+and a second live region in the same section is exactly the double-announcement
+hazard that rule prohibits. A user who wants the value reads it with the virtual
+cursor — where she can also arrow through it character by character, which is
+what transcription needs and what a single live-region utterance of 32 random
+characters would not give her.
+
+`aria-controls` has patchy screen-reader support. It is included because it is
+the correct markup and costs nothing; **no behavior may depend on it.**
+
+**The value is selectable.** Plain text, no `user-select: none`, and
+`word-break` inserts no characters — a selection yields the exact string
+(`tokens.md` §3a).
+
 ---
 
 ## 4. Keyboard
@@ -218,6 +379,8 @@ rather than silently accepting a value that `resolve_client_id()` would ignore.
 | `Tab` / `Shift+Tab` | Settings view | Natural DOM order. Card view is `display:none`, so it's out of the tab order entirely. |
 | `Enter` / `Space` | Any `.btn` | Activate. Native `<button>` behavior — no custom handlers. |
 | `Enter` | Client ID input | Same as clicking `Save`. Matches `#ytUrl` at `app.js:519`. |
+| `Enter` / `Space` | `Show the whole thing` | Toggle the value between short and full. Native `<button>`; focus does not move. *(amendment, 2026-07-20)* |
+| `Escape` | Value revealed, no confirmation open | **Nothing.** Escape does not collapse the reveal — see below. *(amendment, 2026-07-20)* |
 | `Escape` | Confirmation open | Dismiss it, return focus to the button that opened it. |
 | `Escape` | Anywhere else in settings | **Nothing.** See `overview.md` §5.3 — a page, not a dialog, and the user may be mid-paste. |
 | `Alt+←` / browser Back | Settings view | Returns to the card view via `hashchange`. |
@@ -227,11 +390,35 @@ rather than silently accepting a value that `resolve_client_id()` would ignore.
 ```
 ← Back to my card
   → [account] primary button  → [account] Cancel (signing_in only)
-  → [client-id] input → Save  → [client-id] Go back to the built-in one
+  → [client-id] Show the whole thing          (saved / env only)
+  → [client-id] input → Save
+  → [client-id] Go back to the built-in one   (saved only)
 ```
 
 When a confirmation is open, that section's own actions are `.hidden` and
 therefore skipped; the confirmation's two buttons take their place in sequence.
+
+**Amendment 2026-07-20.** The reveal toggle takes its position from natural DOM
+order — it precedes the input because it sits above it (§3.5.1). **No `tabindex`
+anywhere**; the block is plain document order.
+
+It is also the one control in this section that remains focusable while a
+confirmation is open (§3.5.5), so with the save confirmation showing, the order
+through the Client ID section is:
+
+```
+Show the whole thing → Never mind → Yes, use it
+```
+
+Cancel is still the first control inside the confirmation and still focused on
+open, so §2.3's safety property — *reflexive Enter or Space must not commit* —
+is unaffected. The toggle sits ahead of the confirmation rather than inside it,
+and pressing it commits nothing.
+
+**Escape does not collapse the reveal.** Escape's one binding on this surface is
+dismissing a confirmation (`overview.md` §5.3), and overloading it would mean a
+user with both a confirmation open and a value revealed cannot predict which one
+a keypress hits. The toggle is its own way back.
 
 ### 4.2 Focus visibility
 
@@ -250,6 +437,10 @@ user reaches when something is already wrong.
 - Never both for the same event. The `signing_in` → `connected` transition
   updates the status line *and* shows a success message; the status line update
   must land first so the assertive alert isn't queued behind it.
+- **Amendment 2026-07-20:** the Client ID value (`#clientIdValue`) is **not** a
+  live region. Its section already has one (`#clientIdStatus`, `role="status"`),
+  and the toggle's `aria-expanded` change is the announcement the disclosure
+  pattern specifies. See §3.5.6.
 
 ---
 
@@ -263,6 +454,23 @@ Runs in a desktop browser; must not break narrow. `<main>`'s existing
 | ≥ 720px | Settings view sits at 720px, centered. Identical rhythm to the step cards. |
 | 480–720px | Fluid. `.setting-actions` wraps via `flex-wrap`. The Client ID input + Save row uses the existing `.row.wrap` + `.grow`, which already collapses correctly. |
 | < 420px | `.setting-actions` switches to `flex-direction: column; align-items: stretch` and buttons go full-width and centered (`tokens.md` §3). Prevents a wrapped two-button row from producing a stranded half-width button. |
+
+**Amendment 2026-07-20 — the value row.** `#clientIdCurrent`'s row is the same
+`.row.wrap` + `.grow` as the input row directly below it, so it inherits the
+behavior in the table above with no new rule. Two things to confirm in UAT:
+
+- **Revealed, at the narrowest width.** 32 monospace characters plus a
+  `Show the short version` button must wrap, not overflow. `.mono-value`'s
+  `word-break: break-all` (`tokens.md` §3a) is what guarantees the value wraps
+  inside its column instead of pushing the card wide — this is the specific
+  regression to look for, because it only appears in the expanded state and only
+  when narrow.
+- **The `< 420px` rule does not apply here.** It targets `.setting-actions`, and
+  this row is `.row.wrap` inside `.setting-body`, so the toggle wraps beneath the
+  value at its natural width rather than going full-width. That is correct and
+  matches the Save button's behavior in the row below — the two rows must stay
+  visually parallel at every width, which is the whole reason they share a
+  structure.
 
 ### 5.1 Header at narrow widths
 

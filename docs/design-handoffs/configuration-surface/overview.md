@@ -160,10 +160,17 @@ are omitted when the setting doesn't need them.
 | 1 | Title        | `h3`               | **yes**  | Names the setting in the user's words. Never a jargon term alone. |
 | 2 | Description  | `.setting-desc`    | **yes**  | 1–2 sentences: what this is, and why you'd ever touch it. Written for someone who does not know what the setting is. |
 | 3 | Status       | `.setting-status`  | no       | Colored dot + current state, in plain language. Present when the setting *has* an observable state; omitted for pure preferences (a checkbox is its own status). |
-| 4 | Body         | `.setting-body`    | no       | The input control, if any. Omitted for action-only settings. |
+| 4 | Body         | `.setting-body`    | no       | The setting's own value area — the control that reads or writes it. Usually an input; may also include a read-only display of the value currently in effect. Omitted for action-only settings. |
 | 5 | Actions      | `.setting-actions` | no       | Buttons. Primary first (leftmost), then secondary. |
 | 6 | Feedback     | `.msg-box`         | **yes**\* | Result of the last action. `.err` / `.ok` / `.info`. \*Required to *exist* in markup (hidden); shown on demand. |
 | 7 | Confirmation | `.setting-confirm` | no       | Inline confirm step for anything destructive-ish. Hidden by default. Never a `window.confirm()`. |
+
+> **Slot 4 wording amended 2026-07-20** (§11). It previously read "The input
+> control, if any." That phrasing did not say where a *displayed* current value
+> belongs, and slot 3 forbids it (§4.3.2), so the question had no answer.
+> Body is the answer. **This is a clarification, not a widening:** still seven
+> slots, same order, same classes, no change to any `.setting*` rule in
+> `tokens.md` §3.
 
 ### 4.2 Markup contract
 
@@ -215,6 +222,15 @@ kebab-case identifier (`account`, `client-id`, …).
 3. **The confirm slot replaces the actions slot while open.** When
    `.setting-confirm` is shown, the setting's own `.setting-actions` is
    `hidden`. There is never more than one live set of choices in a section.
+
+   **Scope, clarified 2026-07-20 (§11): "choices" means controls that commit
+   something.** A control that only changes how existing information is
+   *displayed* — a disclosure toggle, an expander — is not a choice, changes no
+   state the confirmation is about, and **stays enabled while a confirmation is
+   open.** The concrete case: a user reading "Yoto Maker will start using the
+   Client ID you pasted" may reasonably want to check what the current one is
+   before answering. Disabling the only control that answers that question, at
+   the exact moment she asks it, would be the opposite of what this rule is for.
 4. **One primary button per setting, maximum.** If a setting seems to need two
    primaries, it's two settings.
 5. **Feedback is scoped to its section.** A failure in one setting must never
@@ -358,7 +374,7 @@ never look like different features.
 | Title | ✅ | "Yoto Client ID (advanced)" |
 | Description | ✅ | Plain-language explanation + link to the setup guide |
 | Status | ✅ | Four states: built-in / your own / set by env var / saving |
-| Body | ✅ | Text input + Save button (`.row.wrap` + `.grow`) |
+| Body | ✅ | The value in effect + a disclosure toggle (`saved` / `env` only), then text input + Save button. Two parallel `.row.wrap` + `.grow` rows — see §11. |
 | Actions | ✅ | "Go back to the built-in one" (only when a custom one is saved) |
 | Feedback | ✅ | Save failures / success |
 | Confirmation | ✅ | On both save-a-new-one and reset (both sign the user out — §7.3) |
@@ -576,6 +592,68 @@ into thirty seconds ago.
 If Mark wants account identity later, it should be its own PR gated on a Yoto
 API check for a scope-free identity endpoint.
 
+### 7.8 `/api/status` must also report the full Client ID — NEW (amendment, 2026-07-20)
+
+Required by §11. The `yoto` object gains one field:
+
+```jsonc
+"yoto": {
+  "connected": true,
+  "configured": true,                  // legacy, unused by new UI
+  "client_id_source": "saved",         // "env" | "saved" | "builtin"
+  "client_id_masked": "a8OG…oU1",      // first 4 + last 3
+  "client_id_full": "a8OGO6Ef…QoU1"    // NEW — the whole string, or null
+}
+```
+
+`client_id_full` is **`null` when `client_id_source == "builtin"`**, and the
+complete string otherwise. All three come from `_resolve_client_id_with_source()`
+in `config.py`, which already returns the value and the source together, so
+adding this cannot introduce drift — the same guarantee §7.2 relies on.
+
+**Why the value goes on `/api/status` rather than behind a reveal endpoint.**
+This was a real fork; the reasoning is recorded because the obvious instinct
+(a dedicated endpoint, fetched on demand) is the wrong one here.
+
+1. **There is nothing for a second endpoint to gate.** The app binds to
+   `127.0.0.1` (`config.py:111`) and has no authentication of any kind. The
+   browser, the server, the OS account and the person are all the same. A reveal
+   endpoint would be exactly as unauthenticated as `/api/status`, so it would
+   gate the value against nobody.
+2. **The value is not a secret** — it is a PKCE public client ID, transmitted in
+   plaintext in every sign-in URL, present in the shipped `.exe`, and shown
+   openly in the Yoto dashboard the user is comparing it against
+   (`config.py:38-44` already says so). Guarding it would be theatre, and the
+   design elsewhere in §11 spends real effort *not* implying it needs guarding.
+3. **A fetch introduces a failure mode the toggle otherwise cannot have.** An
+   on-demand endpoint means the disclosure can fail — needing a spinner, an
+   error string, and a decision about what the toggle shows when the request
+   times out. That is three new states of copy and interaction bought with zero
+   benefit. With the value already in hand, the toggle is synchronous and cannot
+   fail.
+4. **`/api/status` is already the place this concept lives.** It carries
+   `client_id_source` and `client_id_masked` today. Splitting one question —
+   "what Client ID is in effect?" — across two endpoints so that half of it can
+   be fetched separately makes the contract worse, not safer.
+
+**Anticipated objection, addressed here so a reviewer need not raise it:**
+`/api/status` is polled every 2s during sign-in (`app.js`), so `client_id_full`
+rides along on those responses. That is ~32 bytes over loopback to the same
+user's own browser, carrying a value that is public by construction. It is not a
+disclosure concern and must not be treated as one. Do **not** add redaction,
+special logging handling, or a "sensitive field" wrapper — doing so would
+contradict the framing this whole amendment rests on.
+
+**Why `null` for `builtin` rather than always populated.** §11.3 decides the UI
+renders no value in that state. Sending a populated field the UI is specified
+never to display invites a future contributor to display it, quietly undoing
+that decision without anyone revisiting the reasoning. The `null` carries the
+rule at the layer that owns the precedence chain.
+
+**Nothing else changes.** No new route, no new method, no change to
+`POST` / `DELETE /api/yoto/client-id`, no change to `mask_client_id()`. One
+field, one function.
+
 ---
 
 ## 8. Documentation updates required in this PR
@@ -615,3 +693,200 @@ Explicitly **not** in this PR, to keep it to one PR's worth:
    sections.
 4. Every string on the surface passes the `INSTALL-FOR-MOM.md` register test.
 5. The whole surface is operable by keyboard, with a visible focus indicator.
+
+---
+
+## 11. Amendment: showing the Client ID in effect (2026-07-20)
+
+**Status:** proposed, awaiting Mark's approval. Amends §4.1, §4.3.3, §6.2, adds
+§7.8; `copy.md` §4, `interactions.md` §3.5/§4, `tokens.md` §3a.
+**Relationship:** **extends** this package. Deviates from nothing.
+
+Shipped in PR #10, the Client ID section identifies the value in effect as
+`Ends in oU1.` and offers no way to see more. Mark has used it and wants to see
+the actual value, proposing a masked display with a control to reveal it.
+
+### 11.1 What the user is actually doing
+
+There is essentially one reason to look at this value: **to check it against
+what dashboard.yoto.dev shows.** Either she is on the phone with whoever set it
+up, or she has the dashboard open beside the app. Every decision below is scored
+against that task and nothing else.
+
+Two things follow immediately, and both matter more than the reveal control:
+
+**(a) The collapsed display is throwing away half of what it has.**
+`mask_client_id()` (`config.py:80-90`) returns first-4 + last-3 — `a8OG…oU1` —
+and `/api/status` already sends it. `renderClientId()` (`app.js:499-508`) then
+slices off the last 3 and discards the rest. For the comparison task, 7 anchored
+characters at both ends is far stronger than 3 at one end: it catches a
+transposed or truncated paste that a suffix match sails straight past. **Showing
+the whole mask is a strict improvement available for free, independent of
+everything else in this amendment.** It was not in the request; nobody had
+noticed.
+
+**(b) Proportional type is a worse problem than truncation.** The built-in ID is
+`a8OGO6EfbWit5tDUUrOz0g49s49NQoU1`. It contains `O` four times, `0` twice, and a
+lowercase `o` — in a face where `O` and `0` are near-identical and `l`/`I`/`1`
+collapse. A user comparing this against a dashboard in Segoe UI will make
+exactly the error this feature exists to prevent, and she will make it
+*confidently*, because the strings will look the same. **A monospace treatment
+does more for the stated use case than the reveal control does** (`tokens.md`
+§3a). Also not in the request.
+
+### 11.2 The reveal control: yes, but not an eye icon
+
+Mark chose "masked + eye icon to reveal" over always-full and over
+full-plus-copy-button. **The masking is right. The eye icon is not, and the
+recommendation is to drop it.**
+
+An eye icon is not decoration; it is a word. It is the password-field
+convention, and it says one specific thing: *this value is secret and you are
+choosing to expose it.* That statement is false — this is a PKCE public client
+ID, sent in plaintext in every sign-in URL, compiled into the shipped `.exe`,
+and displayed openly on the dashboard the user is comparing it against.
+
+The brief for this amendment was explicit that the copy must not imply the value
+is sensitive, because doing so would make a non-technical user anxious about a
+string she is *supposed* to paste from a public web page. An eye icon carries
+that implication more forcefully than any sentence would, and it carries it
+past anyone who does not read the sentence. Banning the word while shipping the
+icon bans nothing.
+
+The distinction the design needs to make is **truncation, not censorship** —
+the same distinction between a short git SHA (`a8OG…`, obviously an
+abbreviation, nobody thinks it is redacted) and a masked password
+(`••••••••`, obviously withheld). So:
+
+| | Rejected | Chosen |
+| --- | --- | --- |
+| Collapsed value | `••••••••••••••••••••••••••oU1` | `a8OG…oU1` |
+| Control | 👁 icon button | text button, `Show the whole thing` |
+| Pattern | password reveal | **disclosure** (`aria-expanded`) |
+| What it says | "this is secret" | "this is shortened" |
+
+The disclosure pattern is also the better engineering answer. A password reveal
+has a genuinely awkward accessibility contract — the accessible name and the
+state disagree about what is being described. A disclosure is the textbook
+`aria-expanded` case with a settled contract and no focus management at all
+(`interactions.md` §3.5).
+
+### 11.3 Was always-full considered? Yes. Here is why masking survived.
+
+Honest accounting, because the two stated justifications for masking are thin
+and one of them is backwards:
+
+- *"A 32-char string would dominate the row."* Measured: at the `.sub` size
+  inside `<main>`'s 720px column, 32 characters is roughly a third of the line.
+  It fits. This justification is real but small.
+- *"It keeps the full ID out of screenshots."* **This one cuts the other way.**
+  The screenshot this user takes is the one she sends to whoever is helping her,
+  and its entire purpose is to show what her setting says. Masking makes that
+  support flow worse. Discard this argument; do not let it reappear.
+
+What actually saves the mask is neither of those. It is that **`a8OG…oU1` is
+usually sufficient**, so the collapsed row answers the question outright most of
+the time — 7 anchored characters distinguish any realistic set of IDs one person
+holds. The full string is needed only for transcription, or when the short
+compare fails and she needs to find *where* it diverges. That is a textbook
+progressive-disclosure shape: the common case answered inline, the precise case
+one click away. The mask earns its place as **the summary form of a value**, not
+as a curtain.
+
+If Mark prefers always-full after reading this, the change is small and
+contained: render `client_id_full` into `#clientIdValue`, drop the toggle, and
+delete `interactions.md` §3.5. Everything else in this amendment — monospace,
+the full mask, `/api/status`, the `builtin` decision, the slot placement — stands
+unchanged and is worth shipping either way.
+
+### 11.4 The three sources, decided separately
+
+The request did not distinguish them. They are not the same case.
+
+**`saved` — show the block, toggle enabled.** The assumed core case. A person
+deliberately put this value here and may need to verify it.
+
+**`env` — show the block, toggle enabled. This is the strongest case, not
+`saved`.** It is the one state where the value is **not discoverable by the user
+anywhere else**: in `builtin` it is a constant in a public repo, in `saved` she
+typed it herself, but an env var was set by somebody else, possibly months ago,
+and the app is the only place she can see it. The status line already tells her
+"they'll need to change it there" (`copy.md` §4) — and the very first thing that
+person will ask is *"what does it say?"*
+
+Therefore, and this is a real exception to the shipped spec: `interactions.md`
+§3.4 disables the input and Save in the `env` state and removes
+`#clientIdActions` from the DOM. **The value block and its toggle are exempt.**
+They are read-only — there is nothing to disable, and disabling them would be
+cargo-culting "env means read-only" onto a control that is already read-only,
+in the exact state where it is most needed.
+
+**`builtin` — no value block at all.** The deliberate call, and the one worth
+arguing.
+
+The built-in ID belongs to the app author's Yoto developer registration. The
+user has no dashboard entry to compare it against, so the comparison task — the
+only reason this feature exists — **does not exist in this state**. Nor is there
+a diagnostic gap: `client_id_source` fully determines the value, so
+"Using the built-in Client ID" is already a complete and unambiguous answer to
+"what is it using?". Rendering 32 characters and a disclosure control directly
+beneath the sentence *"This is what most people use. Nothing to do here."*
+would contradict that sentence for every user who ever opens this screen, to
+serve no task.
+
+This is also the state ~every user is in, which makes it the one place the
+section's weight actually matters. It stays exactly as heavy as it is today.
+
+The rule this establishes, which setting #7 should inherit:
+
+> **Show a value back to the user when a person deliberately set it.** If the
+> app chose it, the source label is the whole answer and the value is noise.
+
+Consistent with the section's existing behavior: `#clientIdActions` is already
+state-conditional (shown in `saved`, hidden in `builtin`, removed in `env`).
+
+### 11.5 Where it goes, and why the primitive is not touched
+
+Slot 3 (Status) is closed to this by rule §4.3.2 — *"never surface a raw stored
+value"* — which is the rule that stops a 32-character string being jammed into a
+status sentence, and it is correct. **Slot 4 (Body) is the answer**: the body is
+the setting's value area, and the current value belongs directly above the input
+that replaces it.
+
+The markup nests inside the existing `#clientIdBody` and produces two
+structurally parallel rows:
+
+```
+The one you’re using now
+[ a8OG…oU1                        ]  [ Show the whole thing ]
+Paste a different Client ID
+[                                 ]  [ Save                 ]
+```
+
+Both rows are the existing `.row.wrap` + `.grow`, which `interactions.md` §5
+already certifies as collapsing correctly at narrow widths.
+
+**Nothing in the `.setting` primitive changes.** Seven slots, same order, same
+classes, and `tokens.md` §3's `.setting*` block is untouched — no new rule, no
+edited rule, and in particular no id selector and no positional selector, which
+is the property that was verified adversarially at merge. The only new CSS is
+`.mono-value` (`tokens.md` §3a), a standalone utility that touches nothing in
+the `.setting*` block.
+
+Two wording clarifications were needed and are marked in place (§4.1 slot 4,
+§4.3.3 scope). Both answer questions the primitive did not previously answer.
+Neither adds a slot, and if Mark reads either as a widening rather than a
+clarification, that is the thing to push back on.
+
+### 11.6 Knock-on fix: the status sub-line stops carrying the value
+
+With the value shown in the body where it belongs, `copy.md` §4's `saved`
+sub-line drops its value fragment and becomes simply
+`Saved on this computer only.`
+
+Worth noting for the record: `Ends in {last3}.` was always a mild breach of
+§4.3.2 — a stored-value fragment inside a status sentence — tolerable as prose
+when it was the only way to identify the value at all. This amendment removes
+the need, so the breach goes with it, along with the `last3` slicing and its
+empty-string degradation at `app.js:499-508`. **The feature leaves the primitive
+more consistent than it found it**, which is the bar an extension should clear.

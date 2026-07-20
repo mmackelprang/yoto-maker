@@ -293,6 +293,71 @@ reproduced here for the token/CSS review.
 
 ---
 
+## 3a. `.mono-value` — NEW UTILITY (amendment, 2026-07-20)
+
+Required by [`overview.md` §11](overview.md). A machine-generated value displayed
+for a human to **compare against another screen**, character by character.
+
+**Why this is not optional, and why it matters more than the reveal control it
+ships alongside.** The built-in Client ID is:
+
+```
+a8OGO6EfbWit5tDUUrOz0g49s49NQoU1
+```
+
+Four capital `O`, two `0`, one lowercase `o`. In the app's UI face
+(`"Segoe UI", system-ui, …`, `styles.css:28`) `O` and `0` are near-identical at
+14px, and `l` / `I` / `1` collapse entirely. The one task this value exists to
+support is comparing it against dashboard.yoto.dev — and a proportional face
+makes that comparison fail *silently and confidently*, which is the worst
+available failure mode. A monospace face disambiguates the glyph pairs and gives
+the eye fixed columns to hold its place in a 32-character string.
+
+```css
+.mono-value {
+  font-family: Consolas, "Cascadia Mono", "SF Mono", Menlo, monospace;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  word-break: break-all;   /* 32 chars must wrap inside the column, never overflow */
+  align-self: center;      /* inert outside a flex row; see note */
+}
+```
+
+**Font stack.** Windows-first, matching the app's v1 target (`config.py:17-19`):
+Consolas ships on every supported Windows, Cascadia Mono on 11. macOS and the
+generic keyword follow for dev machines. No web font — the app has no external
+requests and must not gain one for this.
+
+**`word-break: break-all`, not chunking.** The obvious alternative is
+`a8OG O6Ef bWit …` in groups of four, the license-key convention, and it does
+help the eye. It is rejected because **the spaces would be copied.** A user
+selecting the value to paste it somewhere would silently get a string with seven
+spaces in it, and the resulting failure ("I copied it exactly and it didn't
+work") is far more expensive than the scanning help is worth. `word-break`
+inserts nothing; a selection yields the exact 32 characters.
+
+For the same reason: **do not add `user-select: none`**, and do not add a copy
+button — full-plus-copy-button was considered and rejected, and a copy button
+would need its own transient "Copied!" state and clipboard-failure path for a
+value the user can select with a mouse.
+
+**`align-self: center`.** The value span sits in a `.row` (`display: flex`,
+`styles.css:171`) with no `align-items`, so it defaults to `stretch` and its
+text would top-align against the vertically-centred text of the `.btn.small`
+beside it. `align-self` has no effect on a non-flex-item, so the rule is safe
+if this utility is ever reused outside a row.
+
+**Named `-value`, not `.mono`, deliberately.** A bare `.mono` reads as a pure
+font utility, and the next person to reach for it would inherit `align-self`
+and `break-all` by surprise. The name states the scope: a machine value
+displayed for reading, inside a row.
+
+**Contrast:** `--ink` on `--card` = 14.6:1 ✅ — already row 1 of §4. No new row
+needed.
+
+---
+
 ## 4. Verified contrast for everything this surface renders
 
 Measured, not assumed. Text targets 4.5:1 (AA), non-text UI targets 3:1.
@@ -336,6 +401,20 @@ white ring automatically** through `--focus-ring`; any future control placed on 
 must be measured before it ships. If the surface fails, the fix is to redeclare
 `--focus-ring` on that surface, never to add a rule targeting the control.
 
+**Amendment 2026-07-20 — the `Show the whole thing` toggle, checked against this
+table.** The control introduced by [`overview.md` §11](overview.md) is a
+`.btn.small` inside `.setting-body`, whose background is `.setting`'s
+`var(--card)`. That is **row 1** of the table above: ring resolves to `--accent`,
+4.82:1, and `.btn` is already enumerated there. **No new row, no extension of
+the table, no `--focus-ring` override.**
+
+Verified it cannot land anywhere else: the toggle lives in slot 4 (Body) and
+never inside `.setting-confirm`, so it never renders on `--warn-soft`; and it is
+not a header control, so the `header` override is not in play. The one thing
+that would invalidate this is moving the control into the confirmation box —
+which §4.3.3 as amended explicitly does not do (the toggle stays put and stays
+enabled while a confirmation is open, rather than being relocated into it).
+
 The status dot is **never the only carrier of state** — every dot is paired with
 a text headline saying the same thing (`copy.md` §3, §4), so the surface is fully
 legible to a user who can't distinguish the colors at all.
@@ -348,6 +427,20 @@ legible to a user who can't distinguish the colors at all.
 `.info`), `.btn` (+ `.primary` / `.ghost` / `.small`), `.row.wrap`, `.grow`,
 `.tiny`, `.hidden`, `.progress`. The primitive adds structure, not new visual
 vocabulary.
+
+**Amendment 2026-07-20.** The value-display row (`overview.md` §11.5) is built
+entirely from that list — `.row.wrap`, `.grow`, `.tiny`, `.hidden`, and
+`.btn.small` for the toggle — plus `.mono-value` (§3a), the single new rule in
+the amendment. `.btn.small` (`styles.css:122`) is used here for the first time
+on this surface; it is the correct weight for a control that sits beside a value
+rather than beneath a paragraph, and it inherits `.btn`'s certified focus ring,
+`:disabled`, and hover treatment with nothing added.
+
+The toggle is deliberately **not** styled as a bare text link. `.back-link` is
+the nearest existing link-like control and is sized for a page-level action
+(16px, 8px 12px padding); reusing it would put page-navigation weight on an
+in-section disclosure. A `.btn.small` reads as what it is — a small control
+attached to the row it modifies.
 
 **Deliberately NOT reused:** `.step`. `.setting` is visually near-identical to
 `.step` (same card, radius, shadow, padding) — that similarity is the point,
