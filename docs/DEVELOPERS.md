@@ -63,7 +63,7 @@ pip install -e ".[dev]"
 pytest -q
 ```
 
-The suite (48 tests) mocks all Yoto network calls, so no account is needed. Tests
+The suite mocks all Yoto network calls, so no account is needed. Tests
 that need ffmpeg self-skip if it's missing.
 
 ## Optional AI pictures
@@ -92,13 +92,41 @@ the UI, the pixel-icon library, `ffmpeg.exe` + `ffprobe.exe`, and all of `yt_dlp
 
 ### Publishing a release
 
-```bash
-gh release create v0.1.0 packaging/dist/YotoMaker.exe \
-  --title "Yoto Maker v0.1.0" --notes-file docs/RELEASE_NOTES.md
-```
+There is no CI. A release is these five steps in order, and **the version bump is
+not one of them** — bumping `pyproject.toml` and `yoto_maker/__init__.py` happens
+in the feature PR, and on its own ships nothing.
+
+1. **Verify** — on `main`, clean, `pytest -q` green, `docs/RELEASE_NOTES.md`
+   opens with the version being cut and its section covers everything in it.
+2. **Tag the merge commit** and push it:
+   ```bash
+   git tag v0.1.9 <merge-sha> && git push origin v0.1.9
+   ```
+3. **Build** (see above). Stage `packaging/vendor/ffmpeg.exe` **and**
+   `ffprobe.exe` first — they are gitignored and absent in a fresh checkout.
+4. **Publish:**
+   ```bash
+   gh release create v0.1.9 packaging/dist/YotoMaker.exe \
+     --title "Yoto Maker v0.1.9" --notes-file docs/RELEASE_NOTES.md
+   ```
+5. **Verify the release exists**, because steps 2–4 can each half-succeed:
+   ```bash
+   gh release view v0.1.9 --json tagName,assets \
+     -q '.tagName + " -> " + (.assets[0].name // "NO ASSET")'
+   ```
+   Expected: `v0.1.9 -> YotoMaker.exe`. Anything else — including a release with
+   no asset — means users get no update.
+
+**`updater.py` reads GitHub releases, not tags and not `pyproject.toml`.** A
+bumped version with no release is invisible to every installed copy: the app
+correctly reports "no update available" because there is nothing to download.
+This is what happened to v0.1.9, and the symptom is indistinguishable from the
+app being up to date. If a user says "I'm not getting the update", run step 5
+first.
 
 The end-user install guide ([INSTALL-FOR-MOM.md](INSTALL-FOR-MOM.md)) points at
-`releases/latest`.
+`releases/latest`, so an un-created release also leaves that link on the previous
+version.
 
 ## Notes
 

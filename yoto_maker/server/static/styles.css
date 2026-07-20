@@ -238,6 +238,28 @@ textarea:focus { outline: none; border-color: var(--accent); background: #fff; }
 
 /* Small helper text */
 .tiny { font-size: 13px; color: var(--muted); }
+
+/* A machine-generated value displayed for a human to compare against another
+   screen, character by character. Segoe UI makes O/0 and l/I/1 ambiguous, which
+   turns a failed comparison into a confident wrong answer — the worst available
+   failure mode for this control. Standalone utility: it adds no rule to, and
+   edits no rule in, the .setting* block. */
+.mono-value {
+  font-family: Consolas, "Cascadia Mono", "SF Mono", Menlo, monospace;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  /* 32 characters must wrap inside the column, never push the card wide. NOT
+     space-separated chunking (a8OG O6Ef …): the spaces would be copied, and
+     "I copied it exactly and it didn't work" costs far more than the scanning
+     help is worth. word-break inserts nothing. */
+  word-break: break-all;
+  /* .row is display:flex with no align-items, so this would default to stretch
+     and top-align against the vertically-centred .btn.small beside it.
+     Inert outside a flex row. */
+  align-self: center;
+}
+
 a { color: var(--accent-dark); }
 
 /* Modal / overlay (About, per-track icon picker) */

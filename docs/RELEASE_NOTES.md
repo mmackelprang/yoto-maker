@@ -8,6 +8,11 @@ Built to be usable by someone with little computer knowledge.
   **Settings** at the bottom) to see whether your Yoto connection is actually
   working, and fix it with one button if it isn't. The four numbered steps are
   unchanged — step 3 is now a little shorter.
+- **See the Client ID you're actually using.** If you or someone else set up your
+  own Client ID, Settings now shows it — the short form (`a8OG…oU1`) at a glance,
+  and **Show the whole thing** when you need to read every character. It's shown
+  in a typewriter font so `O` and `0` can't be confused when you're checking it
+  against the Yoto website.
 - **"Yoto connected" now means it.** The app used to say you were connected
   whenever a saved sign-in existed on the computer, even if Yoto had stopped
   accepting it — so the one time you needed the truth, it told you everything

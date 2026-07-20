@@ -121,6 +121,19 @@ def test_mask_client_id(temp_config):
     assert cfg.mask_client_id("") == ""
 
 
+def test_resolve_client_id_with_source_matches_the_two_single_getters(temp_config, monkeypatch):
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    from yoto_maker import config as cfg
+
+    assert cfg.resolve_client_id_with_source() == (
+        cfg.resolve_client_id(),
+        cfg.client_id_source(),
+    )
+
+    monkeypatch.setenv("YOTO_CLIENT_ID", "fromTheEnvironment0000000000000x")
+    assert cfg.resolve_client_id_with_source() == ("fromTheEnvironment0000000000000x", "env")
+
+
 def test_connection_status_reports_source_and_mask(temp_config, monkeypatch):
     from yoto_maker import config as cfg
     from yoto_maker.yoto import auth
@@ -131,3 +144,24 @@ def test_connection_status_reports_source_and_mask(temp_config, monkeypatch):
     assert st["client_id_source"] == "builtin"
     assert st["client_id_masked"] == cfg.mask_client_id(cfg.DEFAULT_YOTO_CLIENT_ID)
     assert st["configured"] is True  # legacy field, always True — kept for compatibility
+
+
+def test_connection_status_hides_the_full_client_id_for_builtin(temp_config, monkeypatch):
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    from yoto_maker.yoto import auth
+
+    st = auth.connection_status()
+    assert st["client_id_source"] == "builtin"
+    # Deliberately null, not the constant: the UI renders no value in this state
+    # and must not be handed one it is specified never to display.
+    assert st["client_id_full"] is None
+
+
+def test_connection_status_reports_the_full_client_id_for_env(temp_config, monkeypatch):
+    monkeypatch.setenv("YOTO_CLIENT_ID", "envSetByS0meoneElse00000000000x1")
+    from yoto_maker.yoto import auth
+
+    st = auth.connection_status()
+    assert st["client_id_source"] == "env"
+    assert st["client_id_full"] == "envSetByS0meoneElse00000000000x1"
+    assert st["client_id_masked"] == "envS…0x1"

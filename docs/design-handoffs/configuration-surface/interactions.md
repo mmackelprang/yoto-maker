@@ -391,7 +391,7 @@ the correct markup and costs nothing; **no behavior may depend on it.**
 ← Back to my card
   → [account] primary button  → [account] Cancel (signing_in only)
   → [client-id] Show the whole thing          (saved / env only)
-  → [client-id] input → Save
+  → [client-id] input → Save                  (skipped when env — both disabled)
   → [client-id] Go back to the built-in one   (saved only)
 ```
 

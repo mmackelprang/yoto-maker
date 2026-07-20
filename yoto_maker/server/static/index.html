@@ -249,7 +249,23 @@
         </p>
 
         <div class="setting-body" id="clientIdBody">
-          <label class="tiny" for="clientIdInput">Paste a Client ID</label>
+          <!-- The value in effect. Shown for `saved` and `env` only; `builtin`
+               renders nothing here (overview.md §11.4). Two structurally
+               parallel .row.wrap + .grow rows — this one and the input row
+               below — which interactions.md §5 already certifies as collapsing
+               correctly at narrow widths. -->
+          <div id="clientIdCurrent" class="hidden" style="margin-bottom:14px">
+            <p class="tiny">The one you’re using now</p>
+            <div class="row wrap" style="margin-top:6px">
+              <span class="mono-value grow" id="clientIdValue"></span>
+              <!-- Disclosure, not a password reveal: aria-expanded + aria-controls,
+                   never aria-pressed. Starts hidden because renderClientId()
+                   omits it whenever it could do nothing. -->
+              <button class="btn small hidden" id="clientIdReveal"
+                      aria-expanded="false" aria-controls="clientIdValue">Show the whole thing</button>
+            </div>
+          </div>
+          <label class="tiny" for="clientIdInput" id="clientIdInputLabel">Paste a Client ID</label>
           <div class="row wrap" style="margin-top:6px">
             <input id="clientIdInput" type="text" class="grow" placeholder="Paste your Yoto Client ID here" />
             <button class="btn" id="clientIdSave">Save</button>

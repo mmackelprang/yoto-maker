@@ -452,7 +452,12 @@ const CLIENT_ID_STATUS = {
   },
   saved: {
     cls: "is-ok", head: "Using your own Client ID",
-    sub: "",   // built from the masked value below
+    // Was "Ends in {last3}. Saved on this computer only." The value fragment
+    // moved to the body (copy.md §4a), where the whole mask is shown instead of
+    // three characters — the sentence is not losing information, it is losing a
+    // worse copy of it. It also retires a mild breach of the primitive's rule
+    // §4.3.2 (never surface a raw stored value in the status slot).
+    sub: "Saved on this computer only.",
   },
   env: {
     cls: "is-warn", head: "Set outside the app",
@@ -489,28 +494,115 @@ function clientIdMsg(kind, text) {
   show(box, true);
 }
 
+// Whether the full value is currently on screen. Module-level, and deliberately
+// NOT reset inside renderClientId(): that function also runs from
+// closeClientIdConfirm() (below), which fires when a user CANCELS a confirmation
+// — an event she did not aim at this control. Without the flag, cancelling a
+// confirmation would silently collapse a reveal she had opened, for no reason
+// she caused. That is the single defect this flag exists to prevent.
+//
+// Reset on exactly three events, each set at its own site:
+//   1. entering the settings view      → the onOpen wrapper in init()
+//   2. a successful save or reset      → submitClientId(), success path only
+//   3. source becoming "builtin"       → subsumed by 2; the block is removed
+//
+// There is NO timer. An auto-hide would defend against a bystander reading a
+// value that is printed in the user's own sign-in URL and on a public dashboard,
+// while breaking the one task the feature serves — she is mid-comparison against
+// another screen, or reading it aloud over the phone. It would also flip
+// aria-expanded with no user action, an unannounced state change a screen-reader
+// user has no way to anticipate: a real defect traded for theatre.
+let clientIdRevealed = false;
+
+// The label names the ACTION, aria-expanded names the STATE. Together they read
+// "Show the short version, button, expanded" — coherent, not contradictory. A
+// constant label while the whole thing is already displayed would be plainly
+// confusing to the sighted majority. aria-pressed is wrong here: it would
+// announce "pressed", which describes a control switched on and says nothing
+// about whether the text beside it is long or short.
+function setClientIdRevealLabel(revealed) {
+  const btn = $("#clientIdReveal");
+  btn.textContent = revealed ? "Show the short version" : "Show the whole thing";
+  btn.setAttribute("aria-expanded", revealed ? "true" : "false");
+}
+
+// Synchronous. Both strings are already in STATUS, so this makes no network
+// request and has no failure mode — no spinner, no error string, no decision
+// about what the toggle shows when a request times out (overview.md §7.8).
+function toggleClientIdReveal() {
+  clientIdRevealed = !clientIdRevealed;
+  const y = (STATUS && STATUS.yoto) || {};
+  $("#clientIdValue").textContent =
+    clientIdRevealed ? (y.client_id_full || "") : (y.client_id_masked || "");
+  setClientIdRevealLabel(clientIdRevealed);
+  // Focus deliberately stays on the button: the content it controls is adjacent
+  // and the button is also the way back. No focus management, nothing to get
+  // wrong — a direct benefit of choosing a disclosure over a modal-ish reveal.
+  //
+  // And no live region on #clientIdValue: #clientIdStatus in this section
+  // already carries role="status", and a second live region in one section is
+  // exactly the double-announcement hazard interactions.md §4.3 prohibits. A
+  // user who wants the value reads it with the virtual cursor, where she can
+  // also arrow through it character by character — which is what transcription
+  // needs, and what one utterance of 32 random characters would not give her.
+}
+
 function renderClientId() {
-  const source = (STATUS && STATUS.yoto && STATUS.yoto.client_id_source) || "builtin";
-  const masked = (STATUS && STATUS.yoto && STATUS.yoto.client_id_masked) || "";
+  const y = (STATUS && STATUS.yoto) || {};
+  const source = y.client_id_source || "builtin";
+  const masked = y.client_id_masked || "";
+  const full = y.client_id_full || "";
   const s = CLIENT_ID_STATUS[source] || CLIENT_ID_STATUS.builtin;
 
   $("#clientIdStatus").className = "setting-status " + s.cls;
   $("#clientIdStatusHead").textContent = s.head;
-  // The last-3 fragment is dropped rather than rendered empty: a masked value
-  // the server didn't send would otherwise read "Ends in . Saved on this
-  // computer only." The remaining sentence is still true and still useful.
-  let sub = s.sub;
-  if (source === "saved") {
-    const last3 = masked.slice(-3);
-    sub = last3
-      ? `Ends in ${last3}. Saved on this computer only.`
-      : "Saved on this computer only.";
+  $("#clientIdStatusSub").textContent = s.sub;
+
+  // ---- the value in effect (interactions.md §3.5.2) ----
+  // Row order is load-bearing. `builtin` is tested FIRST because client_id_full
+  // is deliberately null in exactly that state — testing for the null first
+  // would misread a designed absence as version skew.
+  //
+  // builtin renders no value at all: the built-in ID is the app author's
+  // registration, so there is no dashboard entry to compare it against and the
+  // comparison task simply does not exist here. Rendering 32 characters under
+  // "This is what most people use. Nothing to do here." would contradict that
+  // sentence for every user who ever opens this screen, to serve no task.
+  const showValue = source !== "builtin" && !!masked;
+  show($("#clientIdCurrent"), showValue);
+  if (showValue) {
+    // The toggle is OMITTED, not disabled, whenever it could do nothing:
+    //   - no client_id_full  → a frontend newer than its server. Degrade to the
+    //                          mask alone rather than render a control that
+    //                          cannot act.
+    //   - masked === full    → mask_client_id() returns values of 8 characters
+    //                          or fewer unchanged (config.py:88-89), so the
+    //                          whole thing is already on screen and offering to
+    //                          show it is a lie. Compare the two strings;
+    //                          NEVER re-implement the server's length rule.
+    const canReveal = !!full && full !== masked;
+    const revealed = canReveal && clientIdRevealed;
+    $("#clientIdValue").textContent = revealed ? full : masked;
+    setClientIdRevealLabel(revealed);
+    show($("#clientIdReveal"), canReveal);
   }
-  $("#clientIdStatusSub").textContent = sub;
+
+  // With the current value displayed directly above it, the `saved` state stacks
+  // two Client-ID-shaped things and "Paste a Client ID" no longer distinguishes
+  // the one you have from the one you would replace it with (copy.md, input
+  // label). builtin and env are unchanged — in neither is there a saved value of
+  // hers to differ from.
+  $("#clientIdInputLabel").textContent =
+    source === "saved" ? "Paste a different Client ID" : "Paste a Client ID";
 
   const isEnv = source === "env";
   // Disabled and explained, not hidden. Hiding the input would make the section
   // look broken to the person who came here specifically to change this.
+  //
+  // The value block above is deliberately EXEMPT from this disabling
+  // (interactions.md §3.4 as amended). It is read-only — there is nothing to
+  // disable — and env is the one state where the value is not discoverable
+  // anywhere else, so it is the state the display matters most in.
   const input = $("#clientIdInput");
   input.disabled = isEnv;
   $("#clientIdSave").disabled = isEnv;
@@ -591,6 +683,14 @@ async function submitClientId(kind) {
   }
 
   $("#clientIdInput").value = "";
+  // Resets #2 and #3. The value just changed, so continuing to display the
+  // previous revealed string would be actively wrong; and if the source became
+  // "builtin" the block is removed entirely. Set BEFORE refreshStatus(), because
+  // closeClientIdConfirm() below re-renders.
+  //
+  // Deliberately NOT inside closeClientIdConfirm(): the failure path above calls
+  // it too, and a save that failed changed nothing to collapse the reveal for.
+  clientIdRevealed = false;
   await refreshStatus();
   closeClientIdConfirm(false);
   // Both actions signed the user out on the server, so re-render the account
@@ -1059,11 +1159,16 @@ function wire() {
   $("#clientIdSave").addEventListener("click", trySave);
   $("#clientIdInput").addEventListener("keydown", (e) => { if (e.key === "Enter") trySave(); });
   $("#clientIdReset").addEventListener("click", () => openClientIdConfirm("reset"));
+  $("#clientIdReveal").addEventListener("click", toggleClientIdReveal);
   $("#clientIdConfirmNo").addEventListener("click", () => closeClientIdConfirm());
   $("#clientIdConfirmYes").addEventListener("click", () =>
     submitClientId($("#clientIdConfirm").dataset.kind));
   registerSetting({
-    onOpen: renderClientId,
+    // Reset #1: a fresh view starts in its default state, consistent with the
+    // existing scrollTo(0,0) and account re-check. It lives HERE and not inside
+    // renderClientId(), which also runs on confirmation-cancel — see the comment
+    // on clientIdRevealed.
+    onOpen: () => { clientIdRevealed = false; renderClientId(); },
     onClose: () => clearError($("#clientIdMsg")),
     confirm: $("#clientIdConfirm"),
     closeConfirm: closeClientIdConfirm,
