@@ -1,7 +1,31 @@
-# Yoto Maker v0.1.8
+# Yoto Maker v0.1.9
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
+
+### 🆕 New in v0.1.9
+- **A Settings page.** Click the **Yoto** button in the top-right corner (or
+  **Settings** at the bottom) to see whether your Yoto connection is actually
+  working, and fix it with one button if it isn't. The four numbered steps are
+  unchanged — step 3 is now a little shorter.
+- **"Yoto connected" now means it.** The app used to say you were connected
+  whenever a saved sign-in existed on the computer, even if Yoto had stopped
+  accepting it — so the one time you needed the truth, it told you everything
+  was fine. Settings now checks with Yoto for real, and says **We couldn't check
+  right now** if the computer is offline, rather than blaming your account.
+- **Keyboard users can see where they are.** Every button now shows a purple
+  outline when you move to it with the Tab key.
+
+### Fixed in v0.1.9
+- **Changing the Client ID no longer breaks sending, silently.** A sign-in
+  belongs to one Client ID, so changing it now signs you out and tells you to
+  sign in again — instead of leaving the app claiming to be connected while
+  every upload failed.
+- **You can go back to the built-in Client ID** after pasting your own. There was
+  previously no way to undo it.
+- **An abandoned sign-in stops waiting.** Closing the Yoto tab without signing in
+  used to leave the app checking every two seconds forever. It now stops after
+  three minutes, and you can press **Cancel**.
 
 ### 🆕 New in v0.1.8
 - **Emoticons.** The picture tab is now **😊 Emoticons** — pick from a big set of

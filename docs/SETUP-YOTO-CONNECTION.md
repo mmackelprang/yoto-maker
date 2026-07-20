@@ -49,9 +49,20 @@ Copy the **Client ID** string the dashboard shows you (it is **not** secret).
 Pick whichever is easiest:
 
 **Option A — paste it into the app (no rebuild).**
-Open Yoto Maker, go to step 3 (*Send it to your Yoto*), click
-**⚙️ Use a different Yoto account (advanced)**, paste your Client ID, and click
-**Save**. It's stored on that computer only and overrides the bundled one.
+Open Yoto Maker and click the **Yoto** button in the top-right corner (or
+**Settings** at the bottom of the page). Under **Yoto Client ID (advanced)**,
+paste your Client ID and click **Save**. It's stored on that computer only and
+overrides the bundled one.
+
+Saving a Client ID **signs you out of Yoto**, because a sign-in belongs to one
+specific Client ID. The Settings page says so before you confirm, and afterwards
+the **Your Yoto account** section right above tells you to sign in again. If you
+change your mind, **Go back to the built-in one** appears once you've saved your
+own — it signs you out too, for the same reason.
+
+> If `YOTO_CLIENT_ID` is set on that computer (Option B), it wins over anything
+> saved in the app. Settings shows **Set outside the app** in that case and
+> disables the box, rather than accepting a value it would then ignore.
 
 **Option B — environment variable.**
 Set `YOTO_CLIENT_ID` to your Client ID before launching (useful for developers):
