@@ -19,7 +19,7 @@ requires explicit direction from Mark plus written rationale.
 
 | Surface                                             | Status   | Date       |
 | --------------------------------------------------- | -------- | ---------- |
-| [`configuration-surface/`](configuration-surface/)   | Proposed | 2026-07-20 |
+| [`configuration-surface/`](configuration-surface/)   | Shipped  | 2026-07-20 |
 
 ## The one rule that governs all of them
 

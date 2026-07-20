@@ -13,12 +13,16 @@
       <span class="logo">🎵</span>
       <h1>Yoto Maker</h1>
     </div>
-    <button id="yotoPill" class="pill" title="Yoto connection">
+    <button id="yotoPill" class="pill" title="Yoto connection settings" aria-label="Yoto connection settings">
       <span class="dot"></span><span id="yotoPillText">Checking…</span>
     </button>
   </header>
 
   <main>
+    <!-- The card wizard. Exactly one of #cardView / #settingsView is un-hidden
+         at a time; the hashchange handler in app.js is the only thing that
+         swaps them, so clicking a link and pressing Back cannot diverge. -->
+    <div id="cardView">
     <!-- Update banner (only if a newer version exists) -->
     <div id="updateBanner" class="update-banner hidden">
       <div class="update-row">
@@ -118,26 +122,11 @@
       <h2><span class="num">3</span> Send it to your Yoto</h2>
       <p class="hint">This uploads your card to your Yoto account. You only sign in the first time.</p>
 
-      <!-- Client ID box: shown automatically only if the app has none baked in;
-           otherwise reachable via the "advanced" link below. -->
-      <div id="setupRow" class="hidden">
-        <div class="msg-box info">
-          Paste a Yoto <em>Client ID</em> to use your own Yoto app (from
-          <a href="https://dashboard.yoto.dev" target="_blank" rel="noopener">dashboard.yoto.dev</a>).
-          See <a href="https://github.com/mmackelprang/yoto-maker/blob/main/docs/SETUP-YOTO-CONNECTION.md" target="_blank" rel="noopener">the setup guide</a>.
-        </div>
-        <div class="row wrap" style="margin-top:10px">
-          <input id="clientIdInput" type="text" class="grow" placeholder="Paste Yoto Client ID here" />
-          <button id="clientIdSave" class="btn">Save</button>
-        </div>
-        <div id="setupError" class="msg-box err hidden"></div>
-      </div>
-
       <div id="connectRow" class="hidden">
         <div class="msg-box info">You'll need to connect your Yoto account first.</div>
         <button id="connectBtn" class="btn primary big" style="margin-top:12px">🔗 Connect my Yoto account</button>
         <div id="advRow" style="margin-top:10px">
-          <a href="#" id="advToggle" class="tiny">⚙️ Use a different Yoto account (advanced)</a>
+          <a href="#settings" id="advToggle" class="tiny">⚙️ Yoto connection settings</a>
         </div>
       </div>
 
@@ -163,11 +152,129 @@
       </div>
     </section>
 
-    <p class="tiny" style="text-align:center">
-      Made with Yoto Maker · <span id="ver"></span> ·
-      <a href="#" id="aboutLink">About</a> ·
-      <a href="#" id="startOver">Start a new card</a>
-    </p>
+      <p class="tiny" style="text-align:center">
+        Made with Yoto Maker · <span id="ver"></span> ·
+        <a href="#settings" id="settingsLink">Settings</a> ·
+        <a href="#" id="aboutLink">About</a> ·
+        <a href="#" id="startOver">Start a new card</a>
+      </p>
+    </div><!-- /#cardView -->
+
+    <!-- ===================== SETTINGS VIEW =====================
+         Each <section class="setting"> below is one instance of the config
+         primitive. Its seven slots always appear in this order:
+           1 <h3> title           (required)
+           2 .setting-desc        (required)
+           3 .setting-status      (optional)
+           4 .setting-body        (optional — the input control, if any)
+           5 .setting-actions     (optional — primary button first)
+           6 .msg-box             (required in markup, hidden until needed)
+           7 .setting-confirm     (optional, hidden by default)
+
+         To add setting #3: copy one of these sections, pick a new {id}, fill the
+         slots you need and delete the ones you don't, append it below, and wire
+         its buttons in app.js. No CSS changes. No edits to the sections above.
+         Feedback is scoped to its own section — a failure in one setting must
+         never render a message inside another. -->
+    <div id="settingsView" class="hidden" aria-labelledby="settingsTitle">
+      <div class="settings-head">
+        <button id="settingsBack" class="back-link">← Back to my card</button>
+        <h2 id="settingsTitle" tabindex="-1">Settings</h2>
+      </div>
+
+      <!-- Setting 1 — Your Yoto account. No .setting-body: this setting is a
+           single action, not an input. -->
+      <section class="setting" id="setting-account">
+        <h3>Your Yoto account</h3>
+        <p class="setting-desc">
+          Yoto Maker sends the cards you make to your Yoto account. You sign in once,
+          on Yoto’s own website, and it remembers you on this computer.
+        </p>
+        <p class="setting-desc">
+          Use the button below if Yoto Maker has stopped being able to send cards, or if
+          you want to use a different Yoto account.
+        </p>
+
+        <p class="setting-status is-unknown" id="accountStatus" role="status">
+          <span class="dot" aria-hidden="true"></span>
+          <span>
+            <span id="accountStatusHead">Checking your Yoto connection…</span>
+            <span class="sub" id="accountStatusSub"></span>
+          </span>
+        </p>
+
+        <div class="setting-actions" id="accountActions">
+          <button class="btn primary" id="accountPrimary" disabled>🔗 Sign in to Yoto again</button>
+          <button class="btn ghost hidden" id="accountCancel">Cancel</button>
+        </div>
+
+        <div class="msg-box err hidden" id="accountMsg" role="alert" tabindex="-1"></div>
+
+        <div class="setting-confirm hidden" id="accountConfirm" role="group" aria-labelledby="accountConfirmText">
+          <p id="accountConfirmText">Sign in to Yoto again?</p>
+          <p>
+            This forgets the Yoto account on this computer, then opens Yoto’s website so
+            you can sign in — with the same account, or a different one.
+          </p>
+          <p>Nothing in your Yoto account changes. The cards you’ve already made are safe.</p>
+          <div class="setting-actions">
+            <button class="btn ghost" id="accountConfirmNo">Never mind</button>
+            <button class="btn primary" id="accountConfirmYes">Yes, sign in again</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Setting 2 — Yoto Client ID. Uses every slot; its confirmation text is
+           filled by app.js because the same slot serves both save and reset. -->
+      <section class="setting" id="setting-client-id">
+        <h3>Yoto Client ID (advanced)</h3>
+        <p class="setting-desc">
+          Most people never need to change this. Yoto Maker comes with everything it
+          needs already built in.
+        </p>
+        <p class="setting-desc">
+          A Client ID is a code from Yoto’s developer website that tells Yoto which app
+          is asking to sign in. You’d only paste your own here if someone has asked you
+          to.
+          <a href="https://github.com/mmackelprang/yoto-maker/blob/main/docs/SETUP-YOTO-CONNECTION.md"
+             target="_blank" rel="noopener">How to get one&nbsp;↗</a>
+        </p>
+
+        <p class="setting-status is-ok" id="clientIdStatus" role="status">
+          <span class="dot" aria-hidden="true"></span>
+          <span>
+            <span id="clientIdStatusHead"></span>
+            <span class="sub" id="clientIdStatusSub"></span>
+          </span>
+        </p>
+
+        <div class="setting-body" id="clientIdBody">
+          <label class="tiny" for="clientIdInput">Paste a Client ID</label>
+          <div class="row wrap" style="margin-top:6px">
+            <input id="clientIdInput" type="text" class="grow" placeholder="Paste your Yoto Client ID here" />
+            <button class="btn" id="clientIdSave">Save</button>
+          </div>
+          <p class="tiny hidden" id="clientIdEnvNote" style="margin-top:8px">
+            You can still type one here, but it won’t be used while the one above is set.
+          </p>
+        </div>
+
+        <div class="setting-actions hidden" id="clientIdActions">
+          <button class="btn" id="clientIdReset">Go back to the built-in one</button>
+        </div>
+
+        <div class="msg-box err hidden" id="clientIdMsg" role="alert" tabindex="-1"></div>
+
+        <div class="setting-confirm hidden" id="clientIdConfirm" role="group" aria-labelledby="clientIdConfirmText">
+          <p id="clientIdConfirmText"></p>
+          <div id="clientIdConfirmBody"></div>
+          <div class="setting-actions">
+            <button class="btn ghost" id="clientIdConfirmNo">Never mind</button>
+            <button class="btn primary" id="clientIdConfirmYes"></button>
+          </div>
+        </div>
+      </section>
+    </div><!-- /#settingsView -->
   </main>
 
   <!-- About popup -->

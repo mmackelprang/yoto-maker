@@ -33,6 +33,17 @@ class AuthError(RuntimeError):
     """User-friendly authentication failure."""
 
 
+class AuthNetworkError(AuthError):
+    """We couldn't reach Yoto at all — offline, DNS failure, or a timeout.
+
+    Deliberately a *subclass* of AuthError so every existing ``except AuthError``
+    still catches it and nothing downstream changes. It exists so the connection
+    check can tell "your sign-in is broken" apart from "this computer isn't
+    online". Reporting offline as broken would send a user to disconnect a
+    perfectly healthy account while chasing a Wi-Fi problem.
+    """
+
+
 # In-memory store for the pending login (verifier + state) between redirect and
 # callback. Fine because the whole flow happens in one short-lived browser trip.
 _pending: dict[str, str] = {}
@@ -102,20 +113,20 @@ def finish_login(code: str, state: str) -> None:
 # --------------------------------------------------------------------------- #
 # Token storage + refresh
 # --------------------------------------------------------------------------- #
-def _token_request(data: dict) -> dict:
+def _token_request(data: dict, timeout: float = 30) -> dict:
     try:
         resp = httpx.post(
             f"{config_mod.YOTO_AUTH_BASE}/oauth/token",
             data=data,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=30,
+            timeout=timeout,
         )
         resp.raise_for_status()
         return resp.json()
     except httpx.HTTPStatusError as exc:
         raise AuthError("Yoto rejected the sign-in. Please try connecting again.") from exc
     except Exception as exc:
-        raise AuthError("We couldn't reach Yoto to finish signing in. Check your internet.") from exc
+        raise AuthNetworkError("We couldn't reach Yoto to finish signing in. Check your internet.") from exc
 
 
 def _save_tokens(tokens: dict) -> None:
@@ -146,7 +157,7 @@ def logout() -> None:
     path.unlink(missing_ok=True)
 
 
-def get_access_token() -> str:
+def get_access_token(timeout: float = 30) -> str:
     """Return a valid access token, refreshing if needed. Raises NotConnectedError."""
     tokens = _load_tokens()
     if not tokens:
@@ -164,7 +175,8 @@ def get_access_token() -> str:
             "grant_type": "refresh_token",
             "client_id": _client_id(),
             "refresh_token": refresh,
-        }
+        },
+        timeout=timeout,
     )
     # Auth0 may or may not rotate the refresh token; keep the old one if absent.
     new.setdefault("refresh_token", refresh)
@@ -173,8 +185,52 @@ def get_access_token() -> str:
 
 
 def connection_status() -> dict:
-    """A UI-friendly summary: connected? configured?"""
+    """A UI-friendly summary: connected? which Client ID is in effect?
+
+    ``connected`` here means only "a saved sign-in exists on this computer" — it
+    is cheap and does not touch the network. For "does it actually still work",
+    which is what the settings screen shows, use check_connection().
+    """
+    cid = config_mod.resolve_client_id()
     return {
-        "configured": bool(config_mod.resolve_client_id()),
+        # Legacy: resolve_client_id() falls back to a non-empty constant, so this
+        # is permanently True and carries no information. Kept so nothing that
+        # reads it breaks; no new UI may depend on it.
+        "configured": bool(cid),
         "connected": _load_tokens() is not None,
+        "client_id_source": config_mod.client_id_source(),
+        "client_id_masked": config_mod.mask_client_id(cid),
     }
+
+
+def check_connection(timeout: float = 8.0) -> dict:
+    """Ask Yoto whether the saved sign-in still works. Never raises.
+
+    Four outcomes, and the difference between the last two is the entire reason
+    this function exists:
+
+      connected     — a refresh just succeeded (or an unexpired token is held)
+      not_connected — nothing is saved on this computer
+      broken        — something is saved, and Yoto will not accept it
+      unknown       — we could not reach Yoto, so we do not know either way
+
+    Timeboxed so an offline user is not left on a spinner. Note that when the
+    cached access token has not expired yet this returns "connected" without a
+    network round trip — that is intended: the failure modes this screen exists
+    to catch (a dead refresh token, a Client ID change that forced a logout) all
+    leave no usable cached token behind.
+    """
+    if _load_tokens() is None:
+        return {"state": "not_connected"}
+    try:
+        get_access_token(timeout=timeout)
+    except AuthNetworkError:
+        # Must be checked before AuthError — it is a subclass.
+        return {"state": "unknown", "reason": "offline"}
+    except (NotConnectedError, AuthError):
+        # A token file exists, so "no refresh token" is a broken sign-in rather
+        # than a missing one.
+        return {"state": "broken"}
+    except Exception:
+        return {"state": "unknown", "reason": "offline"}
+    return {"state": "connected"}

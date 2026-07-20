@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 from .auth import (
+    AuthError,
+    AuthNetworkError,
     NotConnectedError,
+    check_connection,
     connection_status,
     finish_login,
     logout,
@@ -15,6 +18,9 @@ __all__ = [
     "finish_login",
     "logout",
     "connection_status",
+    "check_connection",
+    "AuthError",
+    "AuthNetworkError",
     "NotConnectedError",
     "YotoClient",
     "YotoError",

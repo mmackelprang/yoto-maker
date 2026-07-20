@@ -225,3 +225,133 @@ def test_origin_guard_blocks_cross_site(client):
     assert ok.status_code == 200
     # ...and GETs are never blocked by origin.
     assert client.get("/api/draft", headers={"origin": "https://evil.example"}).status_code == 200
+
+
+def test_status_reports_client_id_source_and_mask(client, monkeypatch):
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    body = client.get("/api/status").json()
+    assert body["yoto"]["client_id_source"] == "builtin"
+    assert "…" in body["yoto"]["client_id_masked"]
+
+
+def test_check_reports_not_connected_with_no_saved_sign_in(client):
+    r = client.post("/api/yoto/check")
+    assert r.status_code == 200
+    assert r.json() == {"state": "not_connected"}
+
+
+def test_check_reports_connected(client, monkeypatch):
+    import time
+
+    from yoto_maker.yoto import auth
+
+    auth._save_tokens({"access_token": "AT", "expires_at": time.time() + 999})
+    assert client.post("/api/yoto/check").json() == {"state": "connected"}
+
+
+def test_check_reports_broken(client, monkeypatch):
+    import time
+
+    from yoto_maker.yoto import auth
+
+    class Rejecting:
+        status_code = 401
+
+        def raise_for_status(self):
+            import httpx
+            raise httpx.HTTPStatusError("nope", request=None, response=None)
+
+        def json(self):
+            return {}
+
+    auth._save_tokens({"access_token": "old", "refresh_token": "RT", "expires_at": time.time() - 10})
+    monkeypatch.setattr(auth.httpx, "post", lambda *a, **k: Rejecting())
+    assert client.post("/api/yoto/check").json() == {"state": "broken"}
+
+
+def test_check_reports_unknown_when_offline(client, monkeypatch):
+    import time
+
+    from yoto_maker.yoto import auth
+
+    def boom(*a, **k):
+        raise OSError("no route to host")
+
+    auth._save_tokens({"access_token": "old", "refresh_token": "RT", "expires_at": time.time() - 10})
+    monkeypatch.setattr(auth.httpx, "post", boom)
+    assert client.post("/api/yoto/check").json() == {"state": "unknown", "reason": "offline"}
+
+
+def test_saving_a_client_id_signs_the_user_out(client, monkeypatch, temp_config):
+    import time
+
+    from yoto_maker.yoto import auth
+
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    auth._save_tokens({"access_token": "AT", "expires_at": time.time() + 999})
+    assert temp_config.token_path.exists()
+
+    r = client.post("/api/yoto/client-id", json={"client_id": "  mine  "})
+    assert r.status_code == 200
+    # Tokens are minted per Client ID. Keeping the old sign-in would leave the
+    # app reporting "connected" while every upload failed.
+    assert not temp_config.token_path.exists()
+    assert r.json()["yoto"]["connected"] is False
+    assert r.json()["yoto"]["client_id_source"] == "saved"
+
+    body = client.get("/api/status").json()
+    assert body["yoto"]["client_id_masked"] == "mine"  # short: masking would reveal it anyway
+
+
+def test_saving_an_empty_client_id_is_rejected(client):
+    r = client.post("/api/yoto/client-id", json={"client_id": "   "})
+    assert r.status_code == 400
+
+
+def test_deleting_the_client_id_reverts_and_signs_out(client, monkeypatch, temp_config):
+    import time
+
+    from yoto_maker import config as cfg
+    from yoto_maker.yoto import auth
+
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    client.post("/api/yoto/client-id", json={"client_id": "mine"})
+    auth._save_tokens({"access_token": "AT", "expires_at": time.time() + 999})
+
+    r = client.request("DELETE", "/api/yoto/client-id")
+    assert r.status_code == 200
+    assert not temp_config.token_path.exists()
+    assert r.json()["yoto"]["client_id_source"] == "builtin"
+    assert cfg.resolve_client_id() == cfg.DEFAULT_YOTO_CLIENT_ID
+
+
+def test_deleting_when_nothing_is_saved_is_harmless(client, monkeypatch):
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    r = client.request("DELETE", "/api/yoto/client-id")
+    assert r.status_code == 200
+    assert r.json()["yoto"]["client_id_source"] == "builtin"
+
+
+def test_callback_renders_the_cancel_page_on_error(client, temp_config):
+    """A denied/cancelled sign-in renders the cancel page and never touches tokens.
+
+    This is the automated stand-in for a manual "press Cancel on Yoto's site"
+    step, which is unrunnable: Yoto's hosted sign-in is Auth0 universal login,
+    which exposes no Cancel/Deny control for a first-party client. The only
+    route to a consent screen is completing an authentication, so no agent or
+    human can reach the cancel path through the browser. The handler branches
+    purely on the ``error`` query param, so driving it directly is faithful.
+    """
+    r = client.get("/yoto/callback", params={"error": "access_denied"})
+    assert r.status_code == 200
+    assert "Sign-in was cancelled. You can close this tab and try again." in r.text
+    # The error branch returns before finish_login(), so no sign-in is written.
+    assert not temp_config.token_path.exists()
+
+
+def test_callback_error_branch_ignores_any_code(client, temp_config):
+    """``error`` wins over ``code`` — the handler must not try to redeem it."""
+    r = client.get("/yoto/callback", params={"error": "access_denied", "code": "ignored"})
+    assert r.status_code == 200
+    assert "Sign-in was cancelled." in r.text
+    assert not temp_config.token_path.exists()
