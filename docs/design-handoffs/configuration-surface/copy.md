@@ -116,11 +116,32 @@ forget, so the button goes straight to Yoto.
 | Trigger | Class | String |
 | --- | --- | --- |
 | Sign-in finished successfully | `.msg-box ok` | `🎉 You're signed in. Yoto Maker can send cards again.` |
-| User cancelled on Yoto's site | `.msg-box info` | `Sign-in was cancelled. You can try again whenever you're ready.` |
 | Yoto rejected the sign-in | `.msg-box err` | `Yoto couldn't complete the sign-in. Please try again.` |
 | Couldn't reach Yoto | `.msg-box err` | `We couldn't reach Yoto. Check your internet connection, then try again.` |
 | Waiting timed out (3 min) | `.msg-box info` | `We stopped waiting for the sign-in. If you finished signing in on Yoto's website, press "Sign in to Yoto again" — otherwise you can try again now.` |
 | User pressed Cancel while waiting | `.msg-box info` | `Stopped waiting. You can close the Yoto tab if it's still open.` |
+
+**Deliberately no "user cancelled on Yoto's site" message** *(removed 2026-07-20)*.
+An earlier draft of this table specified
+`Sign-in was cancelled. You can try again whenever you're ready.` for that
+trigger. It has no reachable path and never did: cancellation is rendered on the
+**callback page in the other browser tab** (`app.py:533-535`), which already
+says `Sign-in was cancelled. You can close this tab and try again.` — the same
+message, in the tab the user is actually looking at, with better advice about
+the stray tab. The settings view in the original tab has no
+way to learn about it and stays pending until the 3-minute `timed_out` message
+above takes over.
+
+Making it reachable would require new server-side callback state that this
+handoff never specified. That was raised with the user, who did not ask for it
+to be wired. The row is removed rather than left in place so that this file
+describes the surface as shipped — a specced string with no renderer reads to a
+future maintainer as an unimplemented requirement and invites someone to "fix"
+a gap that was a decision.
+
+If a future PR does add cross-tab callback state, this is the string to use and
+`.msg-box info` is the right class; treat it as new scope, not as a bug being
+paid down.
 
 ---
 

@@ -99,6 +99,133 @@ diff will touch step 1–4 too. Do not let a reviewer flag that as scope creep.
 
 ---
 
+## 2a. `--focus-ring` — SURFACE-SCOPED OVERRIDE (amendment, 2026-07-20)
+
+**Amends §2 and §4. Raised by Polisher against PR #10; the defect traces to a
+gap in this file, so the fix is specified here rather than left to Builder.**
+
+### The defect
+
+A single flat ring color cannot serve every surface, and §2 shipped as if it
+could. `#yotoPill` is the one focusable control that does not sit on `--card` or
+`--bg` — it sits inside `header`, whose background is
+`linear-gradient(120deg, var(--accent), #9a7de6)`. The ring is therefore drawn
+**on the gradient, in the gradient's own start color**:
+
+| Ring `--accent` vs | Ratio | |
+| --- | --- | --- |
+| gradient start `#7c5cd6` | **1.00:1** | invisible — the ring *is* the background |
+| gradient end `#9a7de6` | **1.48:1** | ❌ fails 3:1 |
+
+This is the app's primary entry point to the settings surface
+([`overview.md` §5.1](overview.md)) and `overview.md` §10.5 requires a visible
+focus indicator on the whole surface. It is the one control this PR promotes,
+and its ring does not render.
+
+### The fix: one level of token indirection
+
+The ring color becomes a variable that surfaces declare. Custom-property
+inheritance does the rest — **any** control placed inside `header`, now or
+later, picks up the correct ring with no new rule.
+
+```css
+:root {
+  /* Focus-ring color. Surfaces that are neither --card nor --bg MUST redeclare
+     this if --accent does not clear 3:1 against them. See §4 for the certified
+     surface list and the invariant that governs the header gradient. */
+  --focus-ring: var(--accent);
+}
+
+header { --focus-ring: #ffffff; }
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);   /* was: var(--accent) */
+  outline-offset: 2px;                    /* load-bearing — see below */
+  border-radius: 4px;
+}
+input:focus-visible, textarea:focus-visible { outline: none; }
+```
+
+That is the entire change: one new custom property, one scoped override, one
+edited declaration. No new rule targets `#yotoPill` or `.pill` — **patching the
+pill specifically was rejected**, because the next control added to the header
+would silently reintroduce the same defect.
+
+### Measured — both ends of the gradient, and every point between
+
+The pill's position relative to the gradient shifts with viewport width, so a
+ratio at one stop is not sufficient. Swept at 1% intervals across the full
+`#7c5cd6` → `#9a7de6` interpolation:
+
+| Ring `#ffffff` vs | Ratio | Target | |
+| --- | --- | --- | --- |
+| gradient start `#7c5cd6` | 4.82:1 | 3.0 | ✅ |
+| gradient end `#9a7de6` | 3.26:1 | 3.0 | ✅ |
+| **worst point across the sweep** | **3.26:1** | 3.0 | ✅ |
+
+The minimum sits at the light end, so `#9a7de6` is the binding constraint and
+the pill's actual horizontal position never produces a worse number.
+
+### The 2px offset is load-bearing — do not remove it
+
+The ring passes **because of** `outline-offset: 2px`, not incidentally. The
+offset leaves a 2px band of bare gradient between the pill and the ring, so the
+ring is adjacent to the gradient on *both* faces. Measured against the pill's own
+fill (`rgba(255,255,255,0.18)` composited over the gradient):
+
+| White ring vs pill fill | Ratio | |
+| --- | --- | --- |
+| over `#7c5cd6` → `#9479dd` | 3.48:1 | ✅ |
+| over `#9a7de6` → `#ac94ea` | **2.57:1** | ❌ fails 3:1 |
+
+Setting `outline-offset: 0` on the header would make the ring adjacent to that
+fill and **reintroduce the failure**. Flagged because a reviewer measuring
+ring-against-pill rather than ring-against-gradient will read 2.57 and think this
+fix is wrong; it is correct only so long as the offset survives.
+
+### Why white, and why not a dual ring
+
+White is not a compromise — it is the header's established foreground
+(`header { color: #fff }`, `.pill { color: #fff }`), so the ring speaks the
+surface's own vocabulary rather than importing a second one.
+
+Alternatives measured and rejected:
+
+| Candidate | Worst ratio across gradient | Verdict |
+| --- | --- | --- |
+| `#ffffff` | 3.26:1 | ✅ **chosen** — matches header foreground |
+| `--ink` `#241d38` | 3.33:1 | ❌ no meaningful ratio gain; reads as a dark blob, off-register for a pastel header |
+| `#000000` | 4.36:1 | ❌ best ratio, but pure black appears nowhere in this palette |
+| Dual ring (white inner + dark outer halo) | self-contrasting at 14:1 | ❌ rejected — see below |
+
+A dual ring (`outline: 3px solid #fff` + `box-shadow: 0 0 0 8px var(--ink)`)
+would be visible independent of any background, and it is the standard answer
+where a single color genuinely cannot win. It is rejected here because it buys
+margin the measurements say is not needed, it grows the pill's visual box by
+16px inside a header with only 22px of padding, and — decisively — it cannot be
+expressed as a single inherited custom property, so it would not generalise to
+future header controls the way `--focus-ring` does. The recurrence guard for
+this class of defect is the token indirection plus the enumerated surface table
+in §4, not additional pixels.
+
+### Invariant this creates
+
+> **Any color used as a `header` gradient stop must maintain ≥3:1 against
+> `#ffffff` — i.e. relative luminance ≤ 0.30.**
+> `#9a7de6` measures 0.2725, leaving real but finite headroom. Lightening the
+> header gradient past that threshold breaks the focus ring and requires
+> revisiting `--focus-ring` on this surface.
+
+### Note, no change requested
+
+`border-radius: 4px` inside the `:focus-visible` block is inert in practice —
+every focusable class (`.pill`, `.tab`, `.btn`, `.iconbtn`, `.emojibtn`,
+`.back-link`) declares its own radius at equal specificity and later in source
+order, so all of them win. It affects only bare elements. Left alone; recorded
+so a future reader does not mistake it for the thing shaping the ring.
+
+---
+
 ## 3. `.setting*` component block — NEW COMPONENT
 
 The reusable config-section primitive. Full anatomy and markup contract in
@@ -180,8 +307,34 @@ Measured, not assumed. Text targets 4.5:1 (AA), non-text UI targets 3:1.
 | `--ok` dot on `--card` | 4.25:1 | 3.0 | ✅ |
 | `--warn` dot on `--card` | 3.61:1 | 3.0 | ✅ |
 | `--err` dot on `--card` | 5.62:1 | 3.0 | ✅ |
-| `--accent` focus ring on `--card` | 4.82:1 | 3.0 | ✅ |
-| `--accent` focus ring on `--bg` | 4.42:1 | 3.0 | ✅ |
+
+### Focus ring — certified against every surface that renders one
+
+**This table previously listed two surfaces while the implementation had five.
+That gap is what produced the `#yotoPill` defect (§2a).** The rule is now: a
+focusable control may only be placed on a surface listed here, and adding a
+surface means adding a row — including surfaces introduced by future PRs.
+
+The ring color is `var(--focus-ring)`, which resolves to `--accent` everywhere
+except `header`.
+
+| Surface | Background | Ring resolves to | Ratio | |
+| --- | --- | --- | --- | --- |
+| `--card` `#ffffff` | flat | `--accent` | 4.82:1 | ✅ `.btn`, `.tab`, `.iconbtn`, `.emojibtn`, `.back-link`, `.modal` |
+| `--bg` `#f6f4fb` | flat | `--accent` | 4.42:1 | ✅ controls sitting directly on `main` |
+| `--warn-soft` `#fdf1e3` | flat | `--accent` | 4.33:1 | ✅ `.setting-confirm` action buttons |
+| `.update-banner` | gradient `#efeafb` → `#e6ddfa` | `--accent` | 4.09:1 / **3.69:1** | ✅ worst point is the `#e6ddfa` end |
+| `header` | gradient `--accent` → `#9a7de6` | **`#ffffff`** | 4.82:1 / **3.26:1** | ✅ **only** via the §2a override; `--accent` here measures 1.00:1–1.48:1 ❌ |
+
+Gradient surfaces are quoted at both stops and were swept at 1% intervals; the
+bolded figure is the worst point across the sweep, not an endpoint reading.
+
+Two surfaces in that list are gradients, and both were absent from the original
+certification. **Any future control placed in `header` inherits the correct
+white ring automatically** through `--focus-ring`; any future control placed on a
+*new* non-`--card`, non-`--bg` surface does **not** — it inherits `--accent` and
+must be measured before it ships. If the surface fails, the fix is to redeclare
+`--focus-ring` on that surface, never to add a rule targeting the control.
 
 The status dot is **never the only carrier of state** — every dot is paired with
 a text headline saying the same thing (`copy.md` §3, §4), so the surface is fully
