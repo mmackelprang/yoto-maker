@@ -1,6 +1,12 @@
 # Builder queue
 
-**Last updated:** 2026-07-20 by Builder — item 7 shipped, and **v0.1.9 is now
+**Last updated:** 2026-07-20 by Planner — **item 8 filed and planned: the stale
+asset bug.** It is the highest-priority row on this list. It has plausibly
+degraded every release since v0.1.5, it fails silently and partially against the
+user least able to work around it, and **we filed it twice as a testing hazard
+rather than the shipping bug it is** — see its briefing notes. Ships in v0.1.10.
+
+Previously: 2026-07-20 by Builder — item 7 shipped, and **v0.1.9 is now
 genuinely released**: tag `v0.1.9` pushed to origin, `YotoMaker.exe` built and
 uploaded, and the update path verified end-to-end (a spoofed v0.1.8 client is
 offered v0.1.9 by the real releases API). Items 1 and 7 are the first rows to use
@@ -37,6 +43,35 @@ day because these two states shared one word.
 | 4 | 📋 | **The crop editor modal has no focus trap** — Tab escapes the modal into the page behind it | _needs Planner pass_ | _needs Planner pass_ | — | MEDIUM. Pre-existing from the v0.1.7 crop editor; **not** a PR #10 regression. Observed Tab order below. |
 | 5 | 📋 | **`#yotoPill` white label fails WCAG AA at rest** — 2.56:1 against the gradient's light end, needs 4.5:1 | _needs Designer pass_ | _needs Planner pass_ | — | Pre-existing and independent of PR #10, but PR #10 promotes this control to primary entry point. **Needs a Designer pass, not a Builder hex pick.** |
 | 6 | 📋 | **`favicon.ico` 404 on the callback page** | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic. Logged so it isn't rediscovered; safe to leave sitting. |
+| 8 | 📋 | **Browsers serve a stale `app.js`/`styles.css` after auto-update** — new HTML runs against old JavaScript, which is what made Settings unreachable on v0.1.9 | brief in plan §The defect | [`superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`](superpowers/plans/2026-07-20-stale-asset-cache-after-update.md) | — | **HIGH — ships in v0.1.10.** Shipping bug, silent and partial, plausibly degrading every release since v0.1.5. 7 tasks. **This PR owns the `0.1.10` version bump** — Designer's Settings-discoverability PR must not also bump. |
+
+### Item 8 — briefing notes
+
+- **Read the plan before starting.** The approach is a deliberate combination of
+  two mechanisms plus a document-level header, and each part covers a specific
+  blind spot in the others. Dropping any one of the three leaves a fix that looks
+  correct and does nothing in the field.
+- **We misfiled this twice.** Builder and Tester both hit this symptom during PR
+  #10 and PR #11 UAT and it was written up as a *testing hazard* — "clear your
+  cache before UAT" — in `docs/DEVELOPERS.md` and both v0.1.9-era plan files.
+  One of the three "false failures" recorded there (**the pill triggering sign-in
+  instead of routing to Settings**) is verbatim the bug the user later reported
+  from the field. Tasks 5 and 7 correct that framing.
+- **The single most important UAT instruction: do not clear the browser cache.**
+  The whole claim is that an already-broken browser is repaired with no user
+  action. Clearing the cache first destroys the test and would have hidden this
+  bug for a sixth release.
+- **Highest-risk implementation detail:** `read_text()` must be passed
+  `encoding="utf-8"` explicitly. Without it the frozen `.exe` reads `index.html`
+  as cp1252, raises `UnicodeDecodeError` at byte 1201, and 500s the entire UI —
+  while passing every test on a UTF-8 machine. Test plan §C.3 is the gate.
+- **Version-bump ownership.** This PR bumps `pyproject.toml` and
+  `yoto_maker/__init__.py` to `0.1.10`. Coordinate with the Designer-specced
+  Settings-discoverability item landing in the same release; whichever merges
+  second rebases.
+- **Adjacent but out of scope:** item 2 (`--port` doesn't update `cfg.port`) sits
+  at `main.py:59`, one file over from this work. Leave it alone — it changes OAuth
+  redirect behavior and has its own row.
 
 ### Item 2 — briefing notes
 
