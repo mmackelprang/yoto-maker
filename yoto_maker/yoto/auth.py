@@ -173,8 +173,19 @@ def get_access_token() -> str:
 
 
 def connection_status() -> dict:
-    """A UI-friendly summary: connected? configured?"""
+    """A UI-friendly summary: connected? which Client ID is in effect?
+
+    ``connected`` here means only "a saved sign-in exists on this computer" — it
+    is cheap and does not touch the network. For "does it actually still work",
+    which is what the settings screen shows, use check_connection().
+    """
+    cid = config_mod.resolve_client_id()
     return {
-        "configured": bool(config_mod.resolve_client_id()),
+        # Legacy: resolve_client_id() falls back to a non-empty constant, so this
+        # is permanently True and carries no information. Kept so nothing that
+        # reads it breaks; no new UI may depend on it.
+        "configured": bool(cid),
         "connected": _load_tokens() is not None,
+        "client_id_source": config_mod.client_id_source(),
+        "client_id_masked": config_mod.mask_client_id(cid),
     }

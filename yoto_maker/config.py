@@ -44,20 +44,51 @@ def _bundle_root() -> Path:
 DEFAULT_YOTO_CLIENT_ID = "a8OGO6EfbWit5tDUUrOz0g49s49NQoU1"
 
 
-def resolve_client_id() -> str:
-    """Client ID from env var, then saved setting, then the baked-in default."""
+def _resolve_client_id_with_source() -> tuple[str, str]:
+    """The single precedence chain: env var → saved setting → baked-in default.
+
+    Returns ``(client_id, source)`` where source is "env" | "saved" | "builtin".
+    Both resolve_client_id() and client_id_source() delegate here, so the value in
+    effect and the label the UI reports it under cannot drift apart — the settings
+    screen hides its reset action based on that label, and a label that disagreed
+    with the value would make the screen lie.
+    """
     env = os.environ.get("YOTO_CLIENT_ID")
-    if env:
-        return env.strip()
+    if env and env.strip():
+        return env.strip(), "env"
     try:
         from .settings import get_settings  # lazy import to avoid a cycle
 
         saved = get_settings().get("yoto_client_id")
-        if saved:
-            return str(saved).strip()
+        if saved and str(saved).strip():
+            return str(saved).strip(), "saved"
     except Exception:
         pass
-    return DEFAULT_YOTO_CLIENT_ID
+    return DEFAULT_YOTO_CLIENT_ID, "builtin"
+
+
+def resolve_client_id() -> str:
+    """Client ID from env var, then saved setting, then the baked-in default."""
+    return _resolve_client_id_with_source()[0]
+
+
+def client_id_source() -> str:
+    """Which tier of the chain supplied the effective Client ID."""
+    return _resolve_client_id_with_source()[1]
+
+
+def mask_client_id(cid: str) -> str:
+    """First 4 + last 3 of the Client ID, for recognition on a phone call.
+
+    Not a security measure — a PKCE public client ID is not a secret (see the
+    note on DEFAULT_YOTO_CLIENT_ID). This exists so a user can confirm *which*
+    ID is in effect without a 32-character string on screen.
+    """
+    cid = (cid or "").strip()
+    if len(cid) <= 8:
+        return cid
+    return f"{cid[:4]}…{cid[-3:]}"
+
 
 YOTO_AUTH_BASE = "https://login.yotoplay.com"
 YOTO_API_BASE = "https://api.yotoplay.com"
@@ -71,6 +102,10 @@ YOTO_REDIRECT_PATH = "/yoto/callback"
 class Config:
     data_dir: Path = field(default_factory=_local_appdata)
     bundle_root: Path = field(default_factory=_bundle_root)
+    # Snapshot taken when the singleton is built. DO NOT read this at runtime:
+    # a Client ID saved after startup would not appear here. Everything in the
+    # app calls resolve_client_id() / client_id_source() live. Kept because
+    # tests/conftest.py constructs Config with an explicit value.
     yoto_client_id: str = field(default_factory=resolve_client_id)
     # Bind the local UI server to loopback only — never exposed to the network.
     host: str = "127.0.0.1"

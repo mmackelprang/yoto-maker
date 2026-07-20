@@ -80,3 +80,54 @@ def test_settings_delete_leaves_other_keys_alone(temp_config):
     s.delete("yoto_client_id")
     assert s.get("ai_api_key") == "secret"
     assert s.get("ai_model") == "gpt-image-1"  # default still resolves
+
+
+def test_client_id_source_tracks_the_same_chain(temp_config, monkeypatch):
+    from yoto_maker import config as cfg
+    from yoto_maker.settings import get_settings
+
+    # conftest sets YOTO_CLIENT_ID autouse — clear it to reach the lower tiers.
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    assert cfg.client_id_source() == "builtin"
+    assert cfg.resolve_client_id() == cfg.DEFAULT_YOTO_CLIENT_ID
+
+    get_settings().set("yoto_client_id", "from_setting")
+    assert cfg.client_id_source() == "saved"
+    assert cfg.resolve_client_id() == "from_setting"
+
+    monkeypatch.setenv("YOTO_CLIENT_ID", "from_env")
+    assert cfg.client_id_source() == "env"
+    assert cfg.resolve_client_id() == "from_env"
+
+
+def test_client_id_source_ignores_blank_values(temp_config, monkeypatch):
+    from yoto_maker import config as cfg
+    from yoto_maker.settings import get_settings
+
+    monkeypatch.setenv("YOTO_CLIENT_ID", "   ")
+    get_settings().set("yoto_client_id", "from_setting")
+    # A whitespace-only env var is not a Client ID; fall through to the saved one
+    # rather than resolving to an empty string.
+    assert cfg.client_id_source() == "saved"
+    assert cfg.resolve_client_id() == "from_setting"
+
+
+def test_mask_client_id(temp_config):
+    from yoto_maker import config as cfg
+
+    assert cfg.mask_client_id("a8OGO6EfbWit5tDUUrOz0g49s49NQoU1") == "a8OG…oU1"
+    # Short enough that masking would reveal the whole thing anyway.
+    assert cfg.mask_client_id("abc") == "abc"
+    assert cfg.mask_client_id("") == ""
+
+
+def test_connection_status_reports_source_and_mask(temp_config, monkeypatch):
+    from yoto_maker import config as cfg
+    from yoto_maker.yoto import auth
+
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    st = auth.connection_status()
+    assert st["connected"] is False
+    assert st["client_id_source"] == "builtin"
+    assert st["client_id_masked"] == cfg.mask_client_id(cfg.DEFAULT_YOTO_CLIENT_ID)
+    assert st["configured"] is True  # legacy field, always True — kept for compatibility
