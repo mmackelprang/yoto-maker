@@ -68,7 +68,8 @@ async function init() {
   await loadIcons();
   await loadEmojis();
   await refreshDraft();
-  checkUpdate();  // non-blocking
+  applyRoute();    // honour a #settings hash on load / reload
+  checkUpdate();   // non-blocking
 }
 
 // ---- update banner --------------------------------------------------------
@@ -129,33 +130,409 @@ function renderStatus() {
   const pill = $("#yotoPill");
   const text = $("#yotoPillText");
   const connected = STATUS.yoto.connected;
-  const configured = STATUS.yoto.configured;
   pill.classList.toggle("connected", connected);
   text.textContent = connected ? "Yoto connected" : "Yoto not connected";
-  // Setup box only when there's no Client ID yet; connect only when configured.
-  show($("#setupRow"), !configured);
-  show($("#connectRow"), configured && !connected);
+  // NOTE: STATUS.yoto.configured is permanently true (resolve_client_id() falls
+  // back to a non-empty baked-in constant), so it drives nothing. The old
+  // `show($("#setupRow"), !configured)` here meant the Client ID row could never
+  // appear on its own; that row now lives in the settings view.
+  show($("#connectRow"), !connected);
   $("#sendBtn").disabled = !connected;
-}
-
-async function saveClientId() {
-  const cid = $("#clientIdInput").value.trim();
-  if (!cid) return;
-  clearError($("#setupError"));
-  try {
-    await api("/api/yoto/client-id", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: cid }),
-    });
-    await refreshStatus();
-  } catch (e) {
-    showError($("#setupError"), e.message);
-  }
 }
 
 async function refreshStatus() {
   STATUS = await api("/api/status");
   renderStatus();
+}
+
+// ---- settings view routing ------------------------------------------------
+// The hashchange handler is the single place that swaps views. Every entry point
+// just sets location.hash, so a click and a browser Back press cannot diverge.
+let returnFocusTo = null;
+
+function inSettings() { return location.hash === "#settings"; }
+
+function applyRoute() {
+  if (!STATUS) return;            // init() calls applyRoute() once STATUS exists
+  const on = inSettings();
+  show($("#cardView"), !on);
+  show($("#settingsView"), on);
+  document.title = on ? "Settings · Yoto Maker" : "Yoto Maker";
+  if (on) {
+    // The card view may be scrolled far down a long track list; landing
+    // mid-page on a fresh view is disorienting.
+    window.scrollTo(0, 0);
+    $("#settingsTitle").focus();
+    openSettings();
+  } else {
+    closeSettings();
+    const back = returnFocusTo && document.contains(returnFocusTo) ? returnFocusTo : null;
+    returnFocusTo = null;
+    if (back) back.focus();
+    // The user may have just connected or disconnected; step 3 and #sendBtn
+    // must reflect reality on return.
+    refreshStatus().catch(() => {});
+  }
+}
+
+function gotoSettings(opener) {
+  returnFocusTo = opener || null;
+  if (inSettings()) applyRoute();      // already there (e.g. reload) — just render
+  else location.hash = "settings";     // hashchange does the swap
+}
+
+function leaveSettings() {
+  // Always setting the hash costs one extra history entry but can never escape
+  // the app, which history.back() could if the user arrived at #settings direct.
+  if (location.hash) location.hash = "";
+  else applyRoute();
+}
+
+// No focus trap and no Escape-to-exit: .hidden is `display: none !important`,
+// which takes the hidden view out of the tab order, the accessibility tree and
+// find-in-page for free. This is a page, not a dialog — and the user may be
+// mid-way through pasting a Client ID, which a stray Escape must not discard.
+
+// Filled in by the two setting sections below.
+function openSettings() {
+  renderClientId();
+  checkAccount();
+}
+
+function closeSettings() {
+  stopSignInPoll();
+  closeAccountConfirm();
+  closeClientIdConfirm();
+}
+
+// ---- setting 1: your Yoto account -----------------------------------------
+// Copy is verbatim from the design handoff (copy.md §3). Do not reword.
+const ACCOUNT_STATUS = {
+  checking: {
+    cls: "is-unknown", head: "Checking your Yoto connection…", sub: "",
+  },
+  connected: {
+    cls: "is-ok", head: "Connected and working",
+    sub: "We just checked with Yoto and everything’s fine.",
+  },
+  not_connected: {
+    cls: "is-unknown", head: "Not connected yet",
+    sub: "Connect your Yoto account to send cards to it.",
+  },
+  broken: {
+    cls: "is-err", head: "There’s a problem with this connection",
+    sub: "Yoto Maker can’t send cards right now. Signing in again usually fixes it.",
+  },
+  unknown: {
+    cls: "is-unknown", head: "We couldn’t check right now",
+    sub: "This computer doesn’t seem to be online. Check your internet, then come back.",
+  },
+  signing_in: {
+    cls: "is-warn", head: "Waiting for you to sign in…",
+    sub: "We opened Yoto’s website in another tab. Sign in there, then come back here.",
+  },
+};
+
+// The backend tags sign-in failures with a reason so the UI can use its own
+// wording rather than echoing a message written for a different context.
+const SIGNIN_ERRORS = {
+  rejected: "Yoto couldn’t complete the sign-in. Please try again.",
+  offline: "We couldn’t reach Yoto. Check your internet connection, then try again.",
+};
+
+const CHECK_TIMEOUT_MS = 8000;
+const SIGNIN_POLL_MS = 2000;
+const SIGNIN_MAX_MS = 3 * 60 * 1000;
+
+const ACCOUNT = { state: "checking", prev: "not_connected", timer: null };
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+  ]);
+}
+
+function accountMsg(kind, html) {
+  const box = $("#accountMsg");
+  box.className = "msg-box " + kind;
+  box.innerHTML = html;
+  show(box, true);
+}
+
+function setAccountState(state) {
+  // Remember the last settled state so Cancel and a 3-minute timeout can put
+  // the section back where it was rather than guessing.
+  if (state !== "signing_in" && state !== "checking") ACCOUNT.prev = state;
+  ACCOUNT.state = state;
+  renderAccount();
+}
+
+function renderAccount() {
+  const s = ACCOUNT_STATUS[ACCOUNT.state] || ACCOUNT_STATUS.unknown;
+  $("#accountStatus").className = "setting-status " + s.cls;
+  $("#accountStatusHead").textContent = s.head;
+  $("#accountStatusSub").textContent = s.sub;
+
+  const btn = $("#accountPrimary");
+  if (ACCOUNT.state === "signing_in") {
+    btn.textContent = "Waiting for Yoto…";
+    btn.disabled = true;
+  } else if (ACCOUNT.state === "not_connected") {
+    // Word-for-word identical to step 3's #connectBtn, deliberately: the two
+    // places that do this must never look like different features.
+    btn.textContent = "🔗 Connect my Yoto account";
+    btn.disabled = false;
+  } else {
+    btn.textContent = "🔗 Sign in to Yoto again";
+    // Only "checking" disables it. An offline user may still legitimately want
+    // to start a sign-in — she might be about to fix her Wi-Fi — so `unknown`
+    // must never dead-end her.
+    btn.disabled = ACCOUNT.state === "checking";
+  }
+  show($("#accountCancel"), ACCOUNT.state === "signing_in");
+}
+
+async function checkAccount() {
+  setAccountState("checking");
+  let res;
+  try {
+    res = await withTimeout(api("/api/yoto/check", { method: "POST" }), CHECK_TIMEOUT_MS);
+  } catch (_) {
+    // Never render a network problem as "your connection is broken", or she
+    // will disconnect a healthy account chasing a Wi-Fi fault.
+    setAccountState("unknown");
+    return;
+  }
+  setAccountState(res && res.state ? res.state : "unknown");
+}
+
+function openAccountConfirm() {
+  // Primitive rule: the confirmation replaces the actions slot, so there is
+  // never more than one live set of choices in a section.
+  show($("#accountActions"), false);
+  show($("#accountConfirm"), true);
+  // Focus starts on the way out, not the way through: a reflexive Space or
+  // Enter must not disconnect her account.
+  $("#accountConfirmNo").focus();
+}
+
+// restoreFocus defaults to true: Escape and "Never mind" both return focus to
+// the button that opened the confirmation. The "Yes" path passes false, because
+// startSignIn() is about to take over.
+function closeAccountConfirm(restoreFocus = true) {
+  const box = $("#accountConfirm");
+  if (box.classList.contains("hidden")) return;
+  show(box, false);
+  show($("#accountActions"), true);
+  if (restoreFocus) $("#accountPrimary").focus();
+}
+
+function stopSignInPoll() {
+  if (ACCOUNT.timer) { clearInterval(ACCOUNT.timer); ACCOUNT.timer = null; }
+}
+
+async function startSignIn() {
+  const wasConnected = !!(STATUS && STATUS.yoto && STATUS.yoto.connected);
+  clearError($("#accountMsg"));
+  let url;
+  try {
+    // Folding the sign-out into the sign-in is what lets one button serve both
+    // "fix this" and "switch accounts" — the user never has to know they are
+    // two operations.
+    if (wasConnected) await api("/api/yoto/logout", { method: "POST" });
+    ({ url } = await api("/api/yoto/login"));
+  } catch (e) {
+    await refreshStatus().catch(() => {});
+    setAccountState(wasConnected ? "broken" : "not_connected");
+    accountMsg("err", SIGNIN_ERRORS[e.data && e.data.reason] || e.message);
+    return;
+  }
+
+  const win = window.open(url, "_blank");
+  if (!win) {
+    // Popup blocked. A real link is the only reliable recovery — "allow popups"
+    // is not an actionable instruction for this audience.
+    accountMsg("info",
+      "Your browser stopped the Yoto window from opening.<br>" +
+      '<a id="accountOpenLink" target="_blank" rel="noopener">Open Yoto’s sign-in page&nbsp;↗</a>');
+    $("#accountOpenLink").href = url;   // set as a property, never interpolated
+    await refreshStatus().catch(() => {});
+    await checkAccount();
+    return;
+  }
+
+  setAccountState("signing_in");
+  const deadline = Date.now() + SIGNIN_MAX_MS;
+  stopSignInPoll();
+  ACCOUNT.timer = setInterval(async () => {
+    if (Date.now() > deadline) {
+      stopSignInPoll();
+      setAccountState(ACCOUNT.prev);
+      accountMsg("info",
+        "We stopped waiting for the sign-in. If you finished signing in on Yoto’s website, " +
+        "press “Sign in to Yoto again” — otherwise you can try again now.");
+      return;
+    }
+    try { await refreshStatus(); } catch (_) { return; }
+    if (STATUS.yoto.connected) {
+      stopSignInPoll();
+      // A token file appearing is not proof it works; confirm with a real check
+      // before claiming success. The status line updates first so the polite
+      // role="status" announcement isn't queued behind the assertive alert.
+      await checkAccount();
+      accountMsg("ok", "🎉 You’re signed in. Yoto Maker can send cards again.");
+    }
+  }, SIGNIN_POLL_MS);
+}
+
+function cancelSignIn() {
+  stopSignInPoll();
+  setAccountState(ACCOUNT.prev);
+  accountMsg("info", "Stopped waiting. You can close the Yoto tab if it’s still open.");
+}
+
+// ---- setting 2: Yoto Client ID --------------------------------------------
+// Copy is verbatim from the design handoff (copy.md §4). Do not reword.
+const CLIENT_ID_STATUS = {
+  builtin: {
+    cls: "is-ok", head: "Using the built-in Client ID",
+    sub: "This is what most people use. Nothing to do here.",
+  },
+  saved: {
+    cls: "is-ok", head: "Using your own Client ID",
+    sub: "",   // built from the masked value below
+  },
+  env: {
+    cls: "is-warn", head: "Set outside the app",
+    sub: "Someone set this up on this computer using YOTO_CLIENT_ID, and that takes " +
+         "priority. To change it, they’ll need to change it there.",
+  },
+};
+
+const CLIENT_ID_CONFIRM = {
+  save: {
+    title: "Use this Client ID?",
+    body: [
+      "Yoto Maker will start using the Client ID you pasted. Because this changes how " +
+      "the app signs in, you’ll need to sign in to Yoto again afterwards.",
+      "Nothing in your Yoto account changes.",
+    ],
+    yes: "Yes, use it",
+  },
+  reset: {
+    title: "Go back to the built-in Client ID?",
+    body: [
+      "Yoto Maker will forget the Client ID you pasted and use the one it came with. " +
+      "You’ll need to sign in to Yoto again afterwards.",
+      "Nothing in your Yoto account changes.",
+    ],
+    yes: "Yes, use the built-in one",
+  },
+};
+
+function clientIdMsg(kind, text) {
+  const box = $("#clientIdMsg");
+  box.className = "msg-box " + kind;
+  box.textContent = text;
+  show(box, true);
+}
+
+function renderClientId() {
+  const source = (STATUS && STATUS.yoto && STATUS.yoto.client_id_source) || "builtin";
+  const masked = (STATUS && STATUS.yoto && STATUS.yoto.client_id_masked) || "";
+  const s = CLIENT_ID_STATUS[source] || CLIENT_ID_STATUS.builtin;
+
+  $("#clientIdStatus").className = "setting-status " + s.cls;
+  $("#clientIdStatusHead").textContent = s.head;
+  $("#clientIdStatusSub").textContent =
+    source === "saved" ? `Ends in ${masked.slice(-3)}. Saved on this computer only.` : s.sub;
+
+  const isEnv = source === "env";
+  // Disabled and explained, not hidden. Hiding the input would make the section
+  // look broken to the person who came here specifically to change this.
+  $("#clientIdInput").disabled = isEnv;
+  $("#clientIdSave").disabled = isEnv;
+  show($("#clientIdEnvNote"), isEnv);
+
+  const actions = $("#clientIdActions");
+  if (actions) {
+    // Absent, not merely hidden, when an env var is in effect: deleting the
+    // saved value would fall through to the env var rather than the built-in
+    // one, so "Go back to the built-in one" would be a lie.
+    if (isEnv) actions.remove();
+    else show(actions, source === "saved");
+  }
+}
+
+function openClientIdConfirm(kind) {
+  const c = CLIENT_ID_CONFIRM[kind];
+  $("#clientIdConfirm").dataset.kind = kind;
+  $("#clientIdConfirmText").textContent = c.title;
+  const body = $("#clientIdConfirmBody");
+  body.innerHTML = "";
+  c.body.forEach((para) => {
+    const p = document.createElement("p");
+    p.textContent = para;
+    body.appendChild(p);
+  });
+  $("#clientIdConfirmYes").textContent = c.yes;
+
+  const actions = $("#clientIdActions");
+  if (actions) show(actions, false);
+  // The Save button lives in the body slot rather than the actions slot, so
+  // disable it too — one live set of choices per section, always.
+  $("#clientIdInput").disabled = true;
+  $("#clientIdSave").disabled = true;
+  show($("#clientIdConfirm"), true);
+  $("#clientIdConfirmNo").focus();
+}
+
+function closeClientIdConfirm(restoreFocus = true) {
+  const box = $("#clientIdConfirm");
+  if (box.classList.contains("hidden")) return;
+  const kind = box.dataset.kind;
+  show(box, false);
+  $("#clientIdConfirmNo").disabled = false;
+  $("#clientIdConfirmYes").disabled = false;
+  renderClientId();                       // restores the input, Save and the reset action
+  if (restoreFocus) {
+    const opener = kind === "reset" ? $("#clientIdReset") : $("#clientIdSave");
+    if (opener) opener.focus();
+  }
+}
+
+async function submitClientId(kind) {
+  $("#clientIdConfirmNo").disabled = true;
+  $("#clientIdConfirmYes").disabled = true;
+  clearError($("#clientIdMsg"));
+  try {
+    if (kind === "reset") {
+      await api("/api/yoto/client-id", { method: "DELETE" });
+    } else {
+      await api("/api/yoto/client-id", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: $("#clientIdInput").value.trim() }),
+      });
+    }
+  } catch (e) {
+    // Leave the value intact so nothing the user pasted is lost.
+    closeClientIdConfirm(false);
+    clientIdMsg("err", "We couldn’t save that. Please try again.");
+    $("#clientIdInput").focus();
+    return;
+  }
+
+  $("#clientIdInput").value = "";
+  await refreshStatus();
+  closeClientIdConfirm(false);
+  // Both actions signed the user out on the server, so re-render the account
+  // section above — it has already flipped to "Not connected yet".
+  await checkAccount();
+  clientIdMsg("ok", kind === "reset"
+    ? "Done — back to the built-in Client ID. Now sign in to Yoto again using the button above."
+    : "Saved. Now sign in to Yoto again using the button above.");
+  $("#clientIdMsg").focus();
 }
 
 // ---- draft + tracks -------------------------------------------------------
@@ -458,17 +835,26 @@ function openIconModal(trackId) {
 }
 
 // ---- connect + send -------------------------------------------------------
+let connectTimer = null;
+
 async function connectYoto() {
+  clearError($("#sendError"));
   try {
     const { url } = await api("/api/yoto/login");
     window.open(url, "_blank");
-    // Poll status until the callback lands.
-    const timer = setInterval(async () => {
-      await refreshStatus();
-      if (STATUS.yoto.connected) clearInterval(timer);
-    }, 2000);
+    // Bounded poll. The previous version cleared the interval only on success,
+    // so a sign-in the user closed or cancelled polled /api/status forever until
+    // the page was reloaded.
+    if (connectTimer) { clearInterval(connectTimer); connectTimer = null; }
+    const deadline = Date.now() + SIGNIN_MAX_MS;
+    connectTimer = setInterval(async () => {
+      if (Date.now() > deadline) { clearInterval(connectTimer); connectTimer = null; return; }
+      try { await refreshStatus(); } catch (_) { return; }
+      if (STATUS.yoto.connected) { clearInterval(connectTimer); connectTimer = null; }
+    }, SIGNIN_POLL_MS);
   } catch (e) {
-    showError($("#sendError"), e.message);
+    if (connectTimer) { clearInterval(connectTimer); connectTimer = null; }
+    showError($("#sendError"), SIGNIN_ERRORS[e.data && e.data.reason] || e.message);
   }
 }
 
@@ -561,22 +947,63 @@ function wire() {
   });
 
   $("#updateNow").addEventListener("click", doUpdate);
-  $("#clientIdSave").addEventListener("click", saveClientId);
-  $("#advToggle").addEventListener("click", (e) => {
-    e.preventDefault();
-    show($("#setupRow"), true);
-    $("#clientIdInput").focus();
+  // Settings entry points. All three route through gotoSettings() so the
+  // element to return focus to on exit is recorded in one place.
+  $("#advToggle").addEventListener("click", (e) => { e.preventDefault(); gotoSettings(e.currentTarget); });
+  $("#settingsLink").addEventListener("click", (e) => { e.preventDefault(); gotoSettings(e.currentTarget); });
+  $("#settingsBack").addEventListener("click", leaveSettings);
+  window.addEventListener("hashchange", applyRoute);
+
+  // Account setting. not_connected skips the confirmation entirely — there is
+  // nothing to forget, so the button goes straight to Yoto.
+  $("#accountPrimary").addEventListener("click", () => {
+    if (ACCOUNT.state === "not_connected") startSignIn();
+    else openAccountConfirm();
   });
+  $("#accountConfirmNo").addEventListener("click", () => closeAccountConfirm());
+  $("#accountConfirmYes").addEventListener("click", () => {
+    closeAccountConfirm(false);
+    startSignIn();
+  });
+  $("#accountCancel").addEventListener("click", cancelSignIn);
+
+  // Client ID setting.
+  const trySave = () => {
+    const cid = $("#clientIdInput").value.trim();
+    if (!cid) {
+      // Never confirm a no-op.
+      clientIdMsg("err", "Please paste a Client ID first.");
+      $("#clientIdInput").focus();
+      return;
+    }
+    openClientIdConfirm("save");
+  };
+  $("#clientIdSave").addEventListener("click", trySave);
+  $("#clientIdInput").addEventListener("keydown", (e) => { if (e.key === "Enter") trySave(); });
+  $("#clientIdReset").addEventListener("click", () => openClientIdConfirm("reset"));
+  $("#clientIdConfirmNo").addEventListener("click", () => closeClientIdConfirm());
+  $("#clientIdConfirmYes").addEventListener("click", () =>
+    submitClientId($("#clientIdConfirm").dataset.kind));
   // About popup
   const about = $("#aboutOverlay");
   $("#aboutLink").addEventListener("click", (e) => { e.preventDefault(); show(about, true); });
   $("#aboutClose").addEventListener("click", () => show(about, false));
   about.addEventListener("click", (e) => { if (e.target === about) show(about, false); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") show(about, false); });
-  $("#connectBtn").addEventListener("click", connectYoto);
-  $("#yotoPill").addEventListener("click", () => {
-    if (STATUS.yoto.configured && !STATUS.yoto.connected) connectYoto();
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    show(about, false);
+    if (!inSettings()) return;
+    // Inside settings, Escape does exactly one thing: dismiss an open
+    // confirmation. Anywhere else on this surface it does nothing.
+    if (!$("#accountConfirm").classList.contains("hidden")) { closeAccountConfirm(); return; }
+    if (!$("#clientIdConfirm").classList.contains("hidden")) { closeClientIdConfirm(); return; }
   });
+  $("#connectBtn").addEventListener("click", connectYoto);
+  // The pill now always goes to Settings. It used to be a dead click whenever
+  // the user was connected — and a user whose upload just failed looks for the
+  // one thing on screen that talks about her Yoto connection, so following the
+  // symptom lands her exactly where the fix is.
+  $("#yotoPill").addEventListener("click", (e) => gotoSettings(e.currentTarget));
   $("#sendBtn").addEventListener("click", sendToYoto);
   $("#labelBtn").addEventListener("click", makeLabel);
 
