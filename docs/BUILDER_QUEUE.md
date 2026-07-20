@@ -15,7 +15,15 @@ Work items that have an approved design and a complete implementation plan, read
 for Builder to ship one PR per row. Planner appends; Builder claims, ships and
 marks done. **Priority order is the user's to set** — Planner does not reshuffle.
 
-Status key: 📋 queued · 🚧 in flight · ⛔ blocked · ✅ shipped
+Status key: 📋 queued · 🚧 in flight · ⛔ blocked · ✅ merged · 🚢 released
+
+**`✅ merged` is not `🚢 released`.** Merged means the PR is on `main`. Released
+means a tag is pushed, an `.exe` is built and a GitHub release carries it — which
+is the only thing `updater.py` can see, and therefore the only thing a user can
+receive. A row moves to 🚢 only when `gh release view v<version>` returns a
+release with an uploaded `.exe` asset. **Paste that command's output into the
+row's PR or the commit that marks it.** v0.1.9 sat merged-but-unreleased for a
+day because these two states shared one word.
 
 ---
 
@@ -121,9 +129,9 @@ Status key: 📋 queued · 🚧 in flight · ⛔ blocked · ✅ shipped
 
 ## Shipped
 
-| # | Item | Spec | Plan | PR | Shipped |
-|---|------|------|------|----|---------|
-| 1 | **Configuration surface** — full-page Settings view built on the reusable `.setting` primitive, plus the three backend correctness fixes it depends on | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) | [`superpowers/plans/2026-07-20-configuration-surface.md`](superpowers/plans/2026-07-20-configuration-surface.md) | [#10](https://github.com/mmackelprang/yoto-maker/pull/10) | merged 2026-07-20 · **not yet released** (item 7 Part B cuts v0.1.9) |
+| # | Item | Spec | Plan | PR | Merged | Released |
+|---|------|------|------|----|--------|----------|
+| 1 | **Configuration surface** — full-page Settings view built on the reusable `.setting` primitive, plus the three backend correctness fixes it depends on | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) | [`superpowers/plans/2026-07-20-configuration-surface.md`](superpowers/plans/2026-07-20-configuration-surface.md) | [#10](https://github.com/mmackelprang/yoto-maker/pull/10) | 2026-07-20 | — (pending) — item 7 Part B cuts v0.1.9 |
 
 Item 1 shipped all 12 tasks as one PR, as planned. Its Builder briefing notes
 were consumed and removed; the spec and plan above remain the durable record.

@@ -77,6 +77,18 @@ def client_id_source() -> str:
     return _resolve_client_id_with_source()[1]
 
 
+def resolve_client_id_with_source() -> tuple[str, str]:
+    """The chain's public form: ``(client_id, source)`` from one traversal.
+
+    Any caller that needs both MUST use this rather than calling
+    resolve_client_id() and client_id_source() in sequence. Two traversals read
+    the env var and settings.json independently, so a settings write landing
+    between them would report a value under the wrong source label — and the
+    settings screen decides what to show, and what to hide, from that label.
+    """
+    return _resolve_client_id_with_source()
+
+
 def mask_client_id(cid: str) -> str:
     """First 4 + last 3 of the Client ID, for recognition on a phone call.
 

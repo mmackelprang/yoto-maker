@@ -234,6 +234,40 @@ def test_status_reports_client_id_source_and_mask(client, monkeypatch):
     assert "…" in body["yoto"]["client_id_masked"]
 
 
+def test_status_omits_the_full_client_id_when_builtin(client, monkeypatch):
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    body = client.get("/api/status").json()
+    assert body["yoto"]["client_id_source"] == "builtin"
+    assert body["yoto"]["client_id_full"] is None
+
+
+def test_status_reports_the_full_client_id_when_saved(client, monkeypatch):
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    client.post("/api/yoto/client-id", json={"client_id": "a8OGO6EfbWit5tDUUrOz0g49s49NQoU1"})
+    body = client.get("/api/status").json()
+    assert body["yoto"]["client_id_source"] == "saved"
+    assert body["yoto"]["client_id_full"] == "a8OGO6EfbWit5tDUUrOz0g49s49NQoU1"
+    assert body["yoto"]["client_id_masked"] == "a8OG…oU1"
+
+
+def test_status_reports_the_full_client_id_when_set_by_env(client, monkeypatch):
+    monkeypatch.setenv("YOTO_CLIENT_ID", "envSetByS0meoneElse00000000000x1")
+    body = client.get("/api/status").json()
+    assert body["yoto"]["client_id_source"] == "env"
+    # env is the one state where the value is not discoverable anywhere else, so
+    # it is the state the disclosure matters most in (overview.md §11.4).
+    assert body["yoto"]["client_id_full"] == "envSetByS0meoneElse00000000000x1"
+
+
+def test_status_full_equals_masked_for_a_short_saved_value(client, monkeypatch):
+    """The frontend omits the toggle by comparing these two, never by re-implementing
+    mask_client_id()'s length rule. This test pins the case that comparison exists for."""
+    monkeypatch.delenv("YOTO_CLIENT_ID", raising=False)
+    client.post("/api/yoto/client-id", json={"client_id": "mine"})
+    body = client.get("/api/status").json()
+    assert body["yoto"]["client_id_masked"] == body["yoto"]["client_id_full"] == "mine"
+
+
 def test_check_reports_not_connected_with_no_saved_sign_in(client):
     r = client.post("/api/yoto/check")
     assert r.status_code == 200

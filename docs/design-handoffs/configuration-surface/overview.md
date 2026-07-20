@@ -1,6 +1,6 @@
 # Configuration surface — design spec
 
-**Status:** Proposed — awaiting Mark's approval before Planner picks it up
+**Status:** Approved 2026-07-20; §1–§10 implemented and merged as PR #10
 **Date:** 2026-07-20
 **Relationship to prior handoffs:** N/A — this is the **first** package in
 `docs/design-handoffs/`. It establishes the convention. It **follows** the
@@ -698,7 +698,7 @@ Explicitly **not** in this PR, to keep it to one PR's worth:
 
 ## 11. Amendment: showing the Client ID in effect (2026-07-20)
 
-**Status:** proposed, awaiting Mark's approval. Amends §4.1, §4.3.3, §6.2, adds
+**Status:** approved 2026-07-20; implemented in the reveal-control PR. Amends §4.1, §4.3.3, §6.2, adds
 §7.8; `copy.md` §4, `interactions.md` §3.5/§4, `tokens.md` §3a.
 **Relationship:** **extends** this package. Deviates from nothing.
 

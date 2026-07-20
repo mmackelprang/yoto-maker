@@ -191,15 +191,32 @@ def connection_status() -> dict:
     is cheap and does not touch the network. For "does it actually still work",
     which is what the settings screen shows, use check_connection().
     """
-    cid = config_mod.resolve_client_id()
+    # One traversal, destructured: the value and the label the UI reports it
+    # under are read from the same chain walk and so cannot disagree.
+    cid, source = config_mod.resolve_client_id_with_source()
     return {
         # Legacy: resolve_client_id() falls back to a non-empty constant, so this
         # is permanently True and carries no information. Kept so nothing that
         # reads it breaks; no new UI may depend on it.
         "configured": bool(cid),
         "connected": _load_tokens() is not None,
-        "client_id_source": config_mod.client_id_source(),
+        "client_id_source": source,
         "client_id_masked": config_mod.mask_client_id(cid),
+        # The whole value, for the "Show the whole thing" disclosure in Settings.
+        #
+        # None for "builtin": the UI renders no value in that state (overview.md
+        # §11.4) because there is no dashboard entry to compare it against, and
+        # sending a field the UI is specified never to display would invite a
+        # future contributor to display it — quietly undoing that decision. The
+        # None carries the rule at the layer that owns the precedence chain.
+        #
+        # NOT a disclosure concern, and must not be treated as one: this is a
+        # PKCE *public* client ID (see config.DEFAULT_YOTO_CLIENT_ID), sent in
+        # plaintext in every sign-in URL and shipped inside the .exe, served here
+        # over loopback to the same user's own browser. Do not add redaction,
+        # special logging handling, or a "sensitive field" wrapper. See
+        # overview.md §7.8.
+        "client_id_full": None if source == "builtin" else cid,
     }
 
 
