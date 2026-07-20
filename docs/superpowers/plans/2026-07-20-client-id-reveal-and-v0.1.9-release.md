@@ -849,21 +849,39 @@ Run from a clean checkout of the branch. Start with `python -m yoto_maker --no-t
 
 Back both up before you start, and restore them at the end.
 
-> **Clear the browser cache before any UAT on this repo — or you will measure a build that isn't there.**
-> The static assets are served without cache-busting, so a browser will happily reuse a stale `app.js`/`styles.css`
-> across a rebuild. During PR #10's UAT this produced **three false failures** in a row — `--focus-ring` reading
-> empty, the header pill showing a UA-default dark outline, and the pill triggering sign-in instead of routing to
-> Settings — all three artifacts of a cached bundle, not real defects.
+> **You can measure a build that isn't there, and it has two independent causes. Rule out both before you
+> believe any UI failure in this section.**
+>
+> **Cause 1 — a stale browser cache.** The static assets are served without cache-busting, so a browser will
+> happily reuse a stale `app.js`/`styles.css` across a rebuild. During PR #10's UAT this produced **three false
+> failures** in a row — `--focus-ring` reading empty, the header pill showing a UA-default dark outline, and the
+> pill triggering sign-in instead of routing to Settings — all three artifacts of a cached bundle, not real defects.
 >
 > - **Before you measure anything:** issue `Network.clearBrowserCache` and `Network.setCacheDisabled {cacheDisabled: true}`
 >   over CDP (or hard-reload with DevTools open and "Disable cache" ticked).
 > - **The tell is a size mismatch.** Compare the served asset's byte count against the file on disk — the stale run
 >   served `app.js` at 22706 bytes while disk had 43353. If those two disagree, every measurement you just took is
 >   suspect; clear the cache and start the section over.
-> - Treat a surprising CSS/JS failure as a cache miss until proven otherwise, *especially* a custom property that
->   reads empty or a control that behaves like its previous version. **This section is unusually exposed to it:**
->   a stale `app.js` has no `#clientIdReveal` listener and a stale `styles.css` has no `.mono-value`, which together
->   look exactly like "the feature doesn't work."
+>
+> **Cause 2 — a stale *server*, which the cache guard does not catch.** If the user's installed `YotoMaker.exe` (or
+> any earlier `python -m yoto_maker`) already owns port 8777, the single-instance guard makes your new dev server
+> **print one line and exit 0** (`main.py:63-68`). Nothing looks like a failure — there is no traceback and no
+> non-zero exit — but you are now driving the **old** build. Worse, without `--no-browser` it *opens a browser at the
+> running instance for you*, so the tab you end up measuring is v0.1.8.
+>
+> - **The tell is in the launch output:** `Yoto Maker is already running at http://127.0.0.1:8777`. Read the launch
+>   log before you trust the session; an exit code of 0 is not evidence your server started.
+> - **Positive identification beats absence-of-error.** `GET /api/status` proves which build you are on:
+>   v0.1.9 returns `client_id_source` and `client_id_full` inside `yoto`, while **v0.1.8 returns only
+>   `{configured, connected}`**. If those two fields are missing, you are on the old server — no amount of cache
+>   clearing will fix it, because the bytes are coming from a different process.
+> - **Do not kill the user's running app to clear the port.** Use `--port` for a second instance (noting queue item
+>   2: `--port` does not move the OAuth redirect, so sign-in flows still redirect to 8777).
+>
+> Treat a surprising CSS/JS failure as one of these two until proven otherwise, *especially* a custom property that
+> reads empty or a control that behaves like its previous version. **This section is unusually exposed to it:**
+> a stale `app.js` has no `#clientIdReveal` listener and a stale `styles.css` has no `.mono-value`, which together
+> look exactly like "the feature doesn't work."
 
 ### A. `builtin` — the block must not appear
 
@@ -934,7 +952,16 @@ Back both up before you start, and restore them at the end.
 
 1. At 720px, **expect:** the value row and the input row below it are visually parallel — same structure, same wrap behavior.
 2. **Revealed, at 400px.** 32 monospace characters plus `Show the short version` must **wrap, not overflow**. The page body must not scroll horizontally and the card must not widen. This regression appears **only in the expanded state and only when narrow**, which is why it needs its own step.
-3. **Expect:** the toggle wraps beneath the value at its natural width — it does **not** go full-width. The `< 420px` rule targets `.setting-actions`, and this row is `.row.wrap` inside `.setting-body`.
+3. **Expect:** the toggle sits at its **natural width** (~186px) and does **not** go full-width. The `< 420px` rule targets `.setting-actions`, and this row is `.row.wrap` inside `.setting-body`.
+
+   > **Corrected after UAT.** This step originally read *"the toggle wraps beneath
+   > the value at its natural width"*. It does not wrap — at 400px it stays
+   > **beside** the value, which squeezes the value to ~109px across 3 lines.
+   > That is `.row.wrap` behaving correctly: `.grow` on the value yields before
+   > the row breaks. Every assertion this step actually binds still holds — no
+   > overflow, no horizontal body scroll, the card does not widen, the toggle is
+   > not full-width — so **this was a wrong expectation in the plan, not a
+   > defect.** Do not "fix" the CSS to make the toggle wrap.
 
 ### I. Version skew and short values
 
