@@ -1,15 +1,16 @@
 # Builder queue
 
-**Last updated:** 2026-07-20 by Planner — added item 7 (Client ID reveal control
-+ the v0.1.9 release cut) and corrected item 1's Shipped row, which claimed
-"(v0.1.9)" when what had actually happened was "merged to main". **v0.1.9 has
-never been released** — no tag, no `.exe`, no GitHub release — which is why no
-user has received it. Item 7 carries the release; the user may want it ahead of
-items 2–6 for that reason, but Planner does not reshuffle.
+**Last updated:** 2026-07-20 by Builder — item 7 shipped, and **v0.1.9 is now
+genuinely released**: tag `v0.1.9` pushed to origin, `YotoMaker.exe` built and
+uploaded, and the update path verified end-to-end (a spoofed v0.1.8 client is
+offered v0.1.9 by the real releases API). Items 1 and 7 are the first rows to use
+the `🚢 released` state the same PR introduced. Items 2–6 re-checked against the
+code and all still accurate.
 
-Previously: item 1 merged as PR #10. Items 4, 5 and 6 were filed from that PR's
-Tester and Polisher gates; like items 2 and 3, all are pre-existing and were
-deliberately left out of its scope.
+Previously: item 1 merged as PR #10 but sat merged-but-unreleased for a day —
+the gap that motivated the vocabulary split below. Items 4, 5 and 6 were filed
+from that PR's Tester and Polisher gates; like items 2 and 3, all are
+pre-existing and were deliberately left out of its scope.
 
 Work items that have an approved design and a complete implementation plan, ready
 for Builder to ship one PR per row. Planner appends; Builder claims, ships and
@@ -36,34 +37,6 @@ day because these two states shared one word.
 | 4 | 📋 | **The crop editor modal has no focus trap** — Tab escapes the modal into the page behind it | _needs Planner pass_ | _needs Planner pass_ | — | MEDIUM. Pre-existing from the v0.1.7 crop editor; **not** a PR #10 regression. Observed Tab order below. |
 | 5 | 📋 | **`#yotoPill` white label fails WCAG AA at rest** — 2.56:1 against the gradient's light end, needs 4.5:1 | _needs Designer pass_ | _needs Planner pass_ | — | Pre-existing and independent of PR #10, but PR #10 promotes this control to primary entry point. **Needs a Designer pass, not a Builder hex pick.** |
 | 6 | 📋 | **`favicon.ico` 404 on the callback page** | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic. Logged so it isn't rediscovered; safe to leave sitting. |
-| 7 | 📋 | **Client ID reveal control + the v0.1.9 release cut** — show the value in effect (full mask, monospace, `Show the whole thing` disclosure) for `saved`/`env`; then actually tag, build and publish v0.1.9 | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) (amended in `884fa6a`) | [`superpowers/plans/2026-07-20-client-id-reveal-and-v0.1.9-release.md`](superpowers/plans/2026-07-20-client-id-reveal-and-v0.1.9-release.md) | — | 11 tasks, two parts. **Part A** (1–7) is one PR on `feat/client-id-reveal`. **Part B** (8–11) runs on `main` after that merges, because the feature ships *in* v0.1.9. Includes the recurrence guard for the merged-vs-released gap. Briefing notes below. |
-
-### Item 7 — briefing notes
-
-- **Two things in one row on purpose.** The reveal control ships *inside* v0.1.9,
-  so the release cut has to be the last task rather than a separate row that
-  could drift out of sync again. Part A is a normal feature PR; Part B is four
-  tasks on `main` that touch no source.
-- **The release gap is the second complaint, and the more urgent half.**
-  `pyproject.toml` and `yoto_maker/__init__.py` both read `0.1.9`, release notes
-  were written and PR #10 merged — but no tag was pushed, no `.exe` was built,
-  and no GitHub release exists. `updater.py` reads GitHub *releases*, so every
-  installed copy correctly reports "no update available" because there is
-  genuinely nothing to download. **Do not bump the version** — verify it and
-  release what is already there.
-- **The design was amended post-merge** in commit `884fa6a`, which touches all
-  four handoff files. Read the amendment, not just the original package.
-- **Five handoff/code disagreements** are resolved in the plan's "Where the
-  design and the code still disagree" section. Two would produce real defects if
-  the handoff were followed literally — both concern *where* the reveal-reset
-  flag is set, and both have a Test Plan step that fails if placed wrong.
-- **The `.setting` primitive must not be widened.** Zero changes to the
-  `.setting*` CSS block; the only new rule is a standalone `.mono-value` utility.
-  Test Plan §J checks this explicitly. If a step appears to require widening it,
-  stop and say so.
-- **Task 11 is the recurrence guard** and lands in Part A's PR, not after — the
-  `✅ merged` / `🚢 released` distinction has to exist before Builder marks this
-  row done.
 
 ### Item 2 — briefing notes
 
@@ -90,8 +63,13 @@ day because these two states shared one word.
   optional dependency isn't installed — which includes this machine.
 - Wants `pytest.importorskip("yt_dlp")` so the suite is green when the dep is
   absent and still exercises the retry path when it's present.
-- Currently the suite reports **100 passed, 1 failed**, and that one failure is
-  environmental. It should be a skip.
+- The suite reports **109 passed, 1 failed** without the dep, and that one
+  failure is environmental. It should be a skip.
+- **Confirmed environmental during the v0.1.9 release cut.** `yt-dlp` had to be
+  installed to build the `.exe` (the spec's `collect_all("yt_dlp")` needs it),
+  and with it present the suite runs **110 passed, 0 failed** — the test itself
+  is fine, it just states a dependency it should be skipping on. Note the count
+  is 109/110 rather than the 100 recorded earlier; PR #10 and #11 added tests.
 
 ### Item 4 — briefing notes
 
@@ -131,9 +109,45 @@ day because these two states shared one word.
 
 | # | Item | Spec | Plan | PR | Merged | Released |
 |---|------|------|------|----|--------|----------|
-| 1 | **Configuration surface** — full-page Settings view built on the reusable `.setting` primitive, plus the three backend correctness fixes it depends on | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) | [`superpowers/plans/2026-07-20-configuration-surface.md`](superpowers/plans/2026-07-20-configuration-surface.md) | [#10](https://github.com/mmackelprang/yoto-maker/pull/10) | 2026-07-20 | — (pending) — item 7 Part B cuts v0.1.9 |
+| 1 | **Configuration surface** — full-page Settings view built on the reusable `.setting` primitive, plus the three backend correctness fixes it depends on | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) | [`superpowers/plans/2026-07-20-configuration-surface.md`](superpowers/plans/2026-07-20-configuration-surface.md) | [#10](https://github.com/mmackelprang/yoto-maker/pull/10) | ✅ 2026-07-20 | 🚢 v0.1.9 |
+| 7 | **Client ID reveal control + the v0.1.9 release cut** — show the value in effect (full mask, monospace, `Show the whole thing` disclosure) for `saved`/`env`; then actually tag, build and publish v0.1.9 | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) (amended in `884fa6a`) | [`superpowers/plans/2026-07-20-client-id-reveal-and-v0.1.9-release.md`](superpowers/plans/2026-07-20-client-id-reveal-and-v0.1.9-release.md) | [#11](https://github.com/mmackelprang/yoto-maker/pull/11) (Part A), [#12](https://github.com/mmackelprang/yoto-maker/pull/12) (corrections) | ✅ 2026-07-20 | 🚢 v0.1.9 |
 
 Item 1 shipped all 12 tasks as one PR, as planned. Its Builder briefing notes
 were consumed and removed; the spec and plan above remain the durable record.
 Three findings surfaced during its review gates and were filed as items 4, 5
 and 6 rather than fixed in scope.
+
+Item 7 shipped Part A (tasks 1–7 + 11) as PR #11 and Part B (tasks 8–10, the
+release cut) directly on `main`. PR #12 folded in two corrections found during
+UAT before the tag: Test Plan §H.3 expected the reveal toggle to wrap beneath the
+value at 400px when it actually stays beside it (a wrong expectation, not a
+defect), and the stale-build hazard gained its second cause — a stale *server*,
+where the single-instance guard makes a new dev server exit 0 while UAT silently
+measures the old build.
+
+**Both rows' Released cells are evidenced**, per the rule above:
+
+```
+$ gh release view v0.1.9 --json tagName,assets -q '.tagName + " -> " + (.assets[0].name // "NO ASSET")'
+v0.1.9 -> YotoMaker.exe
+
+$ gh release view v0.1.9 --json assets -q '.assets[] | "\(.name)  \(.size) bytes  state=\(.state)"'
+YotoMaker.exe  127039674 bytes  state=uploaded
+```
+
+Tag `v0.1.9` → `aa3c085`, confirmed on the remote (`git ls-remote --tags origin
+v0.1.9`) — the step that was missed last time. **The update path was verified
+end-to-end rather than assumed:** with `__version__` spoofed to `0.1.8` and no
+`YOTO_LATEST_VERSION` override in play, `updater.check_for_update()` hits the
+real releases API and returns `update_available: True`, `latest: "0.1.9"`, with a
+`download_url` that answers `200` at the expected 127,039,674 bytes. A v0.1.9
+client correctly gets no banner.
+
+**One item shipped unverified, deliberately not marked green:** the screen-reader
+announcements on the reveal toggle (Test Plan §F.1–F.3). NVDA is not installed
+and Narrator's speech cannot be captured as text, so nobody has heard the
+control. The accessibility tree is consistent with the expected utterances and
+double-announcement is ruled out structurally, but that is an argument from
+construction, not an observation. Recorded in PR #11's body and under
+**Not verified in v0.1.9** in `docs/RELEASE_NOTES.md`. Anyone with a screen
+reader can close it in about thirty seconds.
