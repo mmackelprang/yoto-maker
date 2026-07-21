@@ -580,7 +580,7 @@ with wrapping values produces ragged rows.
 | 1 | `Version` | *(rendered — e.g.* `0.1.10` *)* | ✅ |
 | 2 | `Client ID in use` | *(rendered — the masked value)* | ✅ |
 | 3 | `Where that came from` | `Built in` / `Saved on this computer` / `Set outside the app` | ❌ prose |
-| 4 | `Sign-in address` | *(rendered — e.g.* `http://127.0.0.1:8777/yoto/callback` *)* | ✅ |
+| 4 | `Redirect URL` | *(rendered — e.g.* `http://127.0.0.1:8777/yoto/callback` *)* | ✅ |
 | 5 | `Where Yoto Maker keeps its files` | *(rendered — the data folder path)* | ✅ |
 
 **Row 3's three values are new strings, not the status headlines.** They answer
@@ -605,8 +605,24 @@ a copy button does not serve at all.
 **No drift between this section and setting 2:** both render from the same
 `STATUS.yoto` object in the same pass, the guarantee `overview.md` §7.2 relies on.
 
-> **Open question for Mark — row 4's label.** `SETUP-YOTO-CONNECTION.md` calls it
-> *"redirect URL"* and *"redirect/callback URL"*. `Sign-in address` reads better for
-> the parent, but §12.2's lesson was that **matchability beats plainness** when a
-> user is comparing against another screen — which argues for the guide's words.
-> Flagged rather than decided.
+**Row 4's label is `Redirect URL` — the setup guide's words, deliberately, and it
+is the one label in this section that is not plain English.** Decided 2026-07-21.
+
+`Sign-in address` was drafted first and reads better for the primary user. It was
+rejected. This row exists for **one moment**: she is on the phone, and the helper
+is looking at `dashboard.yoto.dev` and at `SETUP-YOTO-CONNECTION.md`, which calls
+it *"the redirect URL"* and warns *"This must match exactly"* (`:27`, `:33`). At
+that moment §12.2's lesson governs — **a string is only findable if it contains
+the word the person is holding** — and the person holding a word here is the
+helper, not the parent.
+
+The register rule bends because the section's own title already says who it is
+for. *"If you need to ask for help"* is the frame that licenses one label
+addressed to the helper; a parent who is not in that occasion never needs to parse
+it. This is the same narrowly-scoped exception §4's `env` sub-line takes, for the
+same reason: **the sentence is addressed to her about them.**
+
+`Sign-in address (redirect URL)` — carrying both — was considered and rejected as
+a hedge. Two names for one value is worse than either name alone on a phone call:
+the helper asks for one of them and she has to work out that the other is the same
+thing.

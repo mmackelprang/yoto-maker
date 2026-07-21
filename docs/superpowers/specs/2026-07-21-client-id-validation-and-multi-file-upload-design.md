@@ -462,14 +462,27 @@ with wrapping values produces ragged rows.
 | 1 | `Version` | `0.1.10` | ✅ |
 | 2 | `Client ID in use` | `a8OG…oU1` | ✅ |
 | 3 | `Where that came from` | `Built in` / `Saved on this computer` / `Set outside the app` | ❌ prose |
-| 4 | `Sign-in address` | `http://127.0.0.1:8777/yoto/callback` | ✅ |
+| 4 | `Redirect URL` | `http://127.0.0.1:8777/yoto/callback` | ✅ |
 | 5 | `Where Yoto Maker keeps its files` | `C:\Users\…\AppData\Local\Yoto Maker` | ✅ |
 
-**Row 4's label.** `SETUP-YOTO-CONNECTION.md` calls it *"the redirect URL"* and
-*"redirect/callback URL"*. `Sign-in address` is plainer and passes the register
-test, but it must be **matchable** against the guide — that is the §12.2 lesson,
-and it is the one thing here I would not want to get wrong on my own judgement.
-See **§A.6, decision 2.**
+**Row 4's label is `Redirect URL` — the guide's words, and the one label here that
+is not plain English.** *(Decided 2026-07-21.)*
+
+`Sign-in address` was drafted first and reads better for the primary user. It was
+rejected. This row exists for **one moment**: she is on the phone, and the helper
+is looking at `dashboard.yoto.dev` and at `SETUP-YOTO-CONNECTION.md`, which calls
+it *"the redirect URL"* and warns *"This must match exactly"*. At that moment
+§12.2's lesson governs — **a string is only findable if it contains the word the
+person is holding** — and the person holding a word here is the helper.
+
+The register rule bends because the section title already says who it is for.
+*"If you need to ask for help"* is the frame that licenses one helper-addressed
+label; a parent not in that occasion never needs to parse it. Same narrowly-scoped
+exception `copy.md` §4's `env` sub-line takes, for the same reason: the sentence is
+addressed to her about them.
+
+Carrying both (`Sign-in address (redirect URL)`) was rejected as a hedge — two
+names for one value is worse than either alone on a phone call.
 
 **Row 2 obeys the mask suppression rule.** When the verdict is `unusual` or
 `invalid`, this row shows the **full** value, exactly as §A.2.2 specifies for
@@ -781,12 +794,12 @@ second gate there is scope this PR does not need.
    │ Where that came from                                        │
    │ Built in                                          (prose)   │
    │                                                             │
-   │ Sign-in address                                             │
-   │ http://127.0.0.1:8777/yoto/callback                         │  ← must match
-   │                                                             │    the Yoto
-   │ Where Yoto Maker keeps its files                            │    dashboard
-   │ C:\Users\mandy\AppData\Local\Yoto Maker                     │    exactly
-   └─────────────────────────────────────────────────────────────┘
+   │ Redirect URL                                                │  ← the guide's
+   │ http://127.0.0.1:8777/yoto/callback                         │    words, not
+   │                                                             │    ours: must
+   │ Where Yoto Maker keeps its files                            │    match the
+   │ C:\Users\mandy\AppData\Local\Yoto Maker                     │    dashboard
+   └─────────────────────────────────────────────────────────────┘    exactly
 
    No Status slot. No Actions slot. No Confirmation slot.
    Slot 6 (.msg-box) present but hidden — the template is copy-paste.
@@ -794,33 +807,30 @@ second gate there is scope this PR does not need.
 
 ---
 
-## A.6 Decisions I need from Mark
+## A.6 Decisions
 
-**1. Three-paragraph refusal messages need `.msg-box` to render paragraphs.**
-`clientIdMsg()` sets `textContent` today. The precedent for an array of paragraphs
-already exists in the same file (`CLIENT_ID_CONFIRM.body`). Confirm you're happy
-extending `.msg-box` to take one, or say the word and I'll compress each refusal to
-a single paragraph — it will lose the reassurance line's visual separation, which
-is the sentence doing the most work.
+**1. Three-paragraph refusal messages — resolved 2026-07-21: render as
+paragraphs.** `clientIdMsg()` sets `textContent` today; it takes an array instead.
+In-tree precedent is `CLIENT_ID_CONFIRM.body` in the same file, so this extends an
+existing shape rather than inventing one. The three paragraphs stand as written —
+the reassurance line keeps its own visual separation, which matters because it is
+the sentence doing the most work (§A.1.1).
 
-**2. Row 4's label: `Sign-in address` vs the guide's vocabulary.**
-`SETUP-YOTO-CONNECTION.md` says *"redirect URL"* and *"redirect/callback URL"*.
-`Sign-in address` reads better for the parent; *"Redirect URL"* is what the helper
-and the Yoto dashboard say. The §12.2 lesson was that **matchability beats
-plainness** when a user is comparing against another screen — which argues for the
-guide's words here. My inclination is `Sign-in address (redirect URL)` carrying
-both, but that is a hedge and hedges are usually the wrong answer. Your call.
+Item B needs the same capability for its grouped error box (§B.3.3). **One small
+extension serves both items** — worth Planner knowing so it is not built twice.
 
-**3. `env` + `invalid` — is warn-and-proceed acceptable?** §A.4.2 is my
-recommendation with the reasoning laid out. It is the one place I have deliberately
-made the gate non-uniform, and it is the place most likely to be argued with.
+**2. Config summary row 4's label — resolved 2026-07-21: `Redirect URL`,** the
+setup guide's words, no hedge. Reasoning now inline at §A.3.3.
 
-**4. Does the config summary belong on this surface at all, or in the About
-modal?** I've placed it in Settings because that is where you asked for it and
-because it sits beside the Client ID it explains. The About modal is the other
-plausible home and already carries the version. I do not think it is the right
-one — About is a credits screen, and burying diagnostics in it makes them harder to
-talk someone through — but flagging it because it was never explicitly ruled out.
+**3. `env` + `invalid` — warn-and-proceed.** §A.4.2 carries the argument. It is the
+one place the gate is deliberately non-uniform, and the decisive reason is
+structural: the block's value is its recovery, and §7.4 removed the recovery
+control from that state on purpose. Standing unless Mark overrules.
+
+**4. Config summary placement — Settings, not the About modal.** Recorded because
+it was never explicitly ruled out. About is a credits screen; burying diagnostics
+there makes them harder to talk someone through, and the summary belongs beside the
+Client ID it explains.
 
 ---
 ---
@@ -839,10 +849,16 @@ visual vocabulary at all.** Every state below is built from `.progress`,
 used on this exact step. There are no new tokens, no new CSS rules, and no new
 components. On that basis the drift risk is close to zero.
 
-**Decision needed:** do you want a `docs/design-handoffs/audio-add-surface/`
-package minted — before this ships, after it ships, or not at all? I lean *after*:
-the surface is stable and this change is small, so a package written now would
-mostly be a transcription of what already exists.
+**Resolved 2026-07-21: do not mint a package.** This spec section carries the
+surface, on the strength of the zero-new-vocabulary argument above.
+
+**Logged as deliberate docs debt.** `design-handoffs/README.md` says every surface
+gets a package, and step 1 still does not have one — that is a known gap, accepted
+because the alternative is a package that would mostly transcribe what already
+exists. **Revisit when the upload surface next grows**: drag-and-drop, per-byte
+progress, or any change to the track list would each push it past the point where a
+spec section is the right home. Whoever picks up that work should mint
+`docs/design-handoffs/audio-add-surface/` first and fold this section into it.
 
 ## B.1 The decided part, specified precisely
 
@@ -948,28 +964,172 @@ whatsoever about the next one.
 **What she has at the end:** eleven tracks in the list, in natural order, minus the
 gap. One `.msg-box err` in `#addError` naming what failed and why.
 
-### B.3.1 Can she retry just the failed one? — No, and this is deliberate
+### B.3.1 Retry — classify the failure, and let the classification decide
 
-**Recommendation: no retry button.**
+> **Decision: `Try again` appears for transient failures and does not appear for
+> deterministic ones. Re-specced 2026-07-21, reversing an earlier blanket "no
+> retry" call.**
 
-The browser still holds the `File` objects, so a retry is technically trivial. That
-is exactly what makes this the wrong instinct to follow:
+**The earlier call was wrong, and the way it was wrong is worth recording.** It
+argued: *a retry sends the same bytes through the same code path, so it produces
+the same failure; a button that reliably fails teaches the user that this app's
+controls do not work.* That reasoning is sound — **for deterministic failures.** It
+was then applied to all failures, which silently assumed the deterministic case is
+the only case. It is not, and it is probably not even the common one: dropped
+connections, timeouts and 5xx dominate real upload flows. Under a blanket no-retry
+rule, a network blip on file 3 of 12 forces her to re-pick that file by hand —
+which is precisely the friction Item B exists to remove.
 
-1. **A retry sends the same bytes through the same code path, so it produces the
-   same failure.** The dominant failures here are properties of the file. A button
-   that reliably fails is worse than no button — it teaches the user that this
-   app's controls do not work, which is a far more expensive lesson than one
-   re-pick.
-2. **The failures that would benefit from a retry are transient** — a server
-   hiccup, a full disk. Those are rare against a loopback server, and they would
-   take the whole batch, not one file.
-3. **It is a second batch flow.** Retry needs its own progress state, its own
-   partial-failure state (retry 3, 2 fail again), and a decision about whether a
-   retried file lands at its natural-sort position or at the end. That is real
-   complexity bought to serve a case that mostly cannot succeed.
+**The underlying principle is unchanged and is now the reason for the split:**
 
-**What the design invests in instead: making the re-pick cheap.** Name the exact
-filenames, one per line, so she can reopen the picker and select precisely those.
+> **Never show a control that reliably fails.**
+> A retry on a transient failure has a real chance of succeeding, which is what
+> makes offering it honest. A retry on a deterministic failure has none, which is
+> what makes offering it a lie.
+
+### B.3.1.1 The classification rule
+
+Everything needed is already observable. `api()` (`app.js:7-28`) throws a plain
+`Error` with **no `.status`** when `fetch()` rejects, and otherwise attaches
+`.status` and `.data`.
+
+| Observation | Class |
+| --- | --- |
+| `err.data.reason` is present | **whatever the server says** — see below |
+| `.status` is `undefined` (fetch rejected: connection refused, dropped, DNS) | **transient** |
+| Request aborted by our own timeout | **transient** |
+| `.status` is 5xx | **transient** |
+| `.status` is 408 or 429 | **transient** |
+| `.status` is any other 4xx | **deterministic** |
+| Skipped by the pre-check (§B.3.2) — never uploaded | **deterministic** |
+| **Anything else, unclassifiable** | **transient — see §B.3.1.2** |
+
+**The server's own tag wins when present.** `app.js:1033` already consumes
+`e.data.reason` for sign-in errors, so the pattern is in-tree. Nothing needs it on
+day one — the status-code rule stands alone — but it is the hook that lets the
+server later say *"this 500 was a full disk, do not offer a retry"* without any
+frontend change. Planner should treat the status-code table as the **fallback**,
+not the authority.
+
+**Why the 400 case is reliably deterministic here.** `app.py:99-109` maps
+`SourceError` / `AudioError` / `ImageError` and friends to **400 with a
+plain-language `error` string**, and the module docstring (`app.py:5-6`) states
+those messages are written to be shown verbatim. So a 400 from this endpoint means
+*the server looked at this file and rejected it*, and it arrives with the sentence
+explaining why already written. That is exactly the branch that must not offer a
+retry — and exactly the branch that can explain itself instead.
+
+### B.3.1.2 The unknown case defaults to transient — stated plainly
+
+**An unclassifiable failure is treated as transient and gets the retry control.**
+
+The principle says *never show a control that **reliably** fails.* An unknown
+failure is by definition not reliably anything, so the principle does not forbid
+offering a retry — it forbids offering one where we know it will fail. Beyond
+that, the two wrong guesses cost wildly different amounts:
+
+| Wrong guess | What it costs her |
+| --- | --- |
+| Unknown treated as **transient**, actually deterministic | One press and about two seconds. She is exactly where she was. |
+| Unknown treated as **deterministic**, actually transient | **She is told to change the file.** She opens a file that is fine, finds nothing wrong, and concludes the app is broken — or re-encodes or deletes a perfectly good file on the app's bad advice. |
+
+The second is not a slower path to the same place; it is **wrong advice**, and
+wrong advice from a tool aimed at a non-technical user is the most expensive
+failure in this whole spec. So the default goes to transient.
+
+**The copy for this branch must not claim to know.** It says
+`Something went wrong.` — it does not assert that the connection dropped and does
+not assert the file is bad (§B.3.3).
+
+**A retry is also a diagnostic, and this makes the default self-correcting.**
+Pressing `Try again` is the cheapest way to resolve an unknown into a
+classification:
+
+- The retry succeeds → done, and the guess was right.
+- The retry returns a 400 → **it is now classified deterministic.** The file moves
+  into the "can't be added" group, the specific server sentence replaces
+  `Something went wrong.`, and **the retry control disappears** for it. The app has
+  corrected itself in front of her.
+- The retry fails the same unknowable way → still unknown, control stays.
+
+### B.3.1.3 Retry is the same flow, not a second one
+
+The earlier rejection's third argument — *"it is a second batch flow"* — was the
+one real cost, and it dissolves:
+
+> **`Try again` re-enters the batch flow of §B.2 with the failed subset as its
+> file list.** Same sequential loop, same progress bar, same `#addMsg` format,
+> same disabling of `#filePick` and `#ytAdd`, same summary rendering at the end.
+
+There is no second progress state and no second partial-failure state, because a
+retry that half-fails simply produces the batch summary again over a smaller `n`.
+Everything below follows from that one sentence.
+
+The `File` objects are held from the original `FileList`, so nothing is re-read
+from disk and she is never re-prompted.
+
+### B.3.1.4 One button per group, not one per file
+
+`Try again` retries **every file in the transient group**, and there is exactly one
+of it.
+
+- A network blip takes out a **contiguous run** of files, not one. Per-file buttons
+  would mean three presses for one cause.
+- Per-file buttons put a control on every row of a list that can hold twelve —
+  twelve tab stops, and a visually heavy error box.
+- The deterministic failures sit in their own group **with no control beside them**,
+  which is the "explain, don't offer" branch made visible rather than merely
+  described.
+
+The two groups are what keep this legible: the button is inside the group it acts
+on, so *"I pressed Try again, why is `cover.jpg` still failing?"* cannot arise.
+**Render only the groups that have members** — the common cases (all transient, all
+deterministic) show one group and read as simply as before.
+
+### B.3.1.5 Where a retried file lands — the ordering promise survives
+
+This was the third unanswered question in the earlier rejection, and it has a cheap
+answer.
+
+The server appends, so a file retried after files 4–12 would land **last** — she
+picked twelve, one failed, and the fix drops it at position 12 instead of 3. She
+would then press `▲` nine times, which is the friction this feature exists to
+remove.
+
+> **Rule: when a retry succeeds, issue exactly one `/api/tracks/reorder` at the end
+> of the retry, placing this batch's tracks in natural-sort order and leaving every
+> pre-existing track untouched and ahead of them.**
+
+`/api/tracks/reorder` already exists and already takes a full order array
+(`app.js:876`), so the call is `[…ids that existed before the batch, in their
+current order, …this batch's ids in natural-sort order]`.
+
+Three constraints, each load-bearing:
+
+1. **Never re-sort the whole draft.** Tracks she added earlier — YouTube tracks,
+   an earlier batch — may have been ordered by hand. Re-sorting them would destroy
+   deliberate work to fix an incidental problem. Only indices belonging to this
+   batch are permuted.
+2. **Fire it only if a retry actually succeeded.** On the happy path and on a batch
+   with no successful retry, the sequential upload already produced the right
+   order, so the call is skipped entirely. The reorder is a **repair**, not a step.
+3. **Once, at the end** — not after each retried file. One write, one re-render.
+
+### B.3.1.6 Timeouts
+
+A file that hangs forever stalls the batch behind it with the progress bar frozen —
+the failure `overview.md` §7.5 timeboxed the account check to avoid (*"so an
+offline user isn't left on a spinner"*).
+
+**Recommend a per-file timeout, classified transient.** I am deliberately **not**
+picking the number: upload plus an ffmpeg transcode of a long FLAC is legitimately
+slow, and a timeout that fires on a working upload is worse than no timeout at all.
+Planner should set it from a measurement of the slowest realistic file, with wide
+margin — 120s is a starting point, not a recommendation.
+
+**If Planner would rather not add a timeout in this PR, nothing else here breaks.**
+A hang is then a hang rather than a misclassification, and the classification table
+simply never sees that row.
 
 ### B.3.2 Client-side pre-check — recommended, and cuttable
 
@@ -986,32 +1146,82 @@ The test mirrors the `accept` attribute's own semantics exactly:
 **Read the list from `#fileInput`'s `accept` attribute rather than restating it in
 JS** — then there is literally one list and it cannot drift.
 
+**Pre-check skips are always deterministic and never enter the retry set.** They
+never reached the network, so there is nothing about them a retry could change —
+they land straight in the "can't be added" group with no control beside them.
+
 This is the one part of Item B not strictly required by the brief. If the PR gets
-large, **cut this first**; everything else stands without it.
+large, **cut this first**; everything else stands without it. Cutting it does not
+touch the classification rule — those files would then fail with a 400 and be
+classified deterministic anyway, just more slowly and with a less specific
+sentence.
 
-### B.3.3 Copy — verbatim, and arity-dependent
+### B.3.3 Copy — verbatim, arity-dependent, and grouped by class
 
-The message shape changes with the number of files. This is a named rule, not an
-implementation detail — `1 of your 1 files were added` is the failure mode to
-avoid, and it is what a naive template produces.
+`#addError` renders, in this order: **one summary line**, then **up to two
+groups**, each with a heading and one line per file. Only groups with members are
+rendered.
+
+**Summary line.** Counts are always against the **original** batch size, so the
+number is stable across retries — after a successful retry of one file, `10 of
+your 12` simply becomes `11 of your 12`.
 
 | Case | String |
 | --- | --- |
-| `n = 1`, failed | *(the server's message, **unchanged** — e.g. `That file type isn't supported. Try an MP3, M4A or WAV file.`)* |
-| `n ≥ 2`, `m = 1` failed | `{k} of your {n} files were added. This one didn't work:` |
-| `n ≥ 2`, `m ≥ 2` failed | `{k} of your {n} files were added. These {m} didn't work:` |
-| `n ≥ 2`, all failed | `None of your {n} files could be added:` |
+| `n = 1`, failed | *(the server's message alone, **unchanged from today** — no summary, no groups, no heading)* |
+| `n ≥ 2`, some failed | `{k} of your {n} files were added.` |
+| `n ≥ 2`, all failed | `None of your {n} files could be added.` |
 
-Followed by **one line per failed file**, never a comma-run:
+**The `n = 1` case is deliberately untouched.** `1 of your 1 files were added.` is
+what a naive template produces and it is the failure mode this table exists to
+prevent. A single file that fails shows exactly what it shows today. If it failed
+transiently it still gets a `Try again` button — that is the one change to the
+single-file path, and it is additive.
+
+**Group headings.**
+
+| Group | `m = 1` | `m ≥ 2` |
+| --- | --- | --- |
+| Transient | `This one didn't work, but trying again might fix it:` | `These {m} didn't work, but trying again might fix them:` |
+| Deterministic | `This one can't be added:` | `These {m} can't be added:` |
+
+*"trying again **might** fix it"* is deliberate. It sets the expectation honestly
+— a retry is a real chance, not a promise — and it is the sentence that keeps the
+control truthful even when the retry fails. `can't be added` is deliberately final:
+it tells her not to wait, and not to press anything.
+
+**Per-file lines**, one per line, never a comma-run:
 
 ```
 {filename} — {reason}
 ```
 
-| Reason source | String |
+| Class | Trigger | Reason string |
+| --- | --- | --- |
+| deterministic | 4xx from the server | *(the server's sentence verbatim — e.g. `That file type isn't supported. Try an MP3, M4A or WAV file.`)* |
+| deterministic | pre-check skip (§B.3.2) | `That isn't an audio file.` |
+| transient | `fetch()` rejected — no `.status` | `Yoto Maker stopped responding.` |
+| transient | our timeout | `This one took too long.` |
+| transient | 5xx / 408 / 429 | `Yoto Maker had a problem with this one.` |
+| transient | **unclassifiable (the default)** | `Something went wrong.` |
+
+**The server's 400 sentences are already user-ready.** `app.py:5-6` states the
+plain-language errors are written to be shown verbatim, and `app.py:99-109` maps
+every one of them to a 400. Do not rewrite them and do not wrap them.
+
+**The unknown string claims nothing.** `Something went wrong.` deliberately does
+not assert that the connection dropped and does not assert the file is bad —
+§B.3.1.2 defaults this branch to transient precisely *because* we do not know, and
+a reason string that guessed would undo that honesty.
+
+**The button.**
+
+| Element | String |
 | --- | --- |
-| Server rejection | *(the server's sentence verbatim, e.g. `That file type isn't supported. Try an MP3, M4A or WAV file.`)* |
-| Pre-check skip (§B.3.2) | `That isn't an audio file.` |
+| `.btn` inside the transient group, below its list | `Try again` |
+
+One button per group, never per file (§B.3.1.4). It is absent entirely when the
+transient group is empty.
 
 **Class is `.msg-box err` even for a mostly-successful batch.** Eleven of twelve is
 mostly a success, but a silently missing track is a real problem she must notice,
@@ -1019,8 +1229,30 @@ and `tokens.md` §1 already made this argument: `.info` is *"too quiet to slow
 anyone down"*. The copy carries the proportionality by **leading with what
 worked** — the count comes first, the failures second.
 
-*Planner constraint:* `#addError` must render the failed-file list as a list, one
-file per line. `.msg-box` has no rule forbidding child elements.
+*Planner constraint:* `#addError` must render this as structured children — a
+summary paragraph, group headings, per-file lines, and a button — not one text
+node. `.msg-box` has no rule forbidding child elements, and `.setting-confirm`
+already sets the precedent for a box with a heading, body lines and actions.
+
+**Worked example — the mixed case:**
+
+```
+   ┌─────────────────────────────────────────────────────────────┐
+   │ 9 of your 12 files were added.              .msg-box err    │
+   │                                                             │
+   │ These 2 didn't work, but trying again might fix them:       │
+   │   lullaby-03.mp3 — Yoto Maker stopped responding.           │
+   │   lullaby-04.mp3 — Yoto Maker stopped responding.           │
+   │                                                             │
+   │   ┌────────────┐                                            │
+   │   │ Try again  │  ← acts on THIS group only, which is why   │
+   │   └────────────┘    the groups exist                        │
+   │                                                             │
+   │ This one can't be added:                                    │
+   │   cover.jpg — That isn't an audio file.                     │
+   │              ▲ no control beside it: "explain, don't offer" │
+   └─────────────────────────────────────────────────────────────┘
+```
 
 ### B.3.4 No success message
 
@@ -1076,6 +1308,23 @@ the action it governs.
 | Batch done, all ok | hidden | — | — | hidden | all rows | enabled |
 | Batch done, partial | hidden | — | — | **shown, `err`** | successes present | enabled |
 | Batch done, none ok | hidden | — | — | **shown, `err`** | unchanged | enabled |
+| **Retry in flight** | shown | `done/retried` % | `Adding {i} of {n} — {name}` | **stays visible**, `Try again` **disabled** | grows | **disabled** |
+| **Retry done, all recovered** | hidden | — | — | hidden | reordered (§B.3.1.5) | enabled |
+| **Retry done, some still failing** | hidden | — | — | shown, `err`, recomputed | successes present | enabled |
+
+Three notes on the retry rows, each a place this is easy to build wrong:
+
+- **`#addError` stays visible during a retry**, with `Try again` **disabled rather
+  than removed**. Removing it would collapse the box under the user's cursor and
+  drop focus (§B.6). Disabling it keeps the layout still and the focus target
+  alive.
+- **`n` in the retry's progress message is the retry count, not the original batch
+  size.** She is watching two files go by, and `Adding 1 of 12` would be a lie.
+  The *summary* count stays against the original batch (§B.3.3) — different
+  numbers, different questions.
+- **`Batch done, all ok` covers a retry that recovered everything**: the box is
+  hidden entirely, because the end state is indistinguishable from a batch that
+  never failed. Nothing lingers to explain a problem that no longer exists.
 
 ## B.6 Accessibility
 
@@ -1089,13 +1338,28 @@ polite, so they queue behind whatever she is doing.
 a pre-existing gap against the pattern every `.msg-box` in the settings view
 follows.
 
-**Focus does not move to `#addError`.** This is a deliberate divergence from
-`interactions.md` §3.2 step 4, which *does* move focus to the message box after a
-save. The difference: that is a synchronous response to a press the user just made.
-This lands up to a minute after her click, by which time she may have moved on, and
-yanking focus then is disorienting. `role="alert"` announces it without stealing
-focus, which is exactly what the role is for. `tabindex="-1"` is added anyway so
-the box is programmatically reachable.
+**After the initial batch, focus does not move to `#addError`.** This is a
+deliberate divergence from `interactions.md` §3.2 step 4, which *does* move focus
+to the message box after a save. The difference: that is a synchronous response to
+a press the user just made. This lands up to a minute after her click, by which
+time she may have moved on, and yanking focus then is disorienting. `role="alert"`
+announces it without stealing focus, which is exactly what the role is for.
+`tabindex="-1"` is added anyway so the box is programmatically reachable.
+
+**After a retry, focus IS managed** — and the distinction is principled, not
+inconsistent. A retry result *is* a synchronous response to a press she just made,
+which is exactly the condition under which §3.2 step 4 moves focus. So:
+
+1. On pressing `Try again`, **disable the button rather than removing it**, so
+   focus stays on it for the duration of the retry.
+2. When the retry finishes and `#addError` re-renders:
+   - a `Try again` button still exists → **focus it** (she may want to press again);
+   - it does not (everything recovered, or everything reclassified deterministic)
+     → **focus `#addError`** via its `tabindex="-1"`, so the outcome is announced
+     and she is not dropped at the top of the document.
+
+Without rule 1 the button is destroyed while focused and focus falls to `<body>`,
+which is the single most common way a keyboard user gets lost in a flow like this.
 
 **Announcement ordering is consistent with §4.3.** The final polite progress
 message, then the assertive error. The assertive one jumps the queue, which is
@@ -1108,25 +1372,42 @@ correct — it is the outcome.
 - Drag-and-drop of files onto the page.
 - Per-byte upload progress.
 - Any change to the reorder controls (`▲` / `▼`).
-- A retry button (§B.3.1 — rejected with reasoning, not merely omitted).
+- **Per-file retry buttons** — §B.3.1.4. One button per group is in scope; twelve
+  buttons on twelve rows is not.
+- **Retrying a deterministic failure** — §B.3.1. Not an omission; the control is
+  absent by design, and adding it later would need this section's reasoning
+  overturned first.
 
-## B.8 Decisions I need from Mark
+## B.8 Decisions
 
-**1. Cancel during a batch?** I have specified **none**. Twelve songs on a local
-machine is well under a minute, each file is committed server-side as it lands so
-nothing breaks if she closes the tab, and she can delete unwanted tracks with
-controls that already exist. But `interactions.md` §2.4 set a precedent that long
-waits should be escapable. **If UAT shows a 12-file batch running longer than ~30
-seconds, add a Cancel** — it would sit beside the progress bar and stop after the
-current file, never mid-file.
+**1. Retry — resolved 2026-07-21, reversing my earlier call.** Classification
+decides: transient gets `Try again`, deterministic gets an explanation instead,
+unknown defaults to transient. §B.3.1 is the re-spec, not a patch. The principle I
+originally argued from — *never show a control that reliably fails* — is preserved
+and is now the reason for the split rather than the reason for a blanket ban.
 
-**2. The `.tiny` ordering line on the everyday path.** §B.4 argues it earns its
-place. It is one 13px line added to step 1, which is the step every single user
-sees on every single visit, and §2's weight constraint is the one you have called
-overriding. Confirm you're happy, or I'll move the ordering rule into the multi-file
-progress message instead and accept the later reveal.
+**2. `.msg-box` renders paragraphs — resolved 2026-07-21: yes.** In-tree precedent
+is `CLIENT_ID_CONFIRM.body`. Item B needs the same capability for the grouped error
+box (§B.3.3), so the two items share one small extension rather than each getting
+their own.
 
-**3. §B.0 — does the audio-add surface get a handoff package?**
+**3. The `.tiny` ordering line — resolved 2026-07-21: include it.** One 13px line
+on the everyday path, accepted because natural sort is only *safe* on the strength
+of reordering existing, and that is only true for her if she knows it. Without the
+line a wrong-looking order reads as a bug rather than as something she can fix.
+
+**4. Handoff package for this surface — resolved 2026-07-21: do not mint one.**
+§B.0 carries it. Logged as deliberate docs debt.
+
+**Still open — Cancel during a batch.** I have specified **none**. Twelve songs on
+a local machine is well under a minute, each file is committed server-side as it
+lands so nothing breaks if she closes the tab, and she can delete unwanted tracks
+with controls that already exist. But `interactions.md` §2.4 set a precedent that
+long waits should be escapable, and **retry makes a long run more likely** — a
+batch plus two retry rounds is three waits, not one. **If UAT shows a 12-file batch
+running longer than ~30 seconds, add a Cancel**: beside the progress bar, stopping
+after the current file, never mid-file. Flagging rather than blocking — the design
+is complete without it and it drops in cleanly if measurement says so.
 
 ---
 
@@ -1154,4 +1435,15 @@ progress message instead and accept the later reveal.
    told that would happen before she picked them.
 9. One bad file among twelve costs her that one file, and she is told which one and
    why — by name.
-10. The single-file path is byte-for-byte what it is today.
+10. The single-file path is byte-for-byte what it is today, except that a
+    transient single-file failure now offers `Try again`.
+11. **A network blip on file 3 of 12 costs one button press, not a re-pick.**
+    Verified by killing the server mid-batch, restarting it, and pressing
+    `Try again`.
+12. **No control is ever offered that cannot succeed.** A file rejected by format
+    or size shows an explanation and **no** `Try again`; a file that failed
+    transiently shows one. Verified by mixing an unsupported file into a batch
+    interrupted by a network failure and confirming the two land in different
+    groups with only one button between them.
+13. **A retried file lands in its natural-sort position, not at the end** — and no
+    track that existed before the batch is moved.
