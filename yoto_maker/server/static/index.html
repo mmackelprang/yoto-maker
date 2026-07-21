@@ -125,9 +125,6 @@
       <div id="connectRow" class="hidden">
         <div class="msg-box info">You'll need to connect your Yoto account first.</div>
         <button id="connectBtn" class="btn primary big" style="margin-top:12px">🔗 Connect my Yoto account</button>
-        <div id="advRow" style="margin-top:10px">
-          <a href="#settings" id="advToggle" class="tiny">⚙️ Yoto connection settings</a>
-        </div>
       </div>
 
       <button id="sendBtn" class="btn primary big">🚀 Send to Yoto</button>
@@ -138,6 +135,21 @@
       </div>
       <div id="sendError" class="msg-box err hidden"></div>
       <div id="sendDone" class="msg-box ok hidden"></div>
+
+      <!-- Last child, deliberately. Ahead of #sendBtn this would push the
+           primary action down and take a tab stop before it — a cost paid on
+           every card-making visit for a control used twice ever. Last child
+           also fixes the link's position as #sendProgress / #sendError /
+           #sendDone appear and disappear, and lands it directly beneath
+           #sendError on a failed send. NEVER hidden and NOT inside
+           #connectRow: it was inside it until v0.1.9, which meant the one
+           contextual way into Settings vanished in exactly the state where
+           "use a different account" is a coherent thing to want.
+           .tiny is on THIS wrapper and not on the anchor — see below.
+           overview.md §12.4, interactions.md §1.4. -->
+      <div id="advRow" class="tiny" style="margin-top:14px">
+        <a href="#settings" id="advToggle">⚙️ Yoto connection settings</a>
+      </div>
     </section>
 
     <!-- STEP 4: Label -->
