@@ -294,6 +294,19 @@ Markup changes: add `aria-label` and make the state legible to assistive tech.
 
 The pill keeps its existing dot + text rendering from `renderStatus()`.
 
+> **Amended 2026-07-20 (§12).** Two corrections to this subsection.
+>
+> 1. **The reasoning above only holds in the broken state.** In the healthy
+>    state "Yoto connected" is a *reassurance*, not a symptom — it closes the
+>    user's search rather than inviting a click. §12.2. The pill remains an
+>    entry point; it is no longer relied on as the only one when connected.
+> 2. **The `aria-label` above is a WCAG 2.5.3 defect and is removed.** It
+>    overrides the visible text as the accessible name, so the name does not
+>    contain the label. `title` alone is correct. §12.6.
+>
+> The pill's fill and one added `›` are specified in §12.5–12.6 and
+> `tokens.md` §2b.
+
 ### 5.2 Entry point B — the footer link (deliberate)
 
 The footer becomes:
@@ -306,6 +319,12 @@ settings and paste this Client ID". Same destination.
 Two entry points, mapping to the two real intents: *something is wrong* (pill)
 and *I was told to change something* (footer). Neither adds visual weight —
 the pill already exists, and the footer is a `.tiny` text row.
+
+> **Amended 2026-07-20 (§12).** This enumeration missed a third real intent:
+> ***I want to use a different account*** — which is done *while connected*,
+> has no symptom to follow and no one telling the user what to change, and was
+> therefore served by neither entry point. §12.4 adds it back in step 3. The
+> footer link itself is unchanged, deliberately (§12.7).
 
 ### 5.3 Exit
 
@@ -399,6 +418,16 @@ heavier" constraint:
   only advertises one of those.
 - **`#connectRow` and `#connectBtn` stay exactly as they are.** The first-time
   path is untouched.
+
+> **Amended 2026-07-20 (§12.3–12.4).** Both `#advToggle` decisions above were
+> wrong, and compounded.
+>
+> - Leaving it inside `#connectRow` meant it vanished whenever connected — the
+>   exact state in which "use a different account" is a coherent thing to want.
+>   §12.4 moves `#advRow` out, to the end of step 3, always rendered.
+> - The relabel to `⚙️ Yoto connection settings` optimised for completeness of
+>   description over matchability, and deleted the words the user later went
+>   hunting for. The copy is now state-dependent (`copy.md` §1a).
 
 ---
 
@@ -693,6 +722,10 @@ Explicitly **not** in this PR, to keep it to one PR's worth:
    sections.
 4. Every string on the surface passes the `INSTALL-FOR-MOM.md` register test.
 5. The whole surface is operable by keyboard, with a visible focus indicator.
+6. **A connected user who wants to use a different Yoto account can find the way
+   in without clicking anything first.** *(added 2026-07-20 — §12.8. Criterion 1
+   covers the broken case; the healthy case had no criterion of its own, which is
+   why nothing caught the failure §12 fixes.)*
 
 ---
 
@@ -890,3 +923,309 @@ when it was the only way to identify the value at all. This amendment removes
 the need, so the breach goes with it, along with the `last3` slicing and its
 empty-string degradation at `app.js:499-508`. **The feature leaves the primitive
 more consistent than it found it**, which is the bar an extension should clear.
+
+---
+
+## 12. Amendment: the connected-state discoverability failure (2026-07-20)
+
+**Status:** proposed 2026-07-20; ships in v0.1.10 alongside the stale-cache fix.
+Amends §5.1, §5.2, §6.3, §10; adds `copy.md` §1a, `interactions.md` §1.4,
+`tokens.md` §2b. **Absorbs `BUILDER_QUEUE.md` item 5** (`#yotoPill` label fails
+AA) — see §12.6.
+**Relationship:** **extends** this package. Deviates from nothing. §3's placement
+decision — view swap, no tab strip, no fifth step — is untouched and re-affirmed
+in §12.7.
+
+Mark, connected and actively looking, could not find the way into Settings. He
+asked: *"I don't see the option to connect to a different account (redo auth).
+Where is the link to do this?"*
+
+### 12.1 What the evidence supports, and what it does not
+
+His browser was serving a stale `app.js`, so the pill genuinely did nothing when
+clicked — and, less obviously, **so did the footer link**: `#settingsLink` is an
+`<a href="#settings">`, and with no `hashchange` handler registered the hash
+would change and the view would not swap. Both live entry points were dead. The
+report is therefore contaminated, and the honest move is to say what survives
+contamination and what doesn't, rather than treat the whole thing as proof.
+
+**Discarded — cannot be distinguished from the cache bug:**
+
+- "The pill didn't work." Fully explained. **No design change is justified by
+  this**, and none below is.
+- "I clicked things and nothing happened." Same.
+
+**Retained — independent of what his browser was running:**
+
+- **His words.** He was searching for *"the option to connect to a different
+  account."* A stale build changes what the app *does*; it does not change what
+  the user was *looking for*. His question is an uncontaminated record of his
+  search vocabulary, and it is the single most useful datum in the report.
+- **The markup.** `#advToggle` lives inside `#connectRow`, which is `.hidden`
+  whenever `connected`. That is not evidence, it is a fact, and Polisher stated
+  it during PR #10 before this incident existed (§12.3).
+- **A measured defect.** The pill's label is 2.56:1 (`BUILDER_QUEUE.md` item 5).
+  Nobody needed to click anything to establish that.
+
+**So: no, this is not a case for waiting on clean evidence** — but only because
+the fix below is built on the three retained items and not on the discarded
+ones. The distinction is load-bearing. Specifically, **the claim "nobody clicks
+the pill because it looks like a badge" is NOT established**, and this amendment
+does not act as though it were: the pill's treatment changes only as far as an
+already-measured contrast failure requires, plus one glyph. It does not become a
+button, gain a gear, or grow. If a later report shows a working pill going
+unclicked, that is new evidence and a new conversation.
+
+### 12.2 The diagnosis: vocabulary, not visibility
+
+The brief's option list — chevron, gear, hover, border, unhide the step-3 link,
+strengthen the footer — is **six visibility fixes for what is a vocabulary
+problem**, and every one of them can be shipped in full without addressing it.
+
+Look at what the three entry points say against what he was looking for:
+
+| Entry point | Says | Names the goal? |
+| --- | --- | --- |
+| `#yotoPill` | `Yoto connected` | No — names a **state** |
+| `#settingsLink` | `Settings` | No — names a **category** |
+| `#advToggle` | `⚙️ Yoto connection settings` | No — names a **destination**, and is hidden anyway |
+
+Nothing on screen contains the words *account*, *different*, or *change*. A user
+scanning for "connect a different account" has nothing to match against. Making
+an unmatched string more visible does not make it match.
+
+**And the healthy-state pill is worse than neutral — it is anti-scent.** "Yoto
+connected" with a green dot is an *answer*, and the answer is *everything is
+fine, nothing to do here*. It doesn't merely fail to invite the click; it
+actively closes the search for a user who is scanning for something to act on.
+This is the specific place my §5.1 argument breaks, and it is sharper than
+"there's no symptom to follow": in the broken state the pill is a symptom, and
+in the healthy state it is a **reassurance**, which is the opposite of an
+affordance. Same control, inverted meaning, and §5.1 only reasoned about one
+half of it.
+
+### 12.3 Where PR #10's reasoning broke — two compounding errors, both mine
+
+**Error 1 — I hid the only contextual entry point.** Polisher flagged during
+PR #10 that `#advToggle` only exists while disconnected. I recommended leaving
+it, reasoning that "the pill and footer already cover the connected case, so
+nobody is stranded." That reasoning counted entry points and never asked whether
+any of them *said the right thing* — which is precisely the gap §12.2 describes.
+
+**Error 2 — and this is the one I'd have missed if he hadn't quoted himself.**
+§6.3 relabelled `#advToggle` from `⚙️ Use a different Yoto account (advanced)`
+to `⚙️ Yoto connection settings`, on the reasoning that the new surface covers
+both switching *and* repairing so the old label only advertised one of them.
+That reasoning is fine and the conclusion is still wrong, because it optimised
+the label for **completeness of description** over **matchability against what a
+user types into her own head**. `copy.md` §5 records the retired string in a row
+labelled "Replaced by §1 step-3 link". Set it beside his question:
+
+> shipped in v0.1.8: `⚙️ Use a different Yoto account (advanced)`
+>
+> asked in v0.1.9: *"the option to connect to a different account"*
+
+**He went looking for the string PR #10 deleted.** v0.1.8 had the words and hid
+them behind a link that only appeared when disconnected; v0.1.9 kept the hiding
+and removed the words. Either error alone is survivable — a hidden link with the
+right words is still there in the state where most people first meet it, and a
+visible link reading "Yoto connection settings" sitting under a Yoto step has
+enough proximity scent to get clicked. Together they leave nothing, and that is
+what shipped. I'm not ranking them; the point is that the fix has to undo both,
+and **undoing only the hiding — the option the brief leads with — leaves the
+user matching against "Yoto connection settings" again.**
+
+### 12.4 Fix, part 1: step 3 keeps a link, and the link names the goal
+
+> **Decision: `#advRow` moves out of `#connectRow` and becomes the last child of
+> step 3, always rendered. Its copy is state-dependent and, when connected,
+> names the account rather than the destination.**
+
+**Placement — last, after `#sendDone`.** Not before `#sendBtn`: that would push
+the primary action down and put a secondary control ahead of it in tab order, a
+real tax on the ~200 visits that are just making a card. Last child means the
+link's position never moves as `#sendProgress` / `#sendError` / `#sendDone`
+appear and disappear — and it lands **directly beneath `#sendError` when a send
+fails**, which is the follow-the-symptom adjacency §5.1 claimed for the pill and
+never actually had. The pill is at the top of the page; the error is at the
+bottom of step 3. The link is where the user is already looking.
+
+**Copy — state-dependent, per `copy.md` §1a:**
+
+| `STATUS.yoto.connected` | String |
+| --- | --- |
+| `true` | `⚙️ Connect a different Yoto account` |
+| `false` | `⚙️ Yoto connection settings` |
+
+Two objections to pre-empt.
+
+*"Why not one string?"* Because `a different` is **false** when there is no
+current one — the user hasn't connected any account yet, so "a different"
+account is meaningless, and in that state the big `🔗 Connect my Yoto account`
+button directly above already owns the connect intent. This is not a new
+pattern: `copy.md` §4 already makes the Client ID label state-dependent
+(`Paste a Client ID` / `Paste a different Client ID`) **for exactly this
+reason**, decided in the `884fa6a` amendment. Same rule, same problem, same
+answer.
+
+*"Why 'Connect' rather than v0.1.8's 'Use'?"* It is closer to the words he
+actually used, and it is the app's own established verb (`#connectBtn`,
+`🔗 Connect my Yoto account`, the settings view's own button labels in
+`copy.md` §3). The stacked-"Connect" awkwardness this would create only arises
+in the disconnected state, which is the state that gets the other string.
+
+**The `⚙️` stays on both variants**, and that is deliberate rather than
+inherited. The glyph is the **constant** and the words are the **variable** — a
+user who once found `⚙️ Yoto connection settings` while disconnected has to be
+able to recognise the same control later reading `⚙️ Connect a different Yoto
+account`. If the icon changed with the copy there would be nothing stable to
+recognise. (`(advanced)` is not restored. PR #10 already dropped it and was
+right to: it labelled a link that revealed a Client ID input inline, which it no
+longer does, and it is a discouragement marker aimed at exactly the user we now
+need to click.)
+
+**One accidental defect fixed while here.** `#advToggle` carries
+`class="tiny"` *on the anchor*, so `.tiny`'s `color: var(--muted)` (a class,
+0-1-0) beats `a { color: var(--accent-dark) }` (an element, 0-0-1). The result
+is that **the app's most important contextual link is the only link in the app
+that doesn't look like a link** — 13px grey, reading as a caption. The footer's
+`#settingsLink` puts `.tiny` on the wrapping `<p>` instead and therefore renders
+in accent purple. Move `.tiny` onto `#advRow` and leave the anchor bare, and the
+step-3 link inherits the footer's exact construction: same 13px,
+`--accent-dark` at 7.20:1 on `--card`, underlined, obviously clickable. **Zero
+new CSS, zero layout change, and it is the single cheapest affordance gain
+available on this surface** — a colour, not a size. Sizing it up would have cost
+the everyday path; this costs nothing.
+
+### 12.5 Fix, part 2: the pill becomes legible, and reads as a control
+
+> **Decision: absorb queue item 5. The pill's fill flips from white-over-gradient
+> to ink-over-gradient, and it gains one trailing `›`. It does not gain a gear,
+> a border, or size.**
+
+### 12.6 Absorbing queue item 5 — yes, and it is not scope creep
+
+Stated plainly, because the brief asked: **item 5 is absorbed and its queue row
+should be retired.** Leaving it open would leave a row reading *needs Designer
+pass* against a control this amendment respecifies — and a queued item that
+contradicts a shipped spec is exactly the "specced string with no renderer"
+failure mode `copy.md` §5 argued against in the other direction.
+
+The justification is not "we're in here anyway". It is that **the contrast
+defect and the discoverability defect are the same defect measured two ways.**
+A label at 2.56:1 is not merely an accessibility finding; it is *literally
+harder to see*, and a control whose label is hard to see is a control that
+doesn't get scanned. Fixing the contrast is a discoverability fix that happens
+to also close an AA failure. Splitting them across two PRs would mean shipping a
+discoverability fix that leaves the primary entry point illegible.
+
+**The fix — invert the fill rather than touch the gradient or the label.** The
+pill fails because its fill is *white at 18% over an already-light gradient*: it
+lightens the background behind white text. The three candidate directions were
+darken the gradient's light stop, restyle the label, or darken the fill. The
+first two have blast radius — the gradient stop is constrained by `tokens.md`
+§2a's focus-ring invariant and is the app's whole visual signature; a dark label
+abandons `header { color: #fff }` and makes the pill a foreign object. Darkening
+the fill is local to one declaration.
+
+Full sweep and the chosen value are in `tokens.md` §2b. Summary: fill becomes
+`rgba(36,29,56,0.28)` — `--ink` at 28% — taking the worst-case label contrast
+across the gradient from **2.56:1 to 4.97:1** ✅, with the status dots improving
+to 3.48:1 (amber) and 3.88:1 (green), both clearing the 3:1 non-text bar they
+were already passing.
+
+**Why this reads as a control and not just as a legible badge.** At 18% white
+the pill is a *wash* — it barely separates from the header, which is what makes
+it read as a printed status chip rather than a thing you press. At 28% ink it is
+a visibly **filled** shape with a hard edge against the gradient, which is the
+oldest button signal there is. The legibility fix and the affordance fix are the
+same declaration; this is the second place in this amendment where two problems
+turn out to have one answer.
+
+**Plus one glyph: a trailing `›`.** `aria-hidden="true"` — the pill's text
+already names its state and `title` supplies the destination.
+
+*Rejected: a gear.* Decided rather than defaulted, per the brief. Three reasons,
+ascending. (1) A gear is not a picture of anything — it is a learned convention,
+and to a reader who hasn't learned it the literal reading is *machinery,
+technical, don't touch*, which repels precisely the `INSTALL-FOR-MOM.md` user.
+(2) The pill already carries a state dot; a second glyph plus a label in a 14px
+pill is busy, and the dot — which is the only thing carrying state — loses
+salience to decoration. (3) **Decisively: a gear says "settings", and "settings"
+is the category vocabulary that already failed in §12.2.** It adds visibility to
+a word that wasn't matching. A chevron makes no claim about *what* is through
+there; it claims only that there *is* a through-there, which is the honest
+signal and the one that was missing.
+
+*Rejected: `→`.* Reads as "leave" / "external", and this app already spends `↗`
+on genuinely external links (`index.html:240`, `:303`). `›` is the
+deeper-into-this-app convention (Windows breadcrumbs, every phone settings row),
+and it is visually lighter — which matters, because §12.7 says this surface must
+not gain prominence.
+
+The app already uses directional glyphs as affordance markers — `←` for back
+(`index.html:181`), `↗` for external. A trailing `›` for *goes to another view
+in this app* completes that vocabulary rather than importing one.
+
+*Rejected: a border, and larger type.* Each would work. Both were stopped at the
+same line: the fill change plus the chevron is the **minimum that the measured
+defect already forced us to make**, and everything past it is prominence bought
+on the strength of the contaminated half of the evidence (§12.1). If the pill
+turns out to still go unclicked once it works, a border is the next move and it
+is one declaration away.
+
+**One genuine accessibility defect found while respecifying, and fixed here.**
+§5.1 added `aria-label="Yoto connection settings"` to the pill. That **overrides
+the visible text as the accessible name**, so the name (`Yoto connection
+settings`) does not contain the visible label (`Yoto connected`) — a WCAG 2.1 AA
+**2.5.3 Label in Name** failure, and a speech-input user saying *"click Yoto
+connected"* does not activate it. The fix is a deletion: **drop `aria-label`,
+keep `title`.** With text content present, the content becomes the accessible
+name and `title` becomes the accessible *description*, so a screen reader
+announces *"Yoto connected, button, Yoto connection settings"* — the state, the
+role, and the destination, in that order, with one attribute fewer than today.
+This was introduced by §5.1 and is not pre-existing.
+
+### 12.7 What is deliberately not changing
+
+**The footer link — no change, and this is a decision.** It is already a literal
+text link in accent purple that says `Settings`. Its problem is §12.2's problem
+(category vocabulary), and bolding or enlarging it buys visibility for a
+matching failure — in the least-scanned region of the page, where any added
+weight is permanent chrome for a twice-ever surface. Leave it exactly as it is.
+
+**The pill's text — no change.** `Yoto connected` / `Yoto not connected` stays.
+The pill's job is status; a pill that named an action would stop reporting the
+one thing it exists to report, and §12.4 now puts the action-named string in
+step 3 where there is room for it.
+
+**§3's placement decision stands, unamended.** Nothing here is a step toward a
+tab strip. The everyday-path argument that killed it — a first-timer must not
+resolve a navigation choice before reaching the friendly big `1` — is untouched:
+this amendment adds **one 13px link at the bottom of the third card** and changes
+one existing control's fill. Nothing new appears above step 1, and nothing
+intercepts steps 1 or 2.
+
+**And the everyday path is still net lighter than v0.1.8.** PR #10 deleted the
+whole `#setupRow` from step 3 (§6.3) — a labelled text input, an `.msg-box.info`
+explainer, and an error div. This amendment returns one line of 13px text to
+that step. The trajectory the "must not get heavier" constraint was protecting is
+not in question; the ledger is still strongly positive.
+
+**No change to `.setting`.** Nothing in this amendment touches the settings view
+at all — every change is on the card view and the header. The primitive is not
+read, not extended, and not clarified. `tokens.md` §3 is untouched.
+
+### 12.8 Success criterion 6
+
+Added to §10:
+
+> 6. **A connected user who wants to use a different Yoto account can find the
+>    way in without clicking anything first.** The test is scanning, not
+>    exploring: something on screen must contain the words she is searching
+>    with. Verified by reading the rendered card view in the `connected` state
+>    and finding a string that names the *account*, not the destination.
+
+Criterion 1 covers the broken case and passed. Criterion 6 exists because the
+healthy case had no criterion of its own, which is why nothing caught this
+before a user did.

@@ -1,7 +1,16 @@
-# Yoto Maker v0.1.9
+# Yoto Maker v0.1.10
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
+
+### Fixed in v0.1.10
+- **The app now finishes updating itself properly.** After an update, some parts
+  of the app could still be the old version — so new buttons were there but did
+  nothing, and the Settings page wouldn't open. Everything now arrives together.
+  If the app has been behaving strangely since it last updated, this release
+  fixes it on its own; you don't need to do anything.
+
+## v0.1.9
 
 ### 🆕 New in v0.1.9
 - **A Settings page.** Click the **Yoto** button in the top-right corner (or

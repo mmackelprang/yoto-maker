@@ -1999,6 +1999,11 @@ Run from a clean checkout of the branch. Start the app with
 
 Back both up before you start, and restore them at the end.
 
+> **[Corrected 2026-07-20]** Cause 1 below was misfiled as a testing hazard. It was the
+> user-facing v0.1.9 bug (new HTML, old `app.js` after auto-update), fixed in v0.1.10 —
+> see `docs/superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`. The three
+> "false failures" recorded below were real, they just were not reproducible only in dev.
+>
 > **Clear the browser cache before any UAT on this repo — or you will measure a build that isn't there.**
 > The static assets are served without cache-busting, so a browser will happily reuse a stale `app.js`/`style.css`
 > across a rebuild. During PR #10's UAT this produced **three false failures** in a row — `--focus-ring` reading

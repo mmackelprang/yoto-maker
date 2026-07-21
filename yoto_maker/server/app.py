@@ -69,6 +69,30 @@ async def _origin_guard(request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def _static_cache_policy(request, call_next):
+    """Make the browser revalidate static assets instead of guessing.
+
+    Served without Cache-Control, ``app.js`` and ``styles.css`` fall under
+    *heuristic* caching: the browser invents a freshness lifetime from
+    Date - Last-Modified and reuses the file with no request at all. That is how
+    a v0.1.8 app.js survived the update to v0.1.9.
+
+    ``no-cache`` does not mean "don't cache" — it means "revalidate before every
+    reuse". StaticFiles already emits an ETag, so the steady state is a
+    conditional request answered 304 with no body, over loopback.
+
+    Deliberately not ``immutable``: __version__ does not change between dev
+    rebuilds, so immutable would make an edited app.js permanently invisible
+    without a version bump — the same bug, moved to development time. There is
+    no performance to win on loopback anyway.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # --------------------------------------------------------------------------- #
 # Error handling: turn our friendly exceptions into clean JSON the UI shows.
 # --------------------------------------------------------------------------- #
@@ -655,11 +679,34 @@ text-align:center;max-width:420px}}h1{{color:{color};font-size:22px}}p{{color:#4
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
+    """Serve the UI with its asset URLs stamped with the running version.
+
+    Two independent guards against a browser reusing a previous release's
+    ``app.js``/``styles.css`` (which shipped new markup against old script and
+    made the Settings view unreachable in v0.1.9):
+
+    * ``no-store`` on this document, so the stamps below are always re-read. A
+      cached index.html would make the stamping useless — the browser would
+      never see the new URLs.
+    * the ``?v=`` stamp itself, which changes the cache key every release and so
+      repairs browsers that are *already* holding a stale copy. A Cache-Control
+      header cannot do that: a browser serving from its own store issues no
+      request and never sees the header.
+
+    ``encoding="utf-8"`` is not optional. Without it Python uses
+    ``locale.getpreferredencoding()`` — cp1252 on a stock Windows box, and so
+    inside the frozen .exe — and this file's emoji and arrows raise
+    UnicodeDecodeError, turning the whole UI into a 500.
+    """
     ensure_library()  # make sure icons exist before the UI asks for them
-    return FileResponse(STATIC_DIR / "index.html")
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(
+        html.replace("__ASSET_V__", __version__),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
-# Static assets (styles.js/css). Mounted last so API routes take precedence.
+# Static assets (app.js/styles.css). Mounted last so API routes take precedence.
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
