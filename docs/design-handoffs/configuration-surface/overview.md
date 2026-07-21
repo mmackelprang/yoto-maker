@@ -1229,3 +1229,218 @@ Added to §10:
 Criterion 1 covers the broken case and passed. Criterion 6 exists because the
 healthy case had no criterion of its own, which is why nothing caught this
 before a user did.
+
+---
+
+## 13. Amendment: malformed Client ID detection (2026-07-21)
+
+**Status:** proposed 2026-07-21. Amends `copy.md` §4 (status table) and adds
+`copy.md` §4b–§4d and §7; adds `interactions.md` §3.6; adds setting 3.
+**Relationship:** **extends** this package. Deviates from nothing. §3's placement
+decision and §4's primitive are both untouched — setting 3 is §4.4's *"copy the
+template, fill the slots, append"* procedure run once, and every state below uses
+a shipped class. **`tokens.md` needs no amendment**, which is the strongest
+available evidence this extension fits the primitive rather than straining it.
+
+Full spec, with mockups and the reasoning behind every decision below:
+[`docs/superpowers/specs/2026-07-21-client-id-validation-and-multi-file-upload-design.md`](../../superpowers/specs/2026-07-21-client-id-validation-and-multi-file-upload-design.md).
+
+### 13.1 The incident, and why §11 did not prevent it
+
+A user typed her **email address** into `Yoto Client ID (advanced)`. `app.py:515`
+validates only non-emptiness, so it saved the value and called `logout()` —
+**destroying a working sign-in** and dropping her on an Auth0 error page in
+another tab.
+
+§11 shipped precisely to make this value legible, and it did not help. The reason
+is worth recording because it invalidates the instinct §11 was built on:
+
+```
+mask_client_id("mandydeogie@gmail.com")  →  "mand…com"
+```
+
+The mask deleted `@gmail.com` — the exact substring that would have made the
+mistake self-evident — and what survived reads *more* code-like than the original.
+§11.3 argued the mask earns its place as *"the summary form of a value"*. That
+argument is still correct, and it is **conditional on the value having the
+expected shape**, which §11 never said because it never considered a value that
+did not. The rule this amendment adds:
+
+> **The mask applies only to a value that matches the expected shape.** Any value
+> that fails the shape check renders **in full, unmasked, with the disclosure
+> control omitted.** Applied to a malformed value the mask is not a summary; it is
+> camouflage.
+
+That is two new rows in `interactions.md` §3.5.2's omit-the-toggle table, reached
+by the same route the table already covers: the toggle is omitted whenever it
+could do nothing, and here the whole value is already on screen.
+
+### 13.2 Two verdicts, two consequences — the conservatism this rests on
+
+The gate is **hard** (Mark, 2026-07-21: *"this is def a place where fail fast
+wins"*), and a hard gate's failure mode is a lockout. So the rule that hard-blocks
+and the rule that advises are deliberately **not the same rule**:
+
+| Verdict | Rule | Consequence |
+| --- | --- | --- |
+| `invalid` | Contains `@`, interior whitespace, `/`, `:`, `<`, `>`; empty after trim; over 128 chars. | **Hard.** Save refused, sign-in blocked. Red status. |
+| `unusual` | Passes the above but fails `^[A-Za-z0-9]{32}$`. | **Soft.** Saves after a confirmation naming the concern. Sign-in proceeds. Amber. |
+| `ok` | Matches `^[A-Za-z0-9]{32}$`. | Today's behavior. |
+
+The 32-character rule is confirmed against `DEFAULT_YOTO_CLIENT_ID`
+(`config.py:44`) and is correct *today*. It is knowledge about a third party's
+current format and the app cannot learn that it has changed — so it does not get
+to hard-block. **`@` is not a character in an opaque identifier; it is the
+character that means *address*.** `/` and `:` mean *URL*, which matters concretely
+because `SETUP-YOTO-CONNECTION.md:30` prints the callback URL directly beside the
+Client ID the user is told to copy.
+
+The deny-list is deliberately narrow, and two exclusions demonstrate the principle
+rather than merely applying it: **`.` is not denied** (dotted identifiers exist in
+this industry) and **`-` and `_` are not denied** (the two commonest characters in
+machine identifiers — denying them would be the fastest possible way to build the
+lockout this rule exists to prevent). Both land in `unusual`.
+
+**Required test:** `DEFAULT_YOTO_CLIENT_ID` must score `ok`. A validator that
+rejects the shipped default bricks first run, and it is the one failure this
+design cannot recover from — "Go back to the built-in one" would go back to a
+value the app refuses.
+
+### 13.3 The ordering is the feature, and the copy is its contract
+
+The verdict check goes **above** `get_settings().set(...)` and above `logout()`.
+Nothing else in `app.py:515` moves.
+
+The refusal copy (`copy.md` §4b) ends with *"Nothing was changed, and you're still
+signed in to Yoto."* **That sentence is true only because of the ordering.** If a
+refactor moves the check below the write, the copy silently becomes a lie — so the
+copy is the readable statement of the invariant. **If the reassurance line is
+true, the ordering is correct.**
+
+Client-side validation runs **before the confirmation opens**. This extends
+`interactions.md` §3.2 step 1 — *"No confirmation for an empty save — never
+confirm a no-op"* — from *no-op* to *no-op or refusal*. Asking the user to accept
+*"you'll need to sign in to Yoto again"* for a value that will be refused, then
+erroring at her, is the same defect that rule already forbids.
+
+The server check remains the actual safety property. This project has shipped a
+stale `app.js` before (§12.1).
+
+### 13.4 Setting 3 — "If you need to ask for help"
+
+Mark asked to show current values on the config screen. The use case decides every
+question: **a parent on the phone with whoever set this up, reading out what the
+app says.**
+
+Five rows: version, Client ID in use, where it came from, **sign-in address**, and
+where the files are kept. `copy.md` §7 has them verbatim.
+
+The sign-in address is the highest-value row and is not visible anywhere in the app
+today. `SETUP-YOTO-CONNECTION.md:30` requires it to match the Yoto dashboard
+*exactly*, and a mismatch produces an Auth0 error page — **the same failure mode as
+this incident, from a different cause.** It must be rendered from `auth.py:56`'s
+`_redirect_uri()`, the same function `start_login()` uses, and never constructed in
+JS (the port is not a constant — `config.py:108`).
+
+**Placed last, always visible, no disclosure.** §2's *"must not get one pixel
+heavier"* constraint governs the card view, which this does not touch. Within the
+settings view, **being last does the job a disclosure would have done** — the user
+repairing her connection never scrolls there — and it does it without a control. A
+disclosure would actively hurt the one use case: on the phone it turns *"read me
+what it says at the bottom"* into *"no, first press the grey button that says…"*.
+
+**Slot 6 is included though empty.** This is the first read-only section, so it has
+no action that could produce feedback. §4.2 says *"treat this as the literal
+template"*, and carving a primitive exception for one section would be the widening
+§11.5 worked to avoid. One hidden div is cheaper than a clarification to a rule
+that has now held three times.
+
+### 13.5 The hard block on sign-in, and why `env` is exempt
+
+**On `saved` + `invalid`, `connectYoto()` returns before `/api/yoto/login`** — the
+authorize request is never constructed. `start_login()` refuses server-side too,
+raising an `AuthError` with the reason code, consumed through the existing
+`SIGNIN_ERRORS[e.data.reason]` mapping at `app.js:1033`.
+
+This is §5.1 and §12.4's **follow-the-symptom** principle applied to the one user
+those amendments could not reach: her `settings.json` is already bad, she has no
+reason to open Settings, and her only feedback today is an Auth0 page on a foreign
+domain. The recovery has to be adjacent to the button she pressed.
+
+**The connect button stays enabled.** Disabling it with no visible reason is the
+dead-end antipattern §2.2 forbids (*"Never dead-end her"*). Pressing it is the
+fastest path to the explanation — the press renders the block instead of sending
+a request.
+
+**On `env` + `invalid`: warn loudly, do not block.** This asymmetry is deliberate
+and it is the decision most likely to be argued with. The decisive reason is
+structural: **the block's entire value is that it comes with a recovery, and on
+`env` there is none.** §7.4 removed the reset control from that state because
+deleting the saved value falls through to the env var, so the label would lie. A
+hard gate whose recovery affordance cannot exist is not fail-fast; it is a wall.
+
+Three supporting reasons. Setting an environment variable requires a terminal, so
+that tier is **authenticated by construction** — whoever set it knows what a Client
+ID is and has shell access, which is the recovery the app cannot offer. This repo
+already ships a legitimate non-conforming env value (`tests/conftest.py` injects
+`YOTO_CLIENT_ID="test_client_id"`). And the consequence is asymmetric: a developer
+who sees an Auth0 error knows what it means; the parent calls someone.
+
+`builtin` + `invalid` is not designed for. It is unreachable in a correct build and
+is prevented by §13.2's test, which is the right layer for it.
+
+### 13.6 Recovery is never a dead end
+
+Mark's guard rail: every blocked state carries its recovery inline. On `saved` the
+user has **two**, and both stay live:
+
+- The block message on the card view carries a button that **navigates to Settings
+  and opens the reset confirmation already showing.** It does *not* perform the
+  reset — `copy.md` §4's confirmation carries the sentence answering the fear she
+  actually has (*"Nothing in your Yoto account changes."*), and a one-press control
+  on the card view would skip it. One press from symptom to consequences, composing
+  with the existing flow rather than bypassing it.
+- **The input and `Save` stay fully enabled.** The block is on *signing in*, never
+  on *fixing it*.
+
+`Go back to the built-in one` is promoted to `.btn primary` in the `invalid` state.
+This does not breach §4.3.4 — the Client ID section has **no** primary today, so
+promoting one is within budget.
+
+### 13.7 What is deliberately not changing
+
+**No new live region.** Everything renders through `#clientIdStatus`
+(`role="status"`) and `#clientIdMsg` (`role="alert"`), both shipped.
+`interactions.md` §4.3's prohibition on a second live region in one section is not
+approached, let alone tested.
+
+**No red text.** `--err` on `--card` measures 5.62:1 (`tokens.md` §4) so it would
+pass — but this package reserves status colors for **dots and borders, never body
+text**, exactly as `tokens.md` §1 argued for `--warn`. A 32-character monospace
+string set in red is also harder to read at the moment reading it is the task. The
+flag is: red dot, a headline naming the problem, and the value in full beneath it.
+
+**`The one you're using now` stays constant** across all verdicts. A second
+problem-naming string 20px below the headline is the duplication §11.6 was pleased
+to remove.
+
+**`sendToYoto()` is not gated.** An invalid Client ID with a stale token fails at
+refresh — a different failure with its own error path.
+
+**No change to the `.setting` primitive, and no new CSS anywhere in this
+amendment.** Every state uses `is-err`, `is-warn`, `.btn primary`, `.mono-value`
+and `.hidden`, all shipped.
+
+### 13.8 Success criteria added to §10
+
+> 7. **A user with a working sign-in cannot lose it by pasting a wrong value.**
+>    The refusal runs before the write and before `logout()`. Verified by saving
+>    an email address while connected and confirming the pill still reads
+>    `Yoto connected`.
+> 8. **A malformed saved value is legible, not masked into plausibility.**
+>    Verified by reading the Client ID section with an email address saved and
+>    finding the whole string on screen.
+> 9. **A legitimate Client ID in a shape Yoto has not used before is never
+>    hard-blocked.** It may be warned about; it must always be usable. This is the
+>    criterion §13.2's conservatism exists to satisfy, and the one that would be
+>    silently violated by a stricter gate.
