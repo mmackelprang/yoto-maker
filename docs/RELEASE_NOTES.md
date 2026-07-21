@@ -4,6 +4,14 @@ Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
 
 ### Fixed in v0.1.10
+- **The way to use a different Yoto account is back where you can see it.** The
+  link at the bottom of step 3 now says **⚙️ Connect a different Yoto account**
+  once you're signed in, and it no longer disappears when everything is working.
+  Previously it only showed up while you were *dis*connected — which is the one
+  time you don't need it.
+- **The Yoto button in the corner is easier to read.** Its label was too faint
+  against the purple header. It's now a filled shape with a small `›` to show it
+  takes you somewhere.
 - **The app now finishes updating itself properly.** After an update, some parts
   of the app could still be the old version — so new buttons were there but did
   nothing, and the Settings page wouldn't open. Everything now arrives together.
