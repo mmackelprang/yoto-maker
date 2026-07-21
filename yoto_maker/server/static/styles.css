@@ -79,33 +79,32 @@ header .logo { font-size: 30px; }
 
 .pill {
   display: inline-flex; align-items: center; gap: 8px;
-  background: rgba(255,255,255,0.18); color: #fff;
+  /* --ink at 28% over the header gradient, NOT white. The shipped
+     rgba(255,255,255,0.18) was white over an already-light gradient — it
+     LIGHTENED the background behind white text, and the label measured 2.56:1
+     against a 4.5:1 bar. Inverting takes the worst case (the #9a7de6 light end)
+     to 4.97:1. 0.22 is the arithmetic floor and clears the bar by 0.01, which is
+     no margin at all; 0.28 buys ~10% while keeping the composite (#7962b5) in
+     the purple family, so the pill still reads as part of the header rather than
+     as a dark chip stuck to it. Past 0.32 it starts competing with the h1.
+     Full 1%-interval sweep and rejected alphas: tokens.md §2b. */
+  background: rgba(36,29,56,0.28); color: #fff;
   padding: 8px 14px; border-radius: 999px; font-size: 14px; font-weight: 600;
   cursor: pointer; border: none;
   transition: background-color .12s, transform .06s;
 }
-/* The pill navigates to Settings on every click now, so it needs the same press
-   affordance as .btn (.btn:hover/.btn:active) and .back-link.
-   Darkens on hover like .btn — but NOT via .btn's `filter: brightness()`. That
-   works on .btn because .btn's background is opaque; the pill's fill is only 18%
-   white over the header gradient, so a brightness filter dims the white label
-   fully while barely moving the composited fill, dropping label contrast from
-   2.56:1 to 2.23:1. A black scrim darkens the fill and leaves the label alone,
-   taking the worst-case label contrast the other way — 2.56:1 -> 3.28:1.
-   The value below is that two-layer composite (18% white + 12% black over the
-   gradient) pre-flattened into one translucent grey, so the hover is a plain
-   background-color change that actually interpolates: a background-image layer
-   would animate DISCRETELY from `none` and snap mid-transition instead of
-   fading. Measured, not derived — the exact solve is rgba(145,145,145,0.278),
-   but rounding the alpha to 0.28 makes 144 the value that reproduces the
-   composite (3.28:1 worst case; 145 drifts to 3.25:1).
-   (The label still misses 4.5:1 at the gradient's light end; that is a
-   pre-existing property of the pill's translucent fill, tracked separately.
-   Do not "fix" this by lightening the hover — that makes it worse.) */
-.pill:hover { background-color: rgba(144,144,144,0.28); }
+/* Hover is the same ink at more alpha (5.81:1 worst case), and interpolates
+   natively under the transition above because both ends are now the same hue.
+   The long two-layer-grey derivation that used to live here has been deleted
+   with the white rest state that forced it. */
+.pill:hover { background-color: rgba(36,29,56,0.38); }
 .pill:active { transform: translateY(1px); }
 .pill .dot { width: 10px; height: 10px; border-radius: 50%; background: #ffd35c; }
 .pill.connected .dot { background: #7CFCB0; }
+
+/* Affordance mark only. No new colour (inherits the pill's #fff), no new size
+   (inherits 14px), no new spacing (uses the pill's existing gap: 8px). */
+.pill-chev { font-weight: 700; line-height: 1; }
 
 /* Layout */
 main { max-width: 720px; margin: 0 auto; padding: 24px 18px 80px; }
