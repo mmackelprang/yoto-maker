@@ -248,6 +248,51 @@ so a future reader does not mistake it for the thing shaping the ring.
 pass.** Required by [`overview.md` §12.5–12.6](overview.md). Two declarations
 change and one glyph is added. Nothing else on this surface moves.
 
+> ### ⚠️ Provenance — every ratio in §2b is **derived**, and the shipped build has been **measured**
+>
+> The figures throughout §2b (4.97, 5.81, 3.48, 3.88, and the full sweep below)
+> come from Designer's arithmetic over the gradient, computed *before* the fix
+> shipped. They are predictions, and they are good ones — but they are not
+> observations.
+>
+> **[PR #16](https://github.com/mmackelprang/yoto-maker/pull/16) measured the
+> live rendered pixels** (element screenshots sampled with PIL, on a
+> hard-reloaded page and a naturally-loaded page, both agreeing). Tester then
+> re-measured independently. **Where the two disagree, the measured set wins** —
+> it is the shipped surface, and this section is not.
+>
+> | Pair | Derived (§2b) | Measured (PR #16) | Measured (Tester) | Bar |
+> | --- | --- | --- | --- | --- |
+> | White label at rest | 4.97:1 | **5.03:1** | 5.09:1 | 4.5 |
+> | White label on hover | 5.81:1 | **5.87:1** | 5.95:1 | 4.5 |
+> | Green dot | 3.88:1 | **3.93:1** | — | 3.0 |
+> | Amber dot | 3.48:1 | **3.53:1** | — | 3.0 |
+>
+> **Every measured value lands better than derived**, so no conclusion in §2b
+> changes: alpha `0.28` stands and the `0.32` escape hatch was not needed. The
+> derived figures are kept in place rather than overwritten because the
+> *reasoning* below (why 0.28 and not 0.22 or 0.40) is built on the sweep, and a
+> sweep with four rows silently swapped for measurements would no longer be an
+> internally consistent derivation. Read §2b for *why*; read the table above for
+> *what the build actually does*.
+>
+> Full record: `BUILDER_QUEUE.md` item 9.
+
+### Methodology note — sampling a rounded, translucent fill
+
+Recorded because a future pass will otherwise re-derive a false failure.
+
+**Naive whole-element sampling of `.pill` yields a spurious ~3.30:1.** The pill
+has `border-radius: 999px`, so its bounding box includes corner pixels where the
+antialiased fill fades out into bare header gradient. Those pixels are the
+lightest in the box and a min-luminance sweep finds them first — but **no part of
+the label is drawn over them**, so the ratio they produce describes a pair that
+never renders.
+
+Sample the region actually behind the glyphs: the fill's interior, inset past the
+corner radius. That is where 5.03:1 and 5.87:1 above come from, and it is the
+pair AA is asking about.
+
 ### The defect, and why it is a discoverability defect
 
 The pill's label measures **2.56:1** against the light end of the header
@@ -283,7 +328,7 @@ binding constraint for anything drawn on this header.
 | `rgba(255,255,255,0.18)` *(shipped)* | **2.56:1** | 3.36:1 | `#9479dd` → `#ac94ea` | ❌ the defect |
 | `rgba(36,29,56,0.22)` | 4.51:1 | 6.28:1 | `#694eb3` → `#8068c0` | ❌ clears 4.5 by 0.01 — no headroom at all |
 | `rgba(36,29,56,0.25)` | 4.74:1 | 6.54:1 | `#664cae` → `#7c65ba` | ◻ passes, thin |
-| **`rgba(36,29,56,0.28)`** | **4.97:1** | 6.80:1 | `#634aaa` → `#7962b5` | ✅ **chosen** |
+| **`rgba(36,29,56,0.28)`** | **4.97:1** | 6.80:1 | `#634aaa` → `#7962b5` | ✅ **chosen** — shipped and measured at **5.03:1**, composite `rgb(120,97,181)` |
 | `rgba(36,29,56,0.32)` | 5.31:1 | 7.11:1 | `#6048a3` → `#745eae` | ✅ available if UAT wants darker |
 | `rgba(36,29,56,0.40)` | 6.01:1 | 7.85:1 | `#594397` → `#6b57a0` | ✅ but reads as a dark chip on a pastel header |
 
@@ -324,20 +369,22 @@ for a two-layer composite that isn't there.
 
 ### Everything else on the pill improves or holds
 
-| Pair | Shipped | After | Bar | |
-| --- | --- | --- | --- | --- |
-| White label vs fill | 2.56:1 | **4.97:1** | 4.5 | ✅ fixed |
-| White label vs fill, hover | 3.28:1 | 5.81:1 | 4.5 | ✅ now passes on hover too |
-| Amber dot `#ffd35c` vs fill | — | 3.48:1 | 3.0 | ✅ |
-| Green dot `#7CFCB0` vs fill | — | 3.88:1 | 3.0 | ✅ |
-| White focus ring vs fill | 2.57:1 | **4.97:1** | 3.0 | ✅ — see below |
+"After" is derived; the measured column is what the shipped build does.
+
+| Pair | Shipped | After (derived) | **Measured** | Bar | |
+| --- | --- | --- | --- | --- | --- |
+| White label vs fill | 2.56:1 | **4.97:1** | **5.03:1** | 4.5 | ✅ fixed |
+| White label vs fill, hover | 3.28:1 | 5.81:1 | **5.87:1** | 4.5 | ✅ now passes on hover too |
+| Amber dot `#ffd35c` vs fill | — | 3.48:1 | **3.53:1** | 3.0 | ✅ |
+| Green dot `#7CFCB0` vs fill | — | 3.88:1 | **3.93:1** | 3.0 | ✅ |
+| White focus ring vs fill | 2.57:1 | **4.97:1** | **5.03:1** | 3.0 | ✅ — same white on the same fill as the label, so it takes the label's figure |
 
 ### This retires §2a's `outline-offset` hazard note (but not the offset)
 
 §2a warns that setting `outline-offset: 0` on the header would put the white ring
-adjacent to the pill's own fill, where it measured **2.57:1** and failed. **That
-number is now 4.97:1** — the same figure as the label, because it is the same
-white on the same fill. The hazard is gone.
+adjacent to the pill's own fill, where it came out at **2.57:1** and failed.
+**That number is now 4.97:1 derived / 5.03:1 measured** — the same figure as the
+label, because it is the same white on the same fill. The hazard is gone.
 
 **Do not remove the offset.** It is still visually correct and removing it buys
 nothing. But §2a's warning has been amended in place rather than left standing: a
@@ -396,8 +443,8 @@ uniform across both tables: every rendered pair gets a row.
 
 | Pair | Ratio | Target | |
 | --- | --- | --- | --- |
-| `#ffffff` label on `.pill` fill over `header` gradient | 4.97:1 | 4.5 | ✅ worst point, light end |
-| `.pill` status dots on that fill | 3.48:1 / 3.88:1 | 3.0 | ✅ amber / green |
+| `#ffffff` label on `.pill` fill over `header` gradient | 4.97:1 derived / **5.03:1 measured** | 4.5 | ✅ worst point, light end |
+| `.pill` status dots on that fill | 3.48:1 / 3.88:1 derived · **3.53:1 / 3.93:1 measured** | 3.0 | ✅ amber / green |
 
 ---
 
@@ -537,6 +584,13 @@ needed.
 
 Measured, not assumed. Text targets 4.5:1 (AA), non-text UI targets 3:1.
 
+For flat opaque pairs, computing the ratio from the two hex values *is* the
+measurement — there is nothing to composite. The four `.pill` rows are different:
+a translucent fill over a gradient has to be composited first, so a derived
+figure is a prediction. **Those four carry live measurements** from PR #16, with
+§2b's derived values noted alongside. See §2b's provenance box for both sets and
+for the sampling hazard that produces a false 3.30:1.
+
 | Pair | Ratio | Target | |
 | --- | --- | --- | --- |
 | `--ink` on `--card` | 14.6:1 | 4.5 | ✅ titles, status headlines |
@@ -547,10 +601,10 @@ Measured, not assumed. Text targets 4.5:1 (AA), non-text UI targets 3:1.
 | `--ok` dot on `--card` | 4.25:1 | 3.0 | ✅ |
 | `--warn` dot on `--card` | 3.61:1 | 3.0 | ✅ |
 | `--err` dot on `--card` | 5.62:1 | 3.0 | ✅ |
-| `#ffffff` label on `.pill` fill over `header` gradient | 4.97:1 | 4.5 | ✅ **added 2026-07-20 (§2b)** — was 2.56:1 ❌ |
-| `#ffffff` label on `.pill` fill, hover | 5.81:1 | 4.5 | ✅ **added 2026-07-20 (§2b)** — was 3.28:1 ❌ |
-| `.pill` amber dot `#ffd35c` on that fill | 3.48:1 | 3.0 | ✅ **added 2026-07-20 (§2b)** |
-| `.pill` green dot `#7CFCB0` on that fill | 3.88:1 | 3.0 | ✅ **added 2026-07-20 (§2b)** |
+| `#ffffff` label on `.pill` fill over `header` gradient | **5.03:1** | 4.5 | ✅ **added 2026-07-20 (§2b)** — was 2.56:1 ❌. Measured live in PR #16; §2b derived 4.97:1 |
+| `#ffffff` label on `.pill` fill, hover | **5.87:1** | 4.5 | ✅ **added 2026-07-20 (§2b)** — was 3.28:1 ❌. Measured; §2b derived 5.81:1 |
+| `.pill` amber dot `#ffd35c` on that fill | **3.53:1** | 3.0 | ✅ **added 2026-07-20 (§2b)**. Measured; §2b derived 3.48:1 |
+| `.pill` green dot `#7CFCB0` on that fill | **3.93:1** | 3.0 | ✅ **added 2026-07-20 (§2b)**. Measured; §2b derived 3.88:1 |
 
 **The last four rows were absent from the original certification, and that
 omission is what let a 2.56:1 label ship** (`BUILDER_QUEUE.md` item 5). It is the

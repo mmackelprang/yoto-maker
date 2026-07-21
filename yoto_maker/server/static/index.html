@@ -13,8 +13,15 @@
       <span class="logo">🎵</span>
       <h1>Yoto Maker</h1>
     </div>
-    <button id="yotoPill" class="pill" title="Yoto connection settings" aria-label="Yoto connection settings">
-      <span class="dot"></span><span id="yotoPillText">Checking…</span>
+    <!-- No aria-label. It overrode the visible text as the accessible name, so
+         the name ("Yoto connection settings") did not contain the label ("Yoto
+         connected") — WCAG 2.1 AA 2.5.3 Label in Name, and a speech-input user
+         saying "click Yoto connected" did not activate it. Introduced by PR #10,
+         not pre-existing. With text content present and title kept, a screen
+         reader announces "Yoto connected, button, Yoto connection settings" —
+         state, role, destination — with one attribute fewer. copy.md §1a. -->
+    <button id="yotoPill" class="pill" title="Yoto connection settings">
+      <span class="dot"></span><span id="yotoPillText">Checking…</span><span class="pill-chev" aria-hidden="true">›</span>
     </button>
   </header>
 
@@ -125,9 +132,6 @@
       <div id="connectRow" class="hidden">
         <div class="msg-box info">You'll need to connect your Yoto account first.</div>
         <button id="connectBtn" class="btn primary big" style="margin-top:12px">🔗 Connect my Yoto account</button>
-        <div id="advRow" style="margin-top:10px">
-          <a href="#settings" id="advToggle" class="tiny">⚙️ Yoto connection settings</a>
-        </div>
       </div>
 
       <button id="sendBtn" class="btn primary big">🚀 Send to Yoto</button>
@@ -138,6 +142,21 @@
       </div>
       <div id="sendError" class="msg-box err hidden"></div>
       <div id="sendDone" class="msg-box ok hidden"></div>
+
+      <!-- Last child, deliberately. Ahead of #sendBtn this would push the
+           primary action down and take a tab stop before it — a cost paid on
+           every card-making visit for a control used twice ever. Last child
+           also fixes the link's position as #sendProgress / #sendError /
+           #sendDone appear and disappear, and lands it directly beneath
+           #sendError on a failed send. NEVER hidden and NOT inside
+           #connectRow: it was inside it until v0.1.9, which meant the one
+           contextual way into Settings vanished in exactly the state where
+           "use a different account" is a coherent thing to want.
+           .tiny is on THIS wrapper and not on the anchor — see below.
+           overview.md §12.4, interactions.md §1.4. -->
+      <div id="advRow" class="tiny" style="margin-top:14px">
+        <a href="#settings" id="advToggle">⚙️ Yoto connection settings</a>
+      </div>
     </section>
 
     <!-- STEP 4: Label -->

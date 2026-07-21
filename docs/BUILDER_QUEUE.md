@@ -1,6 +1,49 @@
 # Builder queue
 
-**Last updated:** 2026-07-20 by Builder — **item 8 is merged** as
+**Last updated:** 2026-07-20 by Builder — **item 9 shipped as
+[PR #16](https://github.com/mmackelprang/yoto-maker/pull/16), open and
+deliberately not merged: Tester and Polisher gate this one.** All 7 tasks done,
+suite **133 passed**. **Item 5 is retired** — absorbed and delivered by Tasks
+3–5, as its Designer pass specified.
+
+**The contrast numbers were re-measured live from rendered pixels, not asserted
+from the spec** — the whole point, given PR #10's UAT produced three false
+readings from cached CSS. Sampled from element screenshots with PIL: label at
+rest **5.03:1** (spec predicted 4.97), hover **5.87:1** (5.81), green dot
+**3.93:1** (3.88), amber dot **3.53:1** (3.48). Every figure lands slightly
+*better* than Designer's independent sweep, on both a hard-reloaded and a
+naturally-loaded page. Alpha `0.28` stands; the `0.32` escape hatch in
+`tokens.md` §2b was not needed.
+
+**Which set supersedes which is now stated in the tree, not just here.**
+`tokens.md` §2b opens with a provenance box marking every figure in that section
+as *derived*, tabling it against both independent measured sets, and saying the
+measured set wins; §4's certification table carries the measured values with the
+derived ones noted alongside. `styles.css` marks its three derived figures as
+derived and cites the measured value beside each, guarded by a test. Tester's
+independent run read **5.09 / 5.95**, agreeing with PR #16's 5.03 / 5.87 to
+within a rounding step and, like it, landing better than derived.
+
+**A sampling hazard is recorded with the methodology** (`tokens.md` §2b): naive
+whole-element sampling of `.pill` returns a spurious **3.30:1** from
+rounded-corner antialiasing, where the fill fades into bare gradient. Those
+pixels have no label drawn over them, so the pair they describe never renders.
+Sample the fill's interior, inset past the corner radius. Written down so a
+future pass does not re-derive a false failure and "fix" a control that passes.
+
+**The defect was reproduced live on the pre-PR build before being fixed.** The
+still-running **v0.1.9** `.exe` on port 8777 served as a control: in the
+connected state it reports `#advRow` inside `#connectRow`, `#connectRow` hidden,
+and `advRowVisible: false` — the one contextual way into Settings literally
+unrenderable, exactly as the field report described. **One new finding, filed
+below as item 10** (pre-existing 320px header wrap, proven not ours).
+
+*(That control was first written up as "the still-running v0.1.10 `.exe`", which
+is self-contradictory — v0.1.10 is the release this PR is part of. It is v0.1.9,
+which is the correct pre-PR baseline, so the control was valid and every
+conclusion drawn from it stands. Corrected here and in PR #16's body.)*
+
+Previously: 2026-07-20 by Builder — **item 8 is merged** as
 [PR #15](https://github.com/mmackelprang/yoto-maker/pull/15), merge commit
 `77d499c`. **No release cut yet, deliberately:** item 9 ships in the same
 v0.1.10, so the tag, the `.exe` and the GitHub release all wait for it. Item 8
@@ -70,10 +113,13 @@ day because these two states shared one word.
 | 2 | 📋 | **`--port` flag doesn't move the OAuth redirect URI** — the flag changes the listening port but not `cfg.port`, so Yoto sign-in always redirects to 8777 | _needs Planner pass_ | _needs Planner pass_ | — | Pre-existing in v0.1.8 and documented in `--help`. Small fix, but it touches the OAuth redirect — wants a plan before someone changes it blind. |
 | 3 | 📋 | **`test_youtube_sponsorblock_best_effort_retry` fails without the optional `yt_dlp` dep** — wants a `pytest.importorskip` guard | _needs Planner pass_ | _needs Planner pass_ | — | One-line test fix. The only red in an otherwise green suite, so it costs every future Builder a moment of "is this me?". |
 | 4 | 📋 | **The crop editor modal has no focus trap** — Tab escapes the modal into the page behind it | _needs Planner pass_ | _needs Planner pass_ | — | MEDIUM. Pre-existing from the v0.1.7 crop editor; **not** a PR #10 regression. Observed Tab order below. |
-| 5 | ⛔ | ~~**`#yotoPill` white label fails WCAG AA at rest**~~ — **ABSORBED 2026-07-20 into item 9**, which is now planned | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12.5–12.6 + `tokens.md` §2b | [item 9's plan](superpowers/plans/2026-07-20-settings-discoverability.md), Tasks 3–5 | — | **Blocked on purpose — do not ship this row on its own.** The Designer pass it was waiting for is done, and concluded the contrast defect and the connected-state discoverability defect are **one defect measured two ways**: the fix for both is a single fill inversion (`rgba(255,255,255,0.18)` → `rgba(36,29,56,0.28)`, 2.56:1 → 4.97:1). Shipping contrast separately would leave the discoverability fix's primary entry point illegible, and shipping discoverability separately would contradict this row. **Retire this row when item 9 merges** — there is nothing left in it that item 9's plan does not carry. |
+| 5 | ✅ | ~~**`#yotoPill` white label fails WCAG AA at rest**~~ — **ABSORBED into item 9 and DELIVERED by it** ([PR #16](https://github.com/mmackelprang/yoto-maker/pull/16), Tasks 3–5) | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12.5–12.6 + `tokens.md` §2b | [item 9's plan](superpowers/plans/2026-07-20-settings-discoverability.md), Tasks 3–5 | — | **Retired 2026-07-20 — do not schedule.** The fill inversion shipped in PR #16 and the result was **measured live from rendered pixels, not asserted**: the white label goes **2.56:1 → 5.03:1** at rest and 5.87:1 on hover, clearing the 4.5:1 bar. The `aria-label` deletion (WCAG 2.5.3) shipped with it. Nothing is left in this row. Historical record follows. The Designer pass it was waiting for is done, and concluded the contrast defect and the connected-state discoverability defect are **one defect measured two ways**: the fix for both is a single fill inversion (`rgba(255,255,255,0.18)` → `rgba(36,29,56,0.28)`, 2.56:1 → 4.97:1). Shipping contrast separately would leave the discoverability fix's primary entry point illegible, and shipping discoverability separately would contradict this row. **Retire this row when item 9 merges** — there is nothing left in it that item 9's plan does not carry. |
 | 6 | 📋 | **`favicon.ico` 404 on the callback page** | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic. Logged so it isn't rediscovered; safe to leave sitting. |
 | 8 | ✅ | **Browsers serve a stale `app.js`/`styles.css` after auto-update** — new HTML runs against old JavaScript, which is what made Settings unreachable on v0.1.9 | brief in plan §The defect | [`superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`](superpowers/plans/2026-07-20-stale-asset-cache-after-update.md) | — | **HIGH — merged 2026-07-20 as [PR #15](https://github.com/mmackelprang/yoto-maker/pull/15) (`77d499c`). Ships in v0.1.10 — `✅ merged`, NOT yet `🚢 released`; the tag waits on item 9.** Shipping bug, silent and partial, plausibly degrading every release since v0.1.5. 7 tasks, all shipped. **This PR owns the `0.1.10` version bump** — item 9 must not also bump, and rebases onto it. |
-| 9 | 📋 | **A connected user cannot find the way into Settings** — `#advRow` moves out of `#connectRow` to the end of step 3 and its copy names the *account*; pill fill inverted for legibility; pill `aria-label` deleted | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12 (+ `copy.md` §1a, `interactions.md` §1.4, `tokens.md` §2b, `mockups` §1/§7a), amended in `e52908e` | [`superpowers/plans/2026-07-20-settings-discoverability.md`](superpowers/plans/2026-07-20-settings-discoverability.md) | — (prefer **after** item 8; see notes) | **HIGH — ships in v0.1.10. Absorbs item 5; retire that row when this merges.** 7 tasks. **Does NOT bump the version** — item 8 owns `0.1.10`. Reported from the field by the user, who knew the feature existed and still could not find it. |
+| 11 | 📋 | **`⚙️` is unhidden text inside `#advToggle`'s accessible name** — the step-3 link announces as *"gear Connect a different Yoto account"* | _needs Designer pass_ | _needs Designer pass_ | — | LOW, **pre-existing since v0.1.9**, from PR #16's Polisher gate. **Needs Designer, not Builder** — see briefing notes; it is specced-in, not an oversight, and the obvious fix collides with two other rules. |
+| 12 | 📋 | **`#advToggle`'s touch target is ~20px against WCAG 2.2 AA's 24×24** | _needs Planner pass_ | _needs Planner pass_ | — | LOW, **pattern-level and pre-existing**. It matches the canonical footer link `#settingsLink` exactly, so this is a question about the app's link pattern, not about one control. Enlarging *this* link alone is the prominence increase `overview.md` §12.7 forbids. Fix the pattern or accept it — do not special-case one link. |
+| 10 | 📋 | **The header pill's label wraps to two lines at 320px** — the header grows to 110px and the pill to 48px | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic, **pre-existing and proven so** — measured identically (pill 48px, header 110px, `scrollWidth` 305) on the pre-PR `.exe` control at the same width, and removing the new chevron does not change it by a pixel. **No overflow, no horizontal scroll, no overlap with the brand** — the header just gets taller. Item 9's Test Plan §E.5 expected "no wrap" and prescribed dropping the chevron's leading gap if tight; that escalation is **inapplicable**, since even the shortest label wraps with the chevron removed entirely. The real cause is `.brand` + pill exceeding 320px, which is a header-layout question item 9 was explicitly forbidden from touching. |
+| 9 | 🚧 | **A connected user cannot find the way into Settings** — `#advRow` moves out of `#connectRow` to the end of step 3 and its copy names the *account*; pill fill inverted for legibility; pill `aria-label` deleted | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12 (+ `copy.md` §1a, `interactions.md` §1.4, `tokens.md` §2b, `mockups` §1/§7a), amended in `e52908e` | [`superpowers/plans/2026-07-20-settings-discoverability.md`](superpowers/plans/2026-07-20-settings-discoverability.md) | — (item 8 shipped first, as preferred) | **HIGH — ships in v0.1.10. [PR #16](https://github.com/mmackelprang/yoto-maker/pull/16) open, awaiting Tester + Polisher — not merged.** 7 tasks, all shipped; suite 133 passed; reviewer found no HIGH or MEDIUM. **Absorbs item 5, now retired.** Version correctly NOT bumped — `pyproject.toml` and `__init__.py` untouched, both already `0.1.10` from item 8. Contrast re-measured live (5.03:1 at rest); connected **and** disconnected states both verified, the healthy one being the state nobody had exercised. |
 
 ### Item 9 — briefing notes
 
@@ -119,6 +165,26 @@ day because these two states shared one word.
   omits spacing, which would butt the link against `.btn.big`), and a rewrite of
   the now-false `outline-offset` hazard comment at `styles.css:64–73`, which
   duplicates the 2.57:1 claim `tokens.md` §2a retired. **Keep the offset itself.**
+
+### Item 11 — briefing notes
+
+- **The contradiction, stated plainly.** The same design amendment mandates
+  `aria-hidden="true"` on the pill's `›` *because* an affordance glyph should not
+  be part of an accessible name — and simultaneously requires `⚙️` on **both**
+  `#advToggle` copy variants (`copy.md` §1a), where it is bare text and therefore
+  *is* part of the name. Both rules are defensible; together they are inconsistent.
+- **Why Builder must not just fix it.** The gear on `#advToggle` is load-bearing
+  by design: it is the constant that keeps the control recognisable when the words
+  change between states (`overview.md` §12.6, and it is the deliberate opposite of
+  the pill's answer). Silently wrapping or dropping it is a design change.
+- **It is also structurally awkward as specced.** `renderStatus()` sets
+  `$("#advToggle").textContent` wholesale on every status render, which would
+  destroy a nested `<span aria-hidden>` on the first transition. Any fix has to
+  change *how* the copy is applied, not just what it says — likely `replaceChildren()`
+  with a rebuilt span, or moving the glyph into CSS `::before`. Note the CSS route
+  has its own trade-off: generated content is still exposed to some screen readers.
+- **Not urgent.** Pre-existing since v0.1.9, LOW severity, and the announcement is
+  clumsy rather than wrong — a user hears an extra word, not a false one.
 
 ### Item 8 — briefing notes
 

@@ -137,6 +137,15 @@ function renderStatus() {
   // `show($("#setupRow"), !configured)` here meant the Client ID row could never
   // appear on its own; that row now lives in the settings view.
   show($("#connectRow"), !connected);
+  // #advRow is NOT in #connectRow any more, so the call above no longer reaches
+  // it — that is the fix, not an oversight. It is never hidden in either state.
+  // "a different" is false before there is a current one: she hasn't connected
+  // any account yet, and in that state the big 🔗 Connect my Yoto account button
+  // directly above already owns the connect intent. Same rule copy.md §4 applies
+  // to the Client ID label (Paste a Client ID / Paste a different Client ID).
+  $("#advToggle").textContent = connected
+    ? "⚙️ Connect a different Yoto account"
+    : "⚙️ Yoto connection settings";
   $("#sendBtn").disabled = !connected;
 }
 
