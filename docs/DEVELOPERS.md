@@ -45,19 +45,27 @@ python -m yoto_maker --check      # tool + connection self-check
 
 ### Testing UI changes in a browser — you may be measuring a build that isn't there
 
-Two independent causes, and the second one survives every fix for the first. Rule out both before you believe a UI
-failure.
+Two independent causes. The first was a real shipping bug and is now fixed; the second is still live. Rule out both
+before you believe a UI failure.
 
-**1. A stale browser cache.** The static assets under `yoto_maker/server/static/` are served **without
-cache-busting**, so a browser will reuse a stale `app.js` / `styles.css` straight across a rebuild. This reliably
-produces *false* UI failures: a CSS custom property that reads empty, a control that behaves like its previous
-version, a focus ring that looks like the UA default.
+**1. A stale browser copy of `app.js` / `styles.css` — fixed in v0.1.10, and it was never just a testing problem.**
 
-Before measuring anything in the browser, clear the cache and keep it disabled — `Network.clearBrowserCache` plus
-`Network.setCacheDisabled {cacheDisabled: true}` over CDP, or DevTools open with "Disable cache" ticked.
+Until v0.1.10 the static assets were served with no `Cache-Control` and unversioned URLs, so browsers applied
+*heuristic* caching and reused them across a rebuild — or across an **auto-update**, which is where it mattered.
+We met this three times during PR #10's UAT (`--focus-ring` reading empty, the header pill drawing a UA-default
+outline, the pill triggering sign-in instead of routing to Settings) and filed it as a UAT hygiene note. It was in
+fact the v0.1.9 field bug — a user on a self-updated install running new HTML against old JavaScript — wearing a
+costume. The third of those three false failures *is* the exact symptom the user later reported.
 
-**The tell is a size mismatch:** compare the byte count of the served asset against the file on disk. If they
-disagree, you are testing a build that no longer exists — clear the cache and re-run the check.
+**The fix (v0.1.10):** `/` is served `Cache-Control: no-store` with its asset URLs stamped `?v={__version__}`, and
+`/static/*` is served `no-cache` so the existing ETag forces a revalidation. Dev rebuilds within a single version
+are covered by the `no-cache` half, so **you no longer need to disable the cache to test UI changes.**
+
+If you suspect this anyway, the tell is unchanged: compare the byte count of the served asset against the file on
+disk. A mismatch means you are testing a build that no longer exists.
+
+**Never disable the cache when testing the update path itself.** Doing so hides the entire class of bug above —
+it puts you in a configuration no real user is ever in, which is precisely how this survived five releases.
 
 **2. A stale server — the app is single-instance.** If an installed `YotoMaker.exe` or an earlier
 `python -m yoto_maker` already owns port 8777, your new dev server **prints one line and exits 0**
