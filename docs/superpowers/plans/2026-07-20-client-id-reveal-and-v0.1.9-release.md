@@ -852,6 +852,11 @@ Back both up before you start, and restore them at the end.
 > **You can measure a build that isn't there, and it has two independent causes. Rule out both before you
 > believe any UI failure in this section.**
 >
+> **[Corrected 2026-07-20]** Cause 1 below was misfiled as a testing hazard. It was the
+> user-facing v0.1.9 bug (new HTML, old `app.js` after auto-update), fixed in v0.1.10 —
+> see `docs/superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`. The three
+> "false failures" recorded below were real, they just were not reproducible only in dev.
+>
 > **Cause 1 — a stale browser cache.** The static assets are served without cache-busting, so a browser will
 > happily reuse a stale `app.js`/`styles.css` across a rebuild. During PR #10's UAT this produced **three false
 > failures** in a row — `--focus-ring` reading empty, the header pill showing a UA-default dark outline, and the
