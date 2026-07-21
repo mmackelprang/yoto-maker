@@ -542,28 +542,41 @@ that has the expected shape, and applied to one that does not it is camouflage.
 `clientIdRevealed` is irrelevant in these states (there is no toggle) and must not
 be consulted. §3.5.4's three reset events are unchanged.
 
-#### 3.6.5 The sign-in block
+#### 3.6.5 The sign-in block — uniform across tiers *(amended 2026-07-21)*
 
-**On `saved` + `invalid`:**
+**Whenever the verdict is `invalid`, regardless of source:**
 
 - `connectYoto()` **returns before `/api/yoto/login`.** The authorize request is
   never constructed. This is the whole point (`overview.md` §13.5).
 - `start_login()` refuses server-side too, raising `AuthError` with the reason
   code, consumed through the existing `SIGNIN_ERRORS[e.data && e.data.reason]`
   mapping at `app.js:1033`. Do not invent a second error-mapping mechanism.
-- **The server gate must match the frontend gate exactly** — `saved` + `invalid`
-  only, never `env`. A server that refuses what the frontend permits produces a
-  button that fails with no explanation, which is worse than either behavior alone.
+- **Both gates test the verdict only, never the source.** They therefore agree
+  trivially. `start_login()` does not need `resolve_client_id_with_source()` — the
+  verdict alone is sufficient, and that is where the "keep it simple" instruction
+  actually banks its simplicity.
 - **`#connectBtn` stays enabled.** Disabling it with no visible reason is the
   dead-end antipattern §2.2 forbids. Pressing it is the fastest path to the
   explanation — the press renders `#connectWarn` instead of sending a request.
 - The settings section's **input and `Save` stay fully enabled**. The block is on
   *signing in*, never on *fixing it*.
 
-**On `env` + `invalid`:** no block. `connectYoto()` shows `copy.md` §4d's advisory
-in `#connectWarn` (`.msg-box info`) **and sends the request.** The full
-justification is `overview.md` §13.5; the short form is that the block's value is
-its recovery, and §7.4 removed the recovery control from this state on purpose.
+**The recovery inside `#connectWarn` is what varies by source**, per `copy.md` §4d:
+
+| `source` | `#connectWarn` contains |
+| --- | --- |
+| `saved` | The message + `Put back the built-in Client ID` (§3.6.6). |
+| `env` | The message only. The fix is named in words — clear or correct `YOTO_CLIENT_ID`, then restart. |
+| `builtin` | The message only, pointing at setting 3. Unreachable; guarded by a test. |
+
+**The button is omitted, never disabled**, in the two tiers that have no reset —
+the same discipline §3.5.2 applies to the reveal toggle and §7.4 applies to the
+reset action itself. A disabled button would invite her to keep pressing it.
+
+*An earlier draft of this subsection exempted `env` from the block entirely. It was
+reversed 2026-07-21; `overview.md` §13.5 records both the instruction and why the
+structural objection behind the exemption is satisfied by tier-specific copy rather
+than by a tier-specific gate.*
 
 #### 3.6.6 The recovery deep link
 

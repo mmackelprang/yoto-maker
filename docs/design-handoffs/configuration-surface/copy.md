@@ -399,7 +399,13 @@ to go, rather than leaving her to discover a scary red state on her own.
 | `saved` | invalid, reason `email` | **red `is-err`** | `That's an email address, not a Client ID` | `Yoto Maker can't sign in to Yoto until this is fixed. Press "Go back to the built-in one" below.` |
 | `saved` | invalid, any other reason | **red `is-err`** | `This isn't a Client ID` | `Yoto Maker can't sign in to Yoto until this is fixed. Press "Go back to the built-in one" below.` |
 | `env` | ok **or unusual** | amber `is-warn` | `Set outside the app` | *(unchanged from §4)* |
-| `env` | invalid | **red `is-err`** | `Set outside the app, and it isn't a Client ID` | `YOTO_CLIENT_ID on this computer holds something that isn't a Client ID, so signing in to Yoto will probably fail. To change it, they'll need to change it there.` |
+| `env` | invalid | **red `is-err`** | `Set outside the app, and it isn't a Client ID` | `Yoto Maker can't sign in to Yoto until this is fixed. YOTO_CLIENT_ID on this computer holds something that isn't a Client ID, and only whoever set it can change it.` |
+| `builtin` | invalid | **red `is-err`** | `Something's wrong with the built-in Client ID` | `Yoto Maker can't sign in to Yoto. This shouldn't be possible — the details at the bottom of this page are what someone will need to help you.` |
+
+*(The `builtin` + `invalid` row is unreachable in a correct build and is guarded by
+`overview.md` §13.2's required test. It exists so the table is **total** — every
+combination of source and verdict has a row. Same completeness discipline
+`tokens.md` §4 adopted after an unmeasured pair shipped a 2.56:1 label.)*
 
 **The email case gets its own headline.** The whole thesis of this amendment is
 that *naming* the mistake is what visibility failed to do (`overview.md` §13.1).
@@ -507,20 +513,42 @@ be `#sendError`, which both `connectYoto()` and `sendToYoto()` clear on entry.
 The button navigates to Settings **and opens the reset confirmation already
 showing**. It does not perform the reset — see `overview.md` §13.6.
 
-**`env` + `invalid` — advisory, `.msg-box info`, and the request is still sent:**
+**`env` + `invalid` — blocking, `.msg-box err`, no button** *(amended 2026-07-21:
+all tiers block; an earlier draft made this tier advisory)*:
 
-> Heads up: YOTO_CLIENT_ID on this computer doesn't hold a Client ID, so Yoto will
-> probably refuse this sign-in. Yoto Maker is trying anyway, because that value was
-> set on purpose.
+> Yoto Maker can't sign in to Yoto. The Client ID it's using comes from outside the
+> app — the YOTO_CLIENT_ID environment variable on this computer — and what's in
+> there isn't a Client ID.
+>
+> There's no button here that can fix it, because Yoto Maker didn't set it. Whoever
+> did will need to clear or correct YOTO_CLIENT_ID and then start Yoto Maker again.
 
-No button — there is nothing in the app that can fix an env var, and offering a
-control that cannot act is the failure `overview.md` §7.4 already ruled against.
+**No button, and the recovery is carried in words instead.** The gate is uniform
+across all three tiers; the *recovery* is what varies (`overview.md` §13.5). Here
+the app cannot perform the fix, and offering a control that cannot act is the
+failure `overview.md` §7.4 already ruled against — so the sentence names the
+variable and the exact steps.
 
-**Register exception, and it is licensed.** This string names an environment
-variable and addresses a developer rather than the primary user. §4 already
-established that exact exception for that exact tier: *"the only place in the app
-where an environment variable name is spoken to the user… a deliberate, narrow
-exception."*
+**The env var's name appears verbatim, twice, deliberately.** §4 already licenses
+this exception for this tier — *"the only place in the app where an environment
+variable name is spoken to the user… a deliberate, narrow exception"* — and it
+applies with more force here, because **the name is the recovery instruction.** A
+user who cannot act on it will read it aloud to someone who can, which is the same
+phone call §7 exists to serve.
+
+**The second paragraph exists to stop her hunting.** Every other blocked state in
+this app has a button. Without a sentence saying why there isn't one here, she will
+scroll looking for it and conclude the screen is broken.
+
+**`builtin` + `invalid` — blocking, `.msg-box err`, no button.** Unreachable in a
+correct build; the row exists so the table is total.
+
+> Yoto Maker can't sign in to Yoto, and the Client ID it came with is the problem —
+> which shouldn't be possible. The details at the bottom of this page are what
+> someone will need to help you.
+
+`Put back the built-in Client ID` would be **wrong** here: the built-in one is the
+broken one, so the button would promise to restore what is already failing.
 
 **In the `ok` state `#connectWarn` renders nothing at all.** The everyday path is
 byte-for-byte unchanged.

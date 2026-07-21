@@ -1355,12 +1355,17 @@ template"*, and carving a primitive exception for one section would be the widen
 §11.5 worked to avoid. One hidden div is cheaper than a clarification to a rule
 that has now held three times.
 
-### 13.5 The hard block on sign-in, and why `env` is exempt
+### 13.5 The hard block on sign-in — uniform across all three tiers
 
-**On `saved` + `invalid`, `connectYoto()` returns before `/api/yoto/login`** — the
-authorize request is never constructed. `start_login()` refuses server-side too,
-raising an `AuthError` with the reason code, consumed through the existing
-`SIGNIN_ERRORS[e.data.reason]` mapping at `app.js:1033`.
+**Decided by Mark 2026-07-21: "block all tiers uniformly, keep it simple." This
+reverses an earlier draft of this section, which exempted `env`.**
+
+**Whenever the resolved verdict is `invalid`, `connectYoto()` returns before
+`/api/yoto/login`** — the authorize request is never constructed. `start_login()`
+refuses server-side too, raising an `AuthError` with the reason code, consumed
+through the existing `SIGNIN_ERRORS[e.data.reason]` mapping at `app.js:1033`. **No
+tier condition in either gate**, which is where the simplicity is actually banked:
+`start_login()` needs the verdict only, never the source.
 
 This is §5.1 and §12.4's **follow-the-symptom** principle applied to the one user
 those amendments could not reach: her `settings.json` is already bad, she has no
@@ -1372,22 +1377,42 @@ dead-end antipattern §2.2 forbids (*"Never dead-end her"*). Pressing it is the
 fastest path to the explanation — the press renders the block instead of sending
 a request.
 
-**On `env` + `invalid`: warn loudly, do not block.** This asymmetry is deliberate
-and it is the decision most likely to be argued with. The decisive reason is
-structural: **the block's entire value is that it comes with a recovery, and on
-`env` there is none.** §7.4 removed the reset control from that state because
-deleting the saved value falls through to the env var, so the label would lie. A
-hard gate whose recovery affordance cannot exist is not fail-fast; it is a wall.
+#### The deny-list decision is what makes uniform blocking safe
 
-Three supporting reasons. Setting an environment variable requires a terminal, so
-that tier is **authenticated by construction** — whoever set it knows what a Client
-ID is and has shell access, which is the recovery the app cannot offer. This repo
-already ships a legitimate non-conforming env value (`tests/conftest.py` injects
-`YOTO_CLIENT_ID="test_client_id"`). And the consequence is asymmetric: a developer
-who sees an Auth0 error knows what it means; the parent calls someone.
+`tests/conftest.py` injects `YOTO_CLIENT_ID="test_client_id"` — 14 characters with
+an underscore. It contains no `@`, no whitespace, no `/` and no `:`, so it **passes
+the gate and the test suite is unaffected.** Had §13.2 chosen the strict 32-char
+allow-list, a uniform gate would have blocked every test run in the repo.
 
-`builtin` + `invalid` is not designed for. It is unreachable in a correct build and
-is prevented by §13.2's test, which is the right layer for it.
+**This is the second time that decision has paid out**, and it should be read as
+load-bearing rather than incidental. §13.2 justified the deny-list against a
+hypothetical — Yoto changing its ID format someday. It has since protected two
+concrete things: a legitimate in-tree value, and the ability to absorb a "keep it
+simple" instruction without breaking anything. A rule that keeps paying out in
+cases it was not designed for usually identified the right invariant.
+
+#### The structural objection is resolved in copy, not in control flow
+
+The earlier exemption was built on a fact that has not changed: on `env` the reset
+control **cannot exist**, because deleting the saved value falls through to the env
+var and the label would lie (§7.4). The guard rail it served — **every blocked
+state must be honest about its own way out** — still holds.
+
+The conclusion was what was wrong. The guard rail requires a *recovery*, not a
+*button*:
+
+> **Uniform gate, tier-specific recovery line.**
+
+| `source` | Recovery |
+| --- | --- |
+| `saved` | One-press `Put back the built-in Client ID`, which opens the reset confirmation (§13.6). |
+| `env` | **No button.** The fix named in words: `YOTO_CLIENT_ID` must be cleared or corrected in the shell, then Yoto Maker restarted. `copy.md` §4d. |
+| `builtin` | No button — the built-in one *is* the broken one, so a reset button would promise to restore what is already failing. Points at setting 3 instead. Unreachable; guarded by §13.2's test. |
+
+This is strictly better than the exemption it replaces. Under the exemption a
+developer with a broken env var got a doomed request and an Auth0 error page; now
+they get a sentence naming the exact variable and the exact fix, which is faster
+than debugging it.
 
 ### 13.6 Recovery is never a dead end
 

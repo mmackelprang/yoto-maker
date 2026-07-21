@@ -303,7 +303,13 @@ Replaces `copy.md` §4's three-row table. `#clientIdStatus`, the existing
 | `saved` | invalid, `reason: "email"` | **red `is-err`** | `That's an email address, not a Client ID` | `Yoto Maker can't sign in to Yoto until this is fixed. Press "Go back to the built-in one" below.` |
 | `saved` | invalid, any other reason | **red `is-err`** | `This isn't a Client ID` | `Yoto Maker can't sign in to Yoto until this is fixed. Press "Go back to the built-in one" below.` |
 | `env` | ok **or unusual** | amber `is-warn` | `Set outside the app` | *(unchanged from `copy.md` §4)* |
-| `env` | invalid | **red `is-err`** | `Set outside the app, and it isn't a Client ID` | `YOTO_CLIENT_ID on this computer holds something that isn't a Client ID, so signing in to Yoto will probably fail. To change it, they'll need to change it there.` |
+| `env` | invalid | **red `is-err`** | `Set outside the app, and it isn't a Client ID` | `Yoto Maker can't sign in to Yoto until this is fixed. YOTO_CLIENT_ID on this computer holds something that isn't a Client ID, and only whoever set it can change it.` |
+| `builtin` | invalid | **red `is-err`** | `Something's wrong with the built-in Client ID` | `Yoto Maker can't sign in to Yoto. This shouldn't be possible — the details at the bottom of this page are what someone will need to help you.` |
+
+*(The `builtin` + `invalid` row is unreachable in a correct build and is guarded by
+§A.0.3's required test. It exists so the table is total — every reachable
+combination of source and verdict has a row, which is the completeness discipline
+`tokens.md` §4 adopted after an unmeasured pair shipped a 2.56:1 label.)*
 
 Three notes on the table's shape:
 
@@ -556,61 +562,92 @@ the user in the incident, and the reasoning is the package's own:
 5. **It costs the healthy path nothing.** The check is a string test on a value
    already in `STATUS`, and it renders nothing when the verdict is `ok`.
 
-### A.4.2 The env tier is treated differently — recommendation and justification
+### A.4.2 All tiers block uniformly — the recovery is what varies
 
-> **Recommendation: hard-block on `saved`. On `env`, warn loudly and proceed.**
+> **Decided by Mark 2026-07-21: "block all tiers uniformly, keep it simple."**
+> **This reverses an earlier recommendation in this spec to exempt `env`.**
 
-This is an asymmetry and it needs to earn its place. Four reasons, the first
-decisive:
+**One gate. No tier condition in the blocking decision.** If the resolved verdict
+is `invalid`, the sign-in is blocked, whichever tier supplied the value.
 
-**1. The block's entire value is that it comes with a recovery, and on `env` there
-is none.** Mark's own guard rail says every blocked state must carry the recovery
-affordance inline. On `saved` that is one button. On `env` the reset control is
-**absent by design** — `overview.md` §7.4 removed it because deleting the saved
-value falls through to the env var, not the built-in one, so the label would lie.
-A hard gate whose recovery affordance cannot exist is not fail-fast; it is a wall.
-The honest response to *"I cannot satisfy the guard rail in this state"* is to not
-ship the block there — not to ship a block that violates it.
+#### The deny-list decision is what makes "keep it simple" safe — and this is the second time it has paid out
 
-**2. The env tier is authenticated by construction.** Setting an environment
-variable requires a terminal or a system dialog. It is not something a confused
-parent does by accident. Whoever set it knows what a Client ID is, will read the
-warning and understand it immediately, and **has shell access** — which is exactly
-the recovery mechanism the app cannot offer them.
+Uniform blocking is only viable because §A.0.2 chose a deny-list over the strict
+32-character rule. `tests/conftest.py` injects `YOTO_CLIENT_ID="test_client_id"` —
+14 characters, with an underscore. It contains no `@`, no whitespace, no `/`, no
+`:`, so it **passes the gate and the test suite is unaffected.**
 
-**3. This repo already contains a legitimate non-conforming env value.**
-`tests/conftest.py` injects `YOTO_CLIENT_ID="test_client_id"` — 14 characters with
-an underscore. It passes the deny-list, so it is not blocked under the
-recommendation. But it is a live, in-tree demonstration that this tier carries
-values the app should not be opinionated about, and it is precisely the kind of
-value a strict uniform gate would have broken.
+Had the gate been the strict allow-list, this instruction would have blocked every
+test run in the repo, and the failure would have arrived as a wall of unrelated
+red rather than as a design objection anyone could argue with.
 
-**4. The consequence is asymmetric, so the gating should be.** A developer who
-fires a doomed authorize request sees an Auth0 error and knows what it means. The
-parent who sees that page does not — she calls someone. The block exists to
-protect the person who cannot interpret the failure.
+**Record this as load-bearing.** §A.0.2 justified the deny-list against a
+hypothetical (Yoto changing its ID format someday). It has now twice protected
+something concrete instead: a legitimate in-tree value, and the ability to take a
+"keep it simple" instruction without a fight. A rule that keeps paying out in cases
+it was not designed for is usually a rule that identified the right invariant.
 
-**What "warn loudly" means on `env`, concretely:**
+#### The structural objection was real, and it is resolved in copy rather than in control flow
 
-- Settings: **red dot**, and a headline that names the problem (§A.2.1's last row).
-  This is a genuine escalation from today's amber — `env` currently never goes red.
-- Card view: **nothing proactively.** When `🔗 Connect my Yoto account` is pressed,
-  show an advisory in `#connectWarn` (below) **and send the request anyway.**
+The earlier exemption argued: on `env` the reset control **cannot exist**, because
+deleting the saved value falls through to the env var and the label would lie
+(`overview.md` §7.4). That fact has not changed, and the guard rail it served —
+**every blocked state must be honest about its own way out** — still holds.
 
-**Copy — `env` + `invalid`, advisory, `.msg-box info`:**
+What was wrong was the conclusion. The guard rail says a blocked state must carry
+a *recovery*; it does not say the recovery must be a **button**. On `env` the
+recovery is real, it is simply not something the app can perform:
 
-> Heads up: YOTO_CLIENT_ID on this computer doesn't hold a Client ID, so Yoto will
-> probably refuse this sign-in. Yoto Maker is trying anyway, because that value
-> was set on purpose.
+> **Uniform gate, tier-specific recovery line.**
+> The blocking decision has no tier condition. The recovery sentence does.
 
-*Register exception, and it is licensed.* This string names an environment
-variable and addresses a developer. `copy.md` §4 already established that exact
-exception for this exact tier: *"the only place in the app where an environment
-variable name is spoken to the user… a deliberate, narrow exception"*.
+| `source` | Recovery |
+| --- | --- |
+| `saved` | The one-press `Put back the built-in Client ID` button, which opens the reset confirmation (§A.4.3). |
+| `env` | **No button.** The fix named in words: `YOTO_CLIENT_ID` must be cleared or corrected in the shell, then Yoto Maker restarted. |
+| `builtin` | No button — see below. |
 
-**`builtin` + `invalid` is not designed for.** It is unreachable in a correct
-build and the recovery ("go back to the built-in one") would be meaningless. It is
-prevented by the required test in §A.0.3, which is the right layer for it.
+This is strictly better than the exemption it replaces. Under the exemption, a
+developer with a broken env var got a doomed authorize request and an Auth0 error
+page; now they get a sentence naming the exact variable and the exact fix, which
+is faster than debugging it.
+
+**Copy — `env` + `invalid`, blocking, `.msg-box err`, no button:**
+
+> Yoto Maker can't sign in to Yoto. The Client ID it's using comes from outside
+> the app — the YOTO_CLIENT_ID environment variable on this computer — and what's
+> in there isn't a Client ID.
+>
+> There's no button here that can fix it, because Yoto Maker didn't set it.
+> Whoever did will need to clear or correct YOTO_CLIENT_ID and then start Yoto
+> Maker again.
+
+**The env var's real name appears verbatim, twice, deliberately.** `copy.md` §4
+already licenses exactly this exception for exactly this tier — *"the only place
+in the app where an environment variable name is spoken to the user… a deliberate,
+narrow exception"* — and the reasoning applies with more force here than it did
+there: the name **is** the recovery instruction. A user who cannot act on it will
+read it out to someone who can, which is the same phone call setting 3 exists to
+serve.
+
+**The second paragraph exists to stop her hunting.** Every other blocked state in
+this app has a button. Without a sentence saying *why there isn't one here*, she
+will scroll looking for it and conclude the screen is broken.
+
+**`builtin` + `invalid` — blocked, with no button, and deliberately not designed
+for.** It is unreachable in a correct build and is prevented by §A.0.3's required
+test. Note it would be **wrong** to show `Put back the built-in Client ID` here:
+the built-in one is the broken one, so the button would promise to restore the
+thing that is already failing. Its recovery line points at setting 3 instead:
+
+> Yoto Maker can't sign in to Yoto, and the Client ID it came with is the problem —
+> which shouldn't be possible. The details at the bottom of this page are what
+> someone will need to help you.
+
+*(Minor divergence from Mark's instruction, which grouped `builtin` with `saved`
+for the button. Flagged rather than silently applied: the button is nonsensical in
+this state, and the state is unreachable anyway, so the cheapest correct thing is a
+sentence.)*
 
 ### A.4.3 The block, on `saved` + `invalid`
 
@@ -657,24 +694,30 @@ with the existing flow rather than bypassing it.
 `interactions.md` §1.1 already runs an on-open sequence this can hook into. Do not
 add a second hash route.
 
-**The button is absent on `env`** (there is nothing for it to do — §A.4.2), which
-is the same "omitted, not disabled" discipline `interactions.md` §3.5.2 and
-`overview.md` §7.4 both already apply.
+**The button is absent on `env` and `builtin`** (there is nothing for it to do —
+§A.4.2), which is the same "omitted, not disabled" discipline `interactions.md`
+§3.5.2 and `overview.md` §7.4 both already apply. Those tiers get a recovery
+*sentence* in place of the button, never a disabled one.
 
 ### A.4.4 Server-side gate
 
-`start_login()` (`auth.py:74`) must refuse when the resolved verdict is `invalid`
-**and** the source is `saved`, raising an `AuthError` carrying the reason code —
-defense in depth against a stale `app.js`, which this project has shipped before
+`start_login()` (`auth.py:74`) must refuse whenever the resolved verdict is
+`invalid`, raising an `AuthError` carrying the reason code — defense in depth
+against a stale `app.js`, which this project has shipped before
 (`overview.md` §12.1).
+
+**No tier condition, matching §A.4.2.** This is one of the places uniform blocking
+genuinely does buy simplicity: `start_login()` needs the verdict only, not the
+source, so it can call the §A.0.3 function and branch once.
 
 The frontend already has the pattern for consuming it:
 `SIGNIN_ERRORS[e.data && e.data.reason]` at `app.js:1033`. Reuse it; do not invent
 a second error-mapping mechanism.
 
-**The server gate must match the frontend gate exactly** — `saved` + `invalid`
-only, never `env`. A server that refuses what the frontend permits produces a
-button that fails with no explanation, which is worse than either behavior alone.
+**The server gate and the frontend gate must agree exactly.** They now do so
+trivially, because both are "verdict is `invalid`". A server that refused what the
+frontend permitted would produce a button that fails with no explanation — worse
+than either behavior alone.
 
 ### A.4.5 Out of scope for the block
 
@@ -822,10 +865,12 @@ extension serves both items** — worth Planner knowing so it is not built twice
 **2. Config summary row 4's label — resolved 2026-07-21: `Redirect URL`,** the
 setup guide's words, no hedge. Reasoning now inline at §A.3.3.
 
-**3. `env` + `invalid` — warn-and-proceed.** §A.4.2 carries the argument. It is the
-one place the gate is deliberately non-uniform, and the decisive reason is
-structural: the block's value is its recovery, and §7.4 removed the recovery
-control from that state on purpose. Standing unless Mark overrules.
+**3. `env` + `invalid` — resolved 2026-07-21: block, like every other tier.** Mark
+overruled the warn-and-proceed recommendation: *"block all tiers uniformly, keep it
+simple."* §A.4.2 is the re-spec. The structural objection behind the exemption was
+real and is preserved — it is now resolved in **copy** (a tier-specific recovery
+line) rather than in **control flow** (a tier-specific gate), which satisfies both
+"uniform" and the guard rail that every blocked state names its own way out.
 
 **4. Config summary placement — Settings, not the About modal.** Recorded because
 it was never explicitly ruled out. About is a credits screen; burying diagnostics
@@ -1114,22 +1159,52 @@ Three constraints, each load-bearing:
    with no successful retry, the sequential upload already produced the right
    order, so the call is skipped entirely. The reorder is a **repair**, not a step.
 3. **Once, at the end** — not after each retried file. One write, one re-render.
+4. **Never after a cancelled batch** — §B.3.4.5.
 
-### B.3.1.6 Timeouts
+**One file can produce several tracks, and the reorder must handle that.**
+`_add_result_as_tracks` (`app.py:213-240`) splits anything over
+`MAX_TRACK_SECONDS` (50 minutes, `normalize.py:191`) into `Title (part 1)`,
+`(part 2)`… — each its own track. So the mapping is **one file → one *or more*
+track ids**, and `POST /api/tracks/file` already returns `count` for exactly this
+reason.
 
-A file that hangs forever stalls the batch behind it with the progress bar frozen —
-the failure `overview.md` §7.5 timeboxed the account check to avoid (*"so an
-offline user isn't left on a spinner"*).
+Two consequences Planner must not miss:
 
-**Recommend a per-file timeout, classified transient.** I am deliberately **not**
-picking the number: upload plus an ffmpeg transcode of a long FLAC is legitimately
-slow, and a timeout that fires on a working upload is worse than no timeout at all.
-Planner should set it from a measurement of the slowest realistic file, with wide
-margin — 120s is a starting point, not a recommendation.
+- The batch's id set is the **union** of every file's tracks, and within a file the
+  parts must stay in their part order. Sorting the batch by filename therefore sorts
+  *groups*, not individual tracks.
+- **Counts in the copy are files, not tracks.** `11 of your 12 files were added` is
+  correct even when the list gained seventeen rows. §B.3.3's strings say "files"
+  throughout, deliberately — the user picked files, and the part-splitting is
+  pre-existing behavior she has already met on the single-file path.
 
-**If Planner would rather not add a timeout in this PR, nothing else here breaks.**
-A hang is then a hang rather than a misclassification, and the classification table
-simply never sees that row.
+### B.3.1.6 Timeouts — recommendation REVERSED: do not add one
+
+An earlier draft of this section recommended a per-file timeout, classified
+transient, with the number left to Planner. **That recommendation is withdrawn.**
+
+New information (Mark, 2026-07-21): **large split audio files already run for
+multiple minutes today**, on the existing single-file path. The code confirms why —
+`add_file` (`app.py:278-296`) is fully synchronous. It reads the whole upload,
+transcodes via `adapter.fetch()`, then splits via `split_audio()` at
+`MAX_TRACK_SECONDS = 50 minutes` (`normalize.py:191`), all inside one held-open
+request. A three-hour audiobook is a legitimately multi-minute call.
+
+So a timeout is not a safety net here; it is **a guess that would abort working
+uploads.** Any threshold generous enough to survive a real audiobook is far too
+long to rescue a hang, and any threshold short enough to rescue a hang would kill
+audiobooks. There is no good number, which is the signal that the mechanism is
+wrong.
+
+**Cancel replaces it (§B.3.4), and is strictly better:** it is user-driven, so it
+needs no threshold, and it cannot fire on a working upload because the user decides
+what "too long" means for the file she chose.
+
+The `timeout` row stays in §B.3.1.1's classification table for the case where a
+future PR does add one — it costs nothing to leave the rule defined — but nothing
+in this PR produces it.
+
+**Cancellation is not a failure and is classified separately** — see §B.3.4.3.
 
 ### B.3.2 Client-side pre-check — recommended, and cuttable
 
@@ -1219,9 +1294,42 @@ a reason string that guessed would undo that honesty.
 | Element | String |
 | --- | --- |
 | `.btn` inside the transient group, below its list | `Try again` |
+| `.btn` beside the progress bar, while a batch or retry runs | `Cancel` |
 
-One button per group, never per file (§B.3.1.4). It is absent entirely when the
-transient group is empty.
+One `Try again` per group, never per file (§B.3.1.4). It is absent entirely when
+the transient group is empty.
+
+### The cancelled end state
+
+A cancel adds a **third group** and changes the summary line. §B.3.4.
+
+| Case | Summary line |
+| --- | --- |
+| `n = 1`, cancelled, nothing landed | `Stopped. Nothing was added.` |
+| `n ≥ 2`, cancelled | `Stopped. {k} of your {n} files were added.` |
+
+Followed by, when the in-flight file's outcome is unknown (§B.3.4.6):
+
+> The one that was still going may still finish — it'll turn up in your list if it
+> does.
+
+Then the **not-started group**, which has **no button**:
+
+| Group | `m = 1` | `m ≥ 2` |
+| --- | --- | --- |
+| Not started | `You stopped before this one:` | `You stopped before these {m}:` |
+
+followed by the filenames alone — **no reason string**, because there is no reason
+beyond her own decision, and inventing one would read as blame.
+
+**`You stopped before…` rather than `These didn't work`.** These files did not
+fail; she chose. The wording is factual and carries no fault, and it deliberately
+does not offer to resume — she can re-pick if she changes her mind, and a control
+that restarts what she just stopped is a confusing thing to put in front of
+someone who has just pressed Cancel (§B.3.4.3).
+
+Genuine failures from before the cancel still render their own groups, with
+`Try again` intact where the transient group has members.
 
 **Class is `.msg-box err` even for a mostly-successful batch.** Eleven of twelve is
 mostly a success, but a silently missing track is a real problem she must notice,
@@ -1263,6 +1371,160 @@ carrying information already on screen in a more useful form.
 This is the current single-file behavior, preserved. Stating it so it reads as a
 decision rather than an omission.
 
+## B.3.4 Cancel — required, and it must abort the in-flight request
+
+> **Decided by Mark 2026-07-21: cancel is required, not deferred to UAT.**
+
+### B.3.4.1 Why the earlier sketch was wrong
+
+An earlier draft deferred cancel to UAT behind a "~30 second batch" threshold, and
+sketched it as *"stop after the current file, never mid-file."* **Both halves were
+wrong, and for the same reason:** large split audio files already run for multiple
+minutes today on the single-file path (§B.3.1.6). The long wait is not a risk
+multi-select might introduce — it is the current everyday reality, and batching and
+retry stack on top of it.
+
+So stop-after-current is barely distinguishable from no cancel at all. She presses
+it, and still waits minutes. **That is worse than having no button**, because a
+control that appears to do nothing reads as broken, and the button would be
+lying about what it just did.
+
+> **Cancel aborts the request that is in flight.** It does not merely decline to
+> start the next file.
+
+### B.3.4.2 `api()` can carry an `AbortController` — with one required change
+
+`api(path, opts)` passes `opts` straight to `fetch(path, opts)` (`app.js:7-10`), so
+**`opts.signal` already works today.** No signature change.
+
+**But `api()`'s catch block must learn about aborts, and this is not optional:**
+
+```js
+} catch (e) {
+  // turns EVERY fetch rejection into "Couldn't reach the Yoto Maker app…"
+```
+
+An `AbortError` is a fetch rejection, so today a deliberate cancel would be
+reported to the user as *"Couldn't reach the Yoto Maker app. Make sure it's still
+running"* — alarming and false. Worse, §B.3.1.1 classifies a rejection with no
+`.status` as **transient**, so the cancelled file would be offered a `Try again`
+button. **The user's own cancel would be presented to her as a network failure she
+should retry.**
+
+**Required:** `api()` re-throws `AbortError` distinctly — check `e.name ===
+"AbortError"` before the existing branch — so callers can tell *"I stopped this"*
+from *"the app is gone."* This is a small change to a shared helper, so Planner
+should confirm no other caller regresses; today no caller passes a signal, so
+nothing can hit the new branch except this one.
+
+### B.3.4.3 Cancellation is not a failure
+
+A cancelled file goes in **neither** the transient nor the deterministic group. She
+stopped on purpose; classifying her decision as a failure and offering to retry it
+would be presumptuous, and it would blur `Try again` into meaning two different
+things.
+
+**Genuine failures that happened before the cancel are unaffected.** If file 3
+failed transiently and she cancelled at file 7, the transient group still lists
+file 3 and still offers `Try again` for it. That failure is real and unrelated to
+her decision.
+
+### B.3.4.4 What happens to already-uploaded tracks — they stay
+
+**Completed tracks are kept.** She waited for them, they are valid, and silently
+discarding finished work to honor a cancel is the worst available reading of the
+button — it would turn "stop" into "undo", which is not what she pressed.
+
+This also matches how the batch already behaves: each file is committed server-side
+as it lands (§B.2), so there is no transaction to roll back and nothing to invent.
+
+**The summary must then state the draft's exact state**, because a cancelled batch
+is the one end state where she cannot infer it — she stopped partway and does not
+know where. §B.3.4.6 names what landed and what did not, by name.
+
+### B.3.4.5 Cancel must not fire the reorder
+
+§B.3.1.5's `/api/tracks/reorder` sends a **full order array** built from the
+batch's expected ids. After a cancel, files that never arrived have no ids, so the
+array would be built against an incomplete set — permuting real tracks against
+positions that do not exist.
+
+> **Rule: a cancelled batch never issues the reorder call.** Set a flag on cancel
+> and skip it unconditionally.
+
+Nothing is lost. The files that *did* land arrived sequentially in sorted order, so
+they are already correct — the reorder exists only to repair a retry (§B.3.1.5),
+and a cancelled batch has no repair to make.
+
+### B.3.4.6 The in-flight file may still land — and the copy must say so
+
+**This is the one place the design cannot be exact, and the honest move is to say
+so rather than guess.**
+
+Reading `add_file` (`app.py:278-296`): after `await file.read()` there are **no
+further `await` points** before `return`. `adapter.fetch()` and
+`_add_result_as_tracks()` are synchronous calls inside an `async def`. Since
+asyncio cancellation can only take effect at an `await`, a client disconnect
+**cannot interrupt the transcode or the split**, so the handler runs to completion
+and `draft.add_track()` executes.
+
+**Consequences, in order of importance:**
+
+1. **Aborting during the transcode does not prevent that file from landing.** The
+   track appears in the draft seconds or minutes after she pressed Cancel.
+2. **Aborting during `await file.read()` does prevent it.** `write_bytes` never
+   runs, so there is no file on disk and no track.
+3. **Either way, no broken or partial track is created.** The file either never
+   started or completed fully. `add_track` is the last statement, so there is no
+   window in which a half-made track is registered. **No cleanup path is needed.**
+
+Point 3 is the reassuring one and it is the direct answer to the question asked.
+Points 1 and 2 mean the outcome is genuinely uncertain from the client's side, so
+the copy tells the truth:
+
+> The one that was still going may still finish — it'll turn up in your list if it
+> does.
+
+Without that sentence, a track appearing thirty seconds after she pressed Cancel
+looks like the button failed.
+
+> **⚠️ Planner / Architect — verify, and consider the real fix.**
+>
+> The analysis above is read from the code, not observed. **Planner should confirm
+> it** by cancelling mid-transcode and checking whether the track appears.
+>
+> **The proper fix is to move `/api/tracks/file` onto the existing job system.**
+> `POST /api/tracks/youtube` (`app.py:246-273`) already does this — it returns a
+> `job_id` immediately and reports progress through `update()`, and `app.js`
+> already has `pollJob()` to consume it. Moving file uploads to the same shape
+> would:
+> - free the request instantly, so there is no multi-minute held connection at all;
+> - give **real** per-file progress, retiring the fake 40% bar (§B.2);
+> - make cancel **exact**, deleting the "may still finish" sentence above.
+>
+> **This is an architecture decision, not mine to make** — it changes an endpoint's
+> contract and touches the job system. Escalating to Architect/Planner rather than
+> specifying it. The design above ships correctly without it; the awkward sentence
+> is the visible cost of not doing it, which makes it a decent forcing function.
+
+### B.3.4.7 Cancel is available during a retry round too
+
+Same button, same behavior, same reasoning: a retry round is the batch flow
+re-entered (§B.3.1.3), and a retried large file takes exactly as long as it did the
+first time. Withholding cancel from the retry would strand her in precisely the
+wait she just escaped.
+
+### B.3.4.8 Placement and label
+
+**`Cancel`**, a plain `.btn`, beside the progress bar — the exact string and shape
+`copy.md` §3 already uses for the `signing_in` state, where `interactions.md` §2.4
+puts `Cancel` next to a disabled primary during a long wait. Same problem, same
+answer, no new vocabulary.
+
+It appears whenever `#addProgress` is visible, **including for a single file** —
+that is where the multi-minute waits actually live today, so excluding `n = 1`
+would withhold the button from the case that motivated it.
+
 ## B.4 Copy — the affordance
 
 | Element | String |
@@ -1303,12 +1565,14 @@ the action it governs.
 | --- | --- | --- | --- | --- | --- | --- |
 | Idle, no tracks | hidden | — | — | hidden | `#noTracks` shown | enabled |
 | Idle, has tracks | hidden | — | — | hidden | rows | enabled |
-| Single file in flight | shown | 40% | `Adding your file…` | cleared | unchanged | **disabled** |
-| Batch in flight | shown | `done/total` % | `Adding {i} of {n} — {name}` | cleared | **grows after each success** | **disabled** |
+| Single file in flight | shown **+ `Cancel`** | 40% | `Adding your file…` | cleared | unchanged | **disabled** |
+| Batch in flight | shown **+ `Cancel`** | `done/total` % | `Adding {i} of {n} — {name}` | cleared | **grows after each success** | **disabled** |
+| **Cancel pressed, abort in flight** | shown, `Cancel` **disabled** | frozen | `Stopping…` | cleared | unchanged | disabled |
+| **Cancelled** | hidden | — | — | **shown, `err`** | successes kept | enabled |
 | Batch done, all ok | hidden | — | — | hidden | all rows | enabled |
 | Batch done, partial | hidden | — | — | **shown, `err`** | successes present | enabled |
 | Batch done, none ok | hidden | — | — | **shown, `err`** | unchanged | enabled |
-| **Retry in flight** | shown | `done/retried` % | `Adding {i} of {n} — {name}` | **stays visible**, `Try again` **disabled** | grows | **disabled** |
+| **Retry in flight** | shown **+ `Cancel`** | `done/retried` % | `Adding {i} of {n} — {name}` | **stays visible**, `Try again` **disabled** | grows | **disabled** |
 | **Retry done, all recovered** | hidden | — | — | hidden | reordered (§B.3.1.5) | enabled |
 | **Retry done, some still failing** | hidden | — | — | shown, `err`, recomputed | successes present | enabled |
 
@@ -1325,6 +1589,18 @@ Three notes on the retry rows, each a place this is easy to build wrong:
 - **`Batch done, all ok` covers a retry that recovered everything**: the box is
   hidden entirely, because the end state is indistinguishable from a batch that
   never failed. Nothing lingers to explain a problem that no longer exists.
+
+And two on cancel:
+
+- **`Stopping…` is a real state, not a flourish.** The abort is not instantaneous —
+  the request has to unwind — and the multi-minute file that provoked the cancel is
+  exactly the case where a frozen bar with no acknowledgement reads as a second
+  failure. `Cancel` is **disabled rather than removed** while it resolves, for the
+  same focus reason as `Try again` (§B.6).
+- **`Cancelled` uses `.msg-box err`** despite nothing having failed. This is
+  consistent with the partial-batch row above and rests on `tokens.md` §1's
+  argument that `.info` is *"too quiet to slow anyone down"* — and here the box is
+  carrying the only statement of what the draft now contains, which she must read.
 
 ## B.6 Accessibility
 
@@ -1360,6 +1636,13 @@ which is exactly the condition under which §3.2 step 4 moves focus. So:
 
 Without rule 1 the button is destroyed while focused and focus falls to `<body>`,
 which is the single most common way a keyboard user gets lost in a flow like this.
+
+**Cancel follows the same two rules.** It is disabled rather than removed while the
+abort resolves (§B.5), and when `#addProgress` hides and `#addError` renders the
+cancelled summary, **focus moves to `#addError`** — a cancel is a synchronous
+response to a press she just made, so §3.2 step 4's condition is met exactly as it
+is for retry. Announcing the cancelled state matters more than most: it is the one
+end state where she cannot infer what the draft now contains (§B.3.4.4).
 
 **Announcement ordering is consistent with §4.3.** The final polite progress
 message, then the assertive error. The assertive one jumps the queue, which is
@@ -1399,15 +1682,22 @@ line a wrong-looking order reads as a bug rather than as something she can fix.
 **4. Handoff package for this surface — resolved 2026-07-21: do not mint one.**
 §B.0 carries it. Logged as deliberate docs debt.
 
-**Still open — Cancel during a batch.** I have specified **none**. Twelve songs on
-a local machine is well under a minute, each file is committed server-side as it
-lands so nothing breaks if she closes the tab, and she can delete unwanted tracks
-with controls that already exist. But `interactions.md` §2.4 set a precedent that
-long waits should be escapable, and **retry makes a long run more likely** — a
-batch plus two retry rounds is three waits, not one. **If UAT shows a 12-file batch
-running longer than ~30 seconds, add a Cancel**: beside the progress bar, stopping
-after the current file, never mid-file. Flagging rather than blocking — the design
-is complete without it and it drops in cleanly if measurement says so.
+**5. Cancel — resolved 2026-07-21: required, and it aborts the in-flight
+request.** §B.3.4 is the spec. My earlier deferral was wrong on both counts: the
+~30-second threshold was the wrong test (multi-minute waits are today's reality,
+not a risk multi-select introduces), and *"stop after the current file"* was the
+wrong mechanism (indistinguishable from no cancel when one file takes minutes).
+
+**6. Per-file timeout — withdrawn** (§B.3.1.6). It was recommended in an earlier
+draft and is now actively wrong: any threshold that survives a real audiobook is
+too long to rescue a hang. Cancel replaces it and needs no number.
+
+**Still open — escalated to Architect, not blocking this PR.** `POST
+/api/tracks/file` is synchronous and holds the request for the whole
+transcode-and-split, which is why cancel cannot be exact (§B.3.4.6). The proper fix
+is to move it onto the job system `POST /api/tracks/youtube` already uses. That is
+an endpoint-contract change and an architecture call. **This spec ships correctly
+without it** — the cost is one hedging sentence in the cancelled summary.
 
 ---
 
@@ -1447,3 +1737,13 @@ is complete without it and it drops in cleanly if measurement says so.
     groups with only one button between them.
 13. **A retried file lands in its natural-sort position, not at the end** — and no
     track that existed before the batch is moved.
+14. **`Cancel` stops a multi-minute file in seconds, not minutes.** Verified by
+    cancelling during a long transcode and confirming the UI returns promptly. A
+    cancel that leaves her waiting has failed even if it eventually works.
+15. **A cancelled batch keeps everything that landed, and says exactly what
+    landed and what didn't — by name.** She never has to diff her file picker
+    against the track list to find out where it stopped.
+16. **Her own cancel is never presented to her as a network error**, and never
+    offers `Try again` (§B.3.4.2 — the `AbortError` branch in `api()` is what
+    prevents this, and it is the one change without which cancel actively
+    misinforms).
