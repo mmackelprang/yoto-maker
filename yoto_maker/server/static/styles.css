@@ -66,11 +66,13 @@ header {
      established foreground and clears 3:1 across the whole gradient (worst
      point 3.26:1 at the #9a7de6 end). Scoped to the surface, not to .pill, so
      any future header control inherits the correct ring for free.
-     The `outline-offset: 2px` above is LOAD-BEARING: it leaves a band of bare
-     gradient between control and ring. Against the pill's own fill
-     (rgba(255,255,255,0.18) over the gradient -> #ac94ea) white is only
-     2.57:1 and FAILS. Setting the offset to 0 here reintroduces the defect.
-     See tokens.md §2a. */
+     `outline-offset: 2px` puts the ring on bare gradient, which is where the
+     3.26:1 above is measured. It used to be load-bearing for a second reason
+     too — against the pill's old white fill, a ring at offset 0 was white on
+     near-white and failed. The 2026-07-20 fill inversion retired that hazard
+     (the same pair now measures the same 4.97:1 as the label), so the offset is
+     kept because it is visually correct, not because removing it would break
+     contrast. Superseded figures are in tokens.md §2a; the new sweep is §2b. */
   --focus-ring: #ffffff;
 }
 header .brand { display: flex; align-items: center; gap: 12px; }
