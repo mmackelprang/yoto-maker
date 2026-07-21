@@ -706,7 +706,7 @@ async def index():
     )
 
 
-# Static assets (styles.js/css). Mounted last so API routes take precedence.
+# Static assets (app.js/styles.css). Mounted last so API routes take precedence.
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 

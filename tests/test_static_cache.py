@@ -6,12 +6,15 @@ JavaScript and the Settings view silently never appeared.
 """
 from __future__ import annotations
 
+import inspect
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
 from yoto_maker import __version__
 from yoto_maker.server import app as app_module
-from yoto_maker.server.app import STATIC_DIR, app
+from yoto_maker.server.app import app
 
 
 @pytest.fixture
@@ -34,10 +37,18 @@ def test_index_stamps_asset_urls_with_the_running_version(client):
 
 
 def test_index_leaves_no_unversioned_asset_url(client):
-    """An unstamped URL is the bug. Catch a half-applied edit."""
+    """An unstamped URL is the bug. Catch a half-applied edit.
+
+    Swept rather than enumerated on purpose. The plan named app.js and
+    styles.css as "the complete surface" and it was wrong — logo.png was a
+    third, unstamped reference. Hardcoding filenames here would have missed it
+    and would miss the next asset someone adds, which is the same defect all
+    over again. Assert the property instead: nothing under /static/ is served
+    without a stamp.
+    """
     body = client.get("/").text
-    assert '"/static/app.js"' not in body
-    assert '"/static/styles.css"' not in body
+    unstamped = [url for url in re.findall(r'"(/static/[^"]*)"', body) if "?v=" not in url]
+    assert not unstamped, f"unversioned /static/ URLs served: {unstamped}"
     assert "__ASSET_V__" not in body
 
 
@@ -98,3 +109,19 @@ def test_index_survives_characters_the_windows_locale_cannot_decode(client):
     canaries = [c for c in body if not _cp1252_safe(c)]
     assert canaries, "index.html no longer exercises the non-cp1252 path"
     assert "\U0001f3b5" in body  # the header logo emoji round-tripped intact
+
+
+def test_index_route_pins_the_encoding_explicitly():
+    """The behavioural test above cannot fail on a UTF-8-locale machine.
+
+    It catches the regression today only because this dev box is Windows
+    (cp1252). Linux CI, or Python 3.15 defaulting to UTF-8 mode (PEP 686),
+    would silently disarm it while the frozen Windows .exe still 500s on every
+    user's machine. Assert on the source so the guard holds everywhere.
+
+    Match the call itself, not the bare string: the route's docstring explains
+    the encoding trap and therefore contains encoding="utf-8" as prose, so a
+    looser assertion passes on the documentation while the actual argument is
+    gone. (It did, when this test was first written.)
+    """
+    assert 'read_text(encoding="utf-8")' in inspect.getsource(app_module.index)
