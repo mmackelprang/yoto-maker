@@ -1,7 +1,14 @@
 # Builder queue
 
-**Last updated:** 2026-07-20 by Builder — **item 8 shipped as [PR #15](https://github.com/mmackelprang/yoto-maker/pull/15),
-open and awaiting review; deliberately not merged.** All 7 tasks done, suite
+**Last updated:** 2026-07-20 by Builder — **item 8 is merged** as
+[PR #15](https://github.com/mmackelprang/yoto-maker/pull/15), merge commit
+`77d499c`. **No release cut yet, deliberately:** item 9 ships in the same
+v0.1.10, so the tag, the `.exe` and the GitHub release all wait for it. Item 8
+is therefore `✅ merged` and not `🚢 released` — the distinction this queue
+introduced after v0.1.9 sat merged-but-unreleased for a day. **Item 9 is next
+and is now in flight.**
+
+Previously: 2026-07-20 by Builder — item 8 shipped as PR #15. All 7 tasks done, suite
 **120 passed**, verified from the frozen `.exe` as well as from source. The
 poisoned-cache repair was measured for real — cache never cleared, F5 not
 Ctrl+Shift+R — and the pre-fix document was confirmed serving from cache with
@@ -65,7 +72,7 @@ day because these two states shared one word.
 | 4 | 📋 | **The crop editor modal has no focus trap** — Tab escapes the modal into the page behind it | _needs Planner pass_ | _needs Planner pass_ | — | MEDIUM. Pre-existing from the v0.1.7 crop editor; **not** a PR #10 regression. Observed Tab order below. |
 | 5 | ⛔ | ~~**`#yotoPill` white label fails WCAG AA at rest**~~ — **ABSORBED 2026-07-20 into item 9**, which is now planned | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12.5–12.6 + `tokens.md` §2b | [item 9's plan](superpowers/plans/2026-07-20-settings-discoverability.md), Tasks 3–5 | — | **Blocked on purpose — do not ship this row on its own.** The Designer pass it was waiting for is done, and concluded the contrast defect and the connected-state discoverability defect are **one defect measured two ways**: the fix for both is a single fill inversion (`rgba(255,255,255,0.18)` → `rgba(36,29,56,0.28)`, 2.56:1 → 4.97:1). Shipping contrast separately would leave the discoverability fix's primary entry point illegible, and shipping discoverability separately would contradict this row. **Retire this row when item 9 merges** — there is nothing left in it that item 9's plan does not carry. |
 | 6 | 📋 | **`favicon.ico` 404 on the callback page** | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic. Logged so it isn't rediscovered; safe to leave sitting. |
-| 8 | 🚧 | **Browsers serve a stale `app.js`/`styles.css` after auto-update** — new HTML runs against old JavaScript, which is what made Settings unreachable on v0.1.9 | brief in plan §The defect | [`superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`](superpowers/plans/2026-07-20-stale-asset-cache-after-update.md) | — | **HIGH — ships in v0.1.10. [PR #15](https://github.com/mmackelprang/yoto-maker/pull/15) open, awaiting review — not merged.** Shipping bug, silent and partial, plausibly degrading every release since v0.1.5. 7 tasks, all shipped. **This PR owns the `0.1.10` version bump** — item 9 must not also bump, and rebases onto it. |
+| 8 | ✅ | **Browsers serve a stale `app.js`/`styles.css` after auto-update** — new HTML runs against old JavaScript, which is what made Settings unreachable on v0.1.9 | brief in plan §The defect | [`superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`](superpowers/plans/2026-07-20-stale-asset-cache-after-update.md) | — | **HIGH — merged 2026-07-20 as [PR #15](https://github.com/mmackelprang/yoto-maker/pull/15) (`77d499c`). Ships in v0.1.10 — `✅ merged`, NOT yet `🚢 released`; the tag waits on item 9.** Shipping bug, silent and partial, plausibly degrading every release since v0.1.5. 7 tasks, all shipped. **This PR owns the `0.1.10` version bump** — item 9 must not also bump, and rebases onto it. |
 | 9 | 📋 | **A connected user cannot find the way into Settings** — `#advRow` moves out of `#connectRow` to the end of step 3 and its copy names the *account*; pill fill inverted for legibility; pill `aria-label` deleted | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12 (+ `copy.md` §1a, `interactions.md` §1.4, `tokens.md` §2b, `mockups` §1/§7a), amended in `e52908e` | [`superpowers/plans/2026-07-20-settings-discoverability.md`](superpowers/plans/2026-07-20-settings-discoverability.md) | — (prefer **after** item 8; see notes) | **HIGH — ships in v0.1.10. Absorbs item 5; retire that row when this merges.** 7 tasks. **Does NOT bump the version** — item 8 owns `0.1.10`. Reported from the field by the user, who knew the feature existed and still could not find it. |
 
 ### Item 9 — briefing notes
