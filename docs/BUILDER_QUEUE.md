@@ -1,6 +1,51 @@
 # Builder queue
 
-**Last updated:** 2026-07-20 by Builder — **item 9 shipped as
+**Last updated:** 2026-07-20 by Builder — **v0.1.10 is released. Items 8 and 9
+are both `🚢 released`.** PR #16 merged as `be93ee1` after both gates cleared;
+tag `v0.1.10` → `715bd1c` on the remote; `YotoMaker.exe` (127,040,616 bytes)
+uploaded. Suite **137 passed**. Release:
+<https://github.com/mmackelprang/yoto-maker/releases/tag/v0.1.10>
+
+**The update path was verified end-to-end, not assumed** — the same check
+v0.1.9's release cut introduced. A client spoofed to `0.1.9`, with **no
+`YOTO_LATEST_VERSION` override** (it short-circuits the API call at
+`updater.py:80` and would test the override instead of the release), hits the
+real releases API and gets `update_available: true`, `latest: "0.1.10"`, and a
+`download_url` answering **200 at 127,040,616 bytes** — byte-identical to the
+uploaded asset. A v0.1.10 client correctly gets no banner. **The user's live
+v0.1.9 install on port 8777 should now offer them this update**, which is the
+end-to-end proof that v0.1.9's release-path work holds.
+
+**Both PR #16 gates cleared, and the MEDIUM was this PR marking its own
+homework.** Polisher: 0 HIGH, 1 MEDIUM, 2 LOW. Tester: 12 flows passed, 0
+failed, 0 HIGH, 0 MEDIUM, 3 LOW. The MEDIUM was that `styles.css` asserted
+Designer's **derived** figures (4.97 / 5.81) as measured — line 73 literally
+said the pair *"measures 4.97:1"* — in the very PR that took the real
+measurement. Fixed in `292550f`, along with the missing supersession pointer in
+`tokens.md`. Polisher's two LOWs are queued as items **11** and **12**; Tester's
+methodology LOW is recorded with the methodology in `tokens.md` §2b.
+
+**The regression test nobody specced is now in the tree.** Tester drove a live
+connected↔disconnected transition with no reload; since PR #16 made the copy
+state-dependent inside `renderStatus()`, that is this change's primary
+regression guard and static markup assertions structurally cannot cover it.
+`tests/test_settings_link_transition_e2e.py` is the repo's **first e2e spec** —
+it drives the flip through the app's own `refreshStatus()` rather than writing
+`textContent` itself, and **five mutations were verified failing**, including
+the one-way-flip case every static assertion passes. It skips cleanly when
+playwright or its browser is absent, so it does not become a second instance of
+item 3; playwright is now declared in dev extras rather than left ambient.
+
+**One thing shipped unverified again, deliberately:** the screen-reader
+announcement on `#yotoPill`'s new accessible name. NVDA is still not installed
+and Narrator's speech still cannot be captured as text, so **nobody has heard
+it** — the accessibility tree is consistent with the expected utterance, but
+that is an argument from construction. Recorded under **Not verified in
+v0.1.10** in `docs/RELEASE_NOTES.md` and in the GitHub release body, exactly as
+v0.1.9's reveal toggle was. Anyone with a screen reader can close both in about
+a minute.
+
+Previously: 2026-07-20 by Builder — **item 9 shipped as
 [PR #16](https://github.com/mmackelprang/yoto-maker/pull/16), open and
 deliberately not merged: Tester and Polisher gate this one.** All 7 tasks done,
 suite **133 passed**. **Item 5 is retired** — absorbed and delivered by Tasks
@@ -111,15 +156,13 @@ day because these two states shared one word.
 | # | Status | Item | Spec | Plan | Depends on | Notes |
 |---|--------|------|------|------|-----------|-------|
 | 2 | 📋 | **`--port` flag doesn't move the OAuth redirect URI** — the flag changes the listening port but not `cfg.port`, so Yoto sign-in always redirects to 8777 | _needs Planner pass_ | _needs Planner pass_ | — | Pre-existing in v0.1.8 and documented in `--help`. Small fix, but it touches the OAuth redirect — wants a plan before someone changes it blind. |
-| 3 | 📋 | **`test_youtube_sponsorblock_best_effort_retry` fails without the optional `yt_dlp` dep** — wants a `pytest.importorskip` guard | _needs Planner pass_ | _needs Planner pass_ | — | One-line test fix. The only red in an otherwise green suite, so it costs every future Builder a moment of "is this me?". |
+| 3 | 📋 | **`test_youtube_sponsorblock_best_effort_retry` does a bare `import yt_dlp` and hard-fails when it is absent** (`tests/test_sources.py:60`) — wants a `pytest.importorskip` guard | _needs Planner pass_ | _needs Planner pass_ | — | One-line test fix. **Re-checked 2026-07-20 and the row's original framing was wrong:** `yt-dlp` is a **core** dependency in `pyproject.toml`, not an optional one, so a correctly-installed environment always has it and the suite is green (137 passed). The failure mode is a partial or editable dev install. Still worth the guard — a test should skip on a missing dep rather than report a red that costs every future Builder a moment of "is this me?" — but it is **latent, not active**, which lowers its priority. Planner should decide whether it is worth a row at all. |
 | 4 | 📋 | **The crop editor modal has no focus trap** — Tab escapes the modal into the page behind it | _needs Planner pass_ | _needs Planner pass_ | — | MEDIUM. Pre-existing from the v0.1.7 crop editor; **not** a PR #10 regression. Observed Tab order below. |
 | 5 | ✅ | ~~**`#yotoPill` white label fails WCAG AA at rest**~~ — **ABSORBED into item 9 and DELIVERED by it** ([PR #16](https://github.com/mmackelprang/yoto-maker/pull/16), Tasks 3–5) | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12.5–12.6 + `tokens.md` §2b | [item 9's plan](superpowers/plans/2026-07-20-settings-discoverability.md), Tasks 3–5 | — | **Retired 2026-07-20 — do not schedule.** The fill inversion shipped in PR #16 and the result was **measured live from rendered pixels, not asserted**: the white label goes **2.56:1 → 5.03:1** at rest and 5.87:1 on hover, clearing the 4.5:1 bar. The `aria-label` deletion (WCAG 2.5.3) shipped with it. Nothing is left in this row. Historical record follows. The Designer pass it was waiting for is done, and concluded the contrast defect and the connected-state discoverability defect are **one defect measured two ways**: the fix for both is a single fill inversion (`rgba(255,255,255,0.18)` → `rgba(36,29,56,0.28)`, 2.56:1 → 4.97:1). Shipping contrast separately would leave the discoverability fix's primary entry point illegible, and shipping discoverability separately would contradict this row. **Retire this row when item 9 merges** — there is nothing left in it that item 9's plan does not carry. |
 | 6 | 📋 | **`favicon.ico` 404 on the callback page** | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic. Logged so it isn't rediscovered; safe to leave sitting. |
-| 8 | ✅ | **Browsers serve a stale `app.js`/`styles.css` after auto-update** — new HTML runs against old JavaScript, which is what made Settings unreachable on v0.1.9 | brief in plan §The defect | [`superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`](superpowers/plans/2026-07-20-stale-asset-cache-after-update.md) | — | **HIGH — merged 2026-07-20 as [PR #15](https://github.com/mmackelprang/yoto-maker/pull/15) (`77d499c`). Ships in v0.1.10 — `✅ merged`, NOT yet `🚢 released`; the tag waits on item 9.** Shipping bug, silent and partial, plausibly degrading every release since v0.1.5. 7 tasks, all shipped. **This PR owns the `0.1.10` version bump** — item 9 must not also bump, and rebases onto it. |
+| 10 | 📋 | **The header pill's label wraps to two lines at 320px** — the header grows to 110px and the pill to 48px | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic, **pre-existing and proven so** — measured identically (pill 48px, header 110px, `scrollWidth` 305) on the pre-PR `.exe` control at the same width, and removing the new chevron does not change it by a pixel. **No overflow, no horizontal scroll, no overlap with the brand** — the header just gets taller. Item 9's Test Plan §E.5 expected "no wrap" and prescribed dropping the chevron's leading gap if tight; that escalation is **inapplicable**, since even the shortest label wraps with the chevron removed entirely. The real cause is `.brand` + pill exceeding 320px, which is a header-layout question item 9 was explicitly forbidden from touching. |
 | 11 | 📋 | **`⚙️` is unhidden text inside `#advToggle`'s accessible name** — the step-3 link announces as *"gear Connect a different Yoto account"* | _needs Designer pass_ | _needs Designer pass_ | — | LOW, **pre-existing since v0.1.9**, from PR #16's Polisher gate. **Needs Designer, not Builder** — see briefing notes; it is specced-in, not an oversight, and the obvious fix collides with two other rules. |
 | 12 | 📋 | **`#advToggle`'s touch target is ~20px against WCAG 2.2 AA's 24×24** | _needs Planner pass_ | _needs Planner pass_ | — | LOW, **pattern-level and pre-existing**. It matches the canonical footer link `#settingsLink` exactly, so this is a question about the app's link pattern, not about one control. Enlarging *this* link alone is the prominence increase `overview.md` §12.7 forbids. Fix the pattern or accept it — do not special-case one link. |
-| 10 | 📋 | **The header pill's label wraps to two lines at 320px** — the header grows to 110px and the pill to 48px | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic, **pre-existing and proven so** — measured identically (pill 48px, header 110px, `scrollWidth` 305) on the pre-PR `.exe` control at the same width, and removing the new chevron does not change it by a pixel. **No overflow, no horizontal scroll, no overlap with the brand** — the header just gets taller. Item 9's Test Plan §E.5 expected "no wrap" and prescribed dropping the chevron's leading gap if tight; that escalation is **inapplicable**, since even the shortest label wraps with the chevron removed entirely. The real cause is `.brand` + pill exceeding 320px, which is a header-layout question item 9 was explicitly forbidden from touching. |
-| 9 | 🚧 | **A connected user cannot find the way into Settings** — `#advRow` moves out of `#connectRow` to the end of step 3 and its copy names the *account*; pill fill inverted for legibility; pill `aria-label` deleted | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12 (+ `copy.md` §1a, `interactions.md` §1.4, `tokens.md` §2b, `mockups` §1/§7a), amended in `e52908e` | [`superpowers/plans/2026-07-20-settings-discoverability.md`](superpowers/plans/2026-07-20-settings-discoverability.md) | — (item 8 shipped first, as preferred) | **HIGH — ships in v0.1.10. [PR #16](https://github.com/mmackelprang/yoto-maker/pull/16) open, awaiting Tester + Polisher — not merged.** 7 tasks, all shipped; suite 133 passed; reviewer found no HIGH or MEDIUM. **Absorbs item 5, now retired.** Version correctly NOT bumped — `pyproject.toml` and `__init__.py` untouched, both already `0.1.10` from item 8. Contrast re-measured live (5.03:1 at rest); connected **and** disconnected states both verified, the healthy one being the state nobody had exercised. |
 
 ### Item 9 — briefing notes
 
@@ -318,6 +361,8 @@ day because these two states shared one word.
 |---|------|------|------|----|--------|----------|
 | 1 | **Configuration surface** — full-page Settings view built on the reusable `.setting` primitive, plus the three backend correctness fixes it depends on | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) | [`superpowers/plans/2026-07-20-configuration-surface.md`](superpowers/plans/2026-07-20-configuration-surface.md) | [#10](https://github.com/mmackelprang/yoto-maker/pull/10) | ✅ 2026-07-20 | 🚢 v0.1.9 |
 | 7 | **Client ID reveal control + the v0.1.9 release cut** — show the value in effect (full mask, monospace, `Show the whole thing` disclosure) for `saved`/`env`; then actually tag, build and publish v0.1.9 | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) (amended in `884fa6a`) | [`superpowers/plans/2026-07-20-client-id-reveal-and-v0.1.9-release.md`](superpowers/plans/2026-07-20-client-id-reveal-and-v0.1.9-release.md) | [#11](https://github.com/mmackelprang/yoto-maker/pull/11) (Part A), [#12](https://github.com/mmackelprang/yoto-maker/pull/12) (corrections) | ✅ 2026-07-20 | 🚢 v0.1.9 |
+| 8 | **Browsers serve a stale `app.js`/`styles.css` after auto-update** — new HTML runs against old JavaScript, which is what made Settings unreachable on v0.1.9 | brief in plan §The defect | [`superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`](superpowers/plans/2026-07-20-stale-asset-cache-after-update.md) | [#15](https://github.com/mmackelprang/yoto-maker/pull/15) (`77d499c`) | ✅ 2026-07-20 | 🚢 v0.1.10 |
+| 9 | **A connected user cannot find the way into Settings** — `#advRow` leaves `#connectRow` for the end of step 3 and its copy names the *account*; pill fill inverted for legibility; pill `aria-label` deleted | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12, amended in `e52908e` | [`superpowers/plans/2026-07-20-settings-discoverability.md`](superpowers/plans/2026-07-20-settings-discoverability.md) | [#16](https://github.com/mmackelprang/yoto-maker/pull/16) (`be93ee1`) | ✅ 2026-07-20 | 🚢 v0.1.10 |
 
 Item 1 shipped all 12 tasks as one PR, as planned. Its Builder briefing notes
 were consumed and removed; the spec and plan above remain the durable record.
@@ -332,7 +377,47 @@ defect), and the stale-build hazard gained its second cause — a stale *server*
 where the single-instance guard makes a new dev server exit 0 while UAT silently
 measures the old build.
 
-**Both rows' Released cells are evidenced**, per the rule above:
+**Items 8 and 9 — v0.1.10 Released cells, evidenced per the rule above:**
+
+```
+$ gh release view v0.1.10 --json tagName,assets -q '.tagName + " -> " + (.assets[0].name // "NO ASSET")'
+v0.1.10 -> YotoMaker.exe
+
+$ gh release view v0.1.10 --json assets -q '.assets[] | "\(.name)  \(.size) bytes  state=\(.state)"'
+YotoMaker.exe  127040616 bytes  state=uploaded
+
+$ git ls-remote --tags origin v0.1.10
+715bd1c55b96bb63c2eb25a2f284b5f53c21b499        refs/tags/v0.1.10
+```
+
+Tag `v0.1.10` → `715bd1c`, confirmed on the remote. **The update path was
+verified end-to-end rather than assumed:** with `__version__` spoofed to
+`0.1.9` and **no `YOTO_LATEST_VERSION` override** in play (the override
+short-circuits the API call at `updater.py:80`, so setting it would test the
+override instead of the release), `updater.check_for_update()` hits the real
+releases API and returns `update_available: True`, `latest: "0.1.10"`, with a
+`download_url` that answers `200` at the expected 127,040,616 bytes. A v0.1.10
+client correctly gets no banner.
+
+**The frozen `.exe` was verified serving both fixes, not just built.** Item 8's
+cp1252 hazard (`read_text()` without `encoding="utf-8"` 500s the whole UI from a
+frozen build while passing every test on a UTF-8 machine) is the gate, and it
+passes: `/` returns 200, `/api/status` returns 200, and the served document
+carries `?v=0.1.10` stamps on its assets. Item 9's markup was checked in the
+served HTML rather than the source — `#advToggle` is outside `#connectRow`,
+`#advRow` follows `#sendDone`, the chevron carries `aria-hidden="true"`, the
+pill has no `aria-label`, and the served stylesheet carries the inverted fill.
+
+**One item shipped unverified again, deliberately not marked green:** the
+screen-reader announcement of `#yotoPill`'s new accessible name (Test Plan
+§E.3). Same reason as v0.1.9's reveal toggle — NVDA is not installed and
+Narrator's speech cannot be captured as text. Recorded in PR #16's body, under
+**Not verified in v0.1.10** in `docs/RELEASE_NOTES.md`, and in the GitHub
+release body.
+
+---
+
+**Items 1 and 7 — v0.1.9 Released cells are evidenced**, per the rule above:
 
 ```
 $ gh release view v0.1.9 --json tagName,assets -q '.tagName + " -> " + (.assets[0].name // "NO ASSET")'
