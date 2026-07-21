@@ -162,6 +162,17 @@ Adding audio, pictures, and printing labels all work without it.
 - The Yoto upload flow is implemented against Yoto's documented API and covered
   by tests with mocked responses; live upload needs your Client ID (above).
 
+## ❓ Not verified in v0.1.10
+
+- **How the Yoto button in the corner sounds in a screen reader.** This release
+  changed what that button is called for assistive software — it now reads out
+  its visible label, **Yoto connected**, instead of a different hidden one, and
+  the small `›` is deliberately silent. Inspected programmatically it looks
+  right, but nobody has actually listened to it. NVDA isn't installed here and
+  Narrator's speech can't be captured as text, so this is genuinely unheard —
+  not "probably fine". Same gap as the v0.1.9 item below. If you use a screen
+  reader and it announces something confusing, that's worth reporting.
+
 ## ❓ Not verified in v0.1.9
 
 - **How the new "Show the whole thing" button sounds in a screen reader.** The

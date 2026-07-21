@@ -70,9 +70,11 @@ header {
      3.26:1 above is measured. It used to be load-bearing for a second reason
      too — against the pill's old white fill, a ring at offset 0 was white on
      near-white and failed. The 2026-07-20 fill inversion retired that hazard
-     (the same pair now measures the same 4.97:1 as the label), so the offset is
-     kept because it is visually correct, not because removing it would break
-     contrast. Superseded figures are in tokens.md §2a; the new sweep is §2b. */
+     (the same pair takes the label's ratio: 4.97:1 derived, 5.03:1 measured),
+     so the offset is kept because it is visually correct, not because removing
+     it would break contrast. Superseded figures are in tokens.md §2a; the
+     derived sweep is §2b; the live measurements that supersede it are in
+     BUILDER_QUEUE.md item 9. */
   --focus-ring: #ffffff;
 }
 header .brand { display: flex; align-items: center; gap: 12px; }
@@ -83,20 +85,24 @@ header .logo { font-size: 30px; }
   display: inline-flex; align-items: center; gap: 8px;
   /* --ink at 28% over the header gradient, NOT white. The shipped
      rgba(255,255,255,0.18) was white over an already-light gradient — it
-     LIGHTENED the background behind white text, and the label measured 2.56:1
-     against a 4.5:1 bar. Inverting takes the worst case (the #9a7de6 light end)
-     to 4.97:1. 0.22 is the arithmetic floor and clears the bar by 0.01, which is
-     no margin at all; 0.28 buys ~10% while keeping the composite (#7962b5) in
-     the purple family, so the pill still reads as part of the header rather than
-     as a dark chip stuck to it. Past 0.32 it starts competing with the h1.
-     Full 1%-interval sweep and rejected alphas: tokens.md §2b. */
+     LIGHTENED the background behind white text, and the label came out at
+     2.56:1 against a 4.5:1 bar. Inverting takes the worst case (the #9a7de6
+     light end) to 4.97:1 derived / 5.03:1 measured. 0.22 is the arithmetic
+     floor and clears the bar by 0.01, which is no margin at all; 0.28 buys ~10%
+     while keeping the composite (#7962b5) in the purple family, so the pill
+     still reads as part of the header rather than as a dark chip stuck to it.
+     Past 0.32 it starts competing with the h1.
+     Derived 1%-interval sweep and rejected alphas: tokens.md §2b. The live
+     measurements — every one of which landed better than derived — are in
+     BUILDER_QUEUE.md item 9 and supersede the derived figures. */
   background: rgba(36,29,56,0.28); color: #fff;
   padding: 8px 14px; border-radius: 999px; font-size: 14px; font-weight: 600;
   cursor: pointer; border: none;
   transition: background-color .12s, transform .06s;
 }
-/* Hover is the same ink at more alpha (5.81:1 worst case), and interpolates
-   natively under the transition above because both ends are now the same hue.
+/* Hover is the same ink at more alpha (5.81:1 derived / 5.87:1 measured, worst
+   case), and interpolates natively under the transition above because both ends
+   are now the same hue.
    The long two-layer-grey derivation that used to live here has been deleted
    with the white rest state that forced it. */
 .pill:hover { background-color: rgba(36,29,56,0.38); }

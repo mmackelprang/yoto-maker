@@ -24,7 +24,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.0", "pytest-asyncio>=1.4"]
+# playwright also needs its browser binaries: `playwright install chromium`.
+# tests/test_settings_link_transition_e2e.py skips (not fails) without either.
+dev = ["pytest>=9.0", "pytest-asyncio>=1.4", "playwright>=1.58"]
 
 [project.scripts]
 yoto-maker = "yoto_maker.main:main"

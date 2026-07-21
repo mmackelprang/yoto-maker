@@ -160,3 +160,37 @@ def test_no_stylesheet_comment_still_claims_the_retired_hazard(styles_css):
     """
     assert "2.57:1" not in styles_css
     assert "outline-offset: 2px" in styles_css
+
+
+@pytest.mark.parametrize("derived", ["4.97:1", "5.81:1"])
+def test_derived_contrast_figures_are_labelled_as_derived(styles_css, derived):
+    """The same standard the test above applies to 2.57:1, applied to our own
+    numbers.
+
+    4.97 and 5.81 are Designer's *derived* sweep values (tokens.md §2b). The
+    live pixels measure 5.03 and 5.87. Both figures may appear — the derivation
+    is why alpha 0.28 was chosen and is worth keeping — but a bare derived
+    figure reads as a measurement, and this stylesheet was rewritten twice
+    precisely because it asserted figures a later change falsified. So each
+    occurrence must sit next to the word "derived".
+
+    Not a style nit: the sentence this replaced said the pair "measures 4.97:1",
+    claiming measurement for a derived number, in the very PR that took the
+    actual measurement.
+    """
+    for line in styles_css.splitlines():
+        if derived in line:
+            assert "derived" in line.lower(), (
+                f"{derived} appears unqualified in styles.css. It is Designer's "
+                f"derived figure, not a measurement — mark it, and cite the "
+                f"measured value alongside.\n  {line.strip()}"
+            )
+
+
+def test_measured_contrast_figures_are_present(styles_css):
+    """The derived figures are only safe to keep if the measured ones sit beside
+    them. If someone strips these, the file is back to asserting predictions as
+    fact and the test above starts passing vacuously.
+    """
+    assert "5.03:1" in styles_css
+    assert "5.87:1" in styles_css
