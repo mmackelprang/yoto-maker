@@ -1,6 +1,18 @@
 # Builder queue
 
-**Last updated:** 2026-07-20 by Planner — **item 8 filed and planned: the stale
+**Last updated:** 2026-07-20 by Planner — **item 9 filed and planned: a
+connected user cannot find the way into Settings.** Reported from the field by
+the user, who knew the feature existed, had approved its design, was actively
+looking, and still could not find it. It is a **vocabulary** failure, not a
+visibility one, and the plan is deliberately built on only the uncontaminated
+half of the evidence — read its briefing notes before starting. **It absorbs
+item 5**, which is now planned rather than blocked-pending-Designer.
+
+**Items 8 and 9 both ship in v0.1.10 and are two PRs, not one.** Item 8 owns the
+version bump; item 9 must not also bump. Prefer shipping 8 first — its version
+stamp is what lets an already-poisoned browser receive item 9's fix at all.
+
+Previously: 2026-07-20 by Planner — **item 8 filed and planned: the stale
 asset bug.** It is the highest-priority row on this list. It has plausibly
 degraded every release since v0.1.5, it fails silently and partially against the
 user least able to work around it, and **we filed it twice as a testing hazard
@@ -41,9 +53,55 @@ day because these two states shared one word.
 | 2 | 📋 | **`--port` flag doesn't move the OAuth redirect URI** — the flag changes the listening port but not `cfg.port`, so Yoto sign-in always redirects to 8777 | _needs Planner pass_ | _needs Planner pass_ | — | Pre-existing in v0.1.8 and documented in `--help`. Small fix, but it touches the OAuth redirect — wants a plan before someone changes it blind. |
 | 3 | 📋 | **`test_youtube_sponsorblock_best_effort_retry` fails without the optional `yt_dlp` dep** — wants a `pytest.importorskip` guard | _needs Planner pass_ | _needs Planner pass_ | — | One-line test fix. The only red in an otherwise green suite, so it costs every future Builder a moment of "is this me?". |
 | 4 | 📋 | **The crop editor modal has no focus trap** — Tab escapes the modal into the page behind it | _needs Planner pass_ | _needs Planner pass_ | — | MEDIUM. Pre-existing from the v0.1.7 crop editor; **not** a PR #10 regression. Observed Tab order below. |
-| 5 | ⛔ | ~~**`#yotoPill` white label fails WCAG AA at rest**~~ — **ABSORBED 2026-07-20** into the Settings-discoverability spec | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12.5–12.6 + `tokens.md` §2b | folds into the discoverability PR | — | **Blocked on purpose — do not ship this row on its own.** The Designer pass it was waiting for is done, and concluded the contrast defect and the connected-state discoverability defect are **one defect measured two ways**: the fix for both is a single fill inversion (`rgba(255,255,255,0.18)` → `rgba(36,29,56,0.28)`, 2.56:1 → 4.97:1). Shipping contrast separately would leave the discoverability fix's primary entry point illegible, and shipping discoverability separately would contradict this row. Retire the row when the discoverability PR merges. |
+| 5 | ⛔ | ~~**`#yotoPill` white label fails WCAG AA at rest**~~ — **ABSORBED 2026-07-20 into item 9**, which is now planned | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12.5–12.6 + `tokens.md` §2b | [item 9's plan](superpowers/plans/2026-07-20-settings-discoverability.md), Tasks 3–5 | — | **Blocked on purpose — do not ship this row on its own.** The Designer pass it was waiting for is done, and concluded the contrast defect and the connected-state discoverability defect are **one defect measured two ways**: the fix for both is a single fill inversion (`rgba(255,255,255,0.18)` → `rgba(36,29,56,0.28)`, 2.56:1 → 4.97:1). Shipping contrast separately would leave the discoverability fix's primary entry point illegible, and shipping discoverability separately would contradict this row. **Retire this row when item 9 merges** — there is nothing left in it that item 9's plan does not carry. |
 | 6 | 📋 | **`favicon.ico` 404 on the callback page** | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic. Logged so it isn't rediscovered; safe to leave sitting. |
-| 8 | 📋 | **Browsers serve a stale `app.js`/`styles.css` after auto-update** — new HTML runs against old JavaScript, which is what made Settings unreachable on v0.1.9 | brief in plan §The defect | [`superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`](superpowers/plans/2026-07-20-stale-asset-cache-after-update.md) | — | **HIGH — ships in v0.1.10.** Shipping bug, silent and partial, plausibly degrading every release since v0.1.5. 7 tasks. **This PR owns the `0.1.10` version bump** — Designer's Settings-discoverability PR must not also bump. |
+| 8 | 📋 | **Browsers serve a stale `app.js`/`styles.css` after auto-update** — new HTML runs against old JavaScript, which is what made Settings unreachable on v0.1.9 | brief in plan §The defect | [`superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`](superpowers/plans/2026-07-20-stale-asset-cache-after-update.md) | — | **HIGH — ships in v0.1.10.** Shipping bug, silent and partial, plausibly degrading every release since v0.1.5. 7 tasks. **This PR owns the `0.1.10` version bump** — item 9 must not also bump. |
+| 9 | 📋 | **A connected user cannot find the way into Settings** — `#advRow` moves out of `#connectRow` to the end of step 3 and its copy names the *account*; pill fill inverted for legibility; pill `aria-label` deleted | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12 (+ `copy.md` §1a, `interactions.md` §1.4, `tokens.md` §2b, `mockups` §1/§7a), amended in `e52908e` | [`superpowers/plans/2026-07-20-settings-discoverability.md`](superpowers/plans/2026-07-20-settings-discoverability.md) | — (prefer **after** item 8; see notes) | **HIGH — ships in v0.1.10. Absorbs item 5; retire that row when this merges.** 7 tasks. **Does NOT bump the version** — item 8 owns `0.1.10`. Reported from the field by the user, who knew the feature existed and still could not find it. |
+
+### Item 9 — briefing notes
+
+- **It is a vocabulary fix, not a visibility fix.** The user knew the feature
+  existed, had approved its design, was actively looking, and asked for *"the
+  option to connect to a different account."* Nothing on the connected screen
+  contained *account*, *different* or *change* — the pill names a **state**, the
+  footer a **category**, the step-3 link a **destination**. Unhiding the link
+  without restoring the vocabulary leaves him matching against the wrong string
+  again. `overview.md` §12.2.
+- **The evidence is partially contaminated and the plan is built only on the
+  clean half.** His browser was serving a stale `app.js` (item 8), which killed
+  *both* live entry points — the footer link is also an `<a href="#settings">`
+  with no handler registered on v0.1.8's script. All click-behavior evidence is
+  discarded. **Do not add prominence changes justified by "the pill looks like a
+  badge"** — that claim is explicitly not established. The pill's treatment
+  changes only as far as a separately-measured contrast failure forces, plus one
+  glyph. No border, no size increase, no gear.
+- **Two controls, opposite answers on the gear glyph, and it is easy to
+  misread.** `#advToggle` (step 3) **keeps** `⚙️` on both copy variants — the
+  glyph is the constant so the control stays recognisable when the words change.
+  `#yotoPill` (header) gets `›` and **explicitly not** a gear: a gear says
+  *settings*, the category vocabulary that already failed, and reads as
+  "machinery, don't touch" to the `INSTALL-FOR-MOM.md` user. Do not harmonise
+  these. Plan §Hazard 1.
+- **Measurement provenance — re-measure, don't assert.** Item 8's plan found that
+  PR #10's UAT produced three false readings from cached CSS, so contrast numbers
+  from that session are suspect, including the pill's 2.56:1. Designer's sweep is
+  independent, but Test Plan §D requires the shipped result be measured live, on
+  a hard-reloaded page **and** a naturally-loaded one, with both runs agreeing.
+- **Order.** Not a hard dependency, but **prefer shipping item 8 first**: its
+  version stamp is what lets an already-poisoned browser receive this fix at all.
+  Task 2 is a `renderStatus()` change, exactly the kind a stale `app.js`
+  swallows while the new markup renders. Both PRs edit `index.html` in disjoint
+  regions (item 8: lines 7 and 309; item 9: 16–18 and 118–142), so a conflict is
+  unlikely; whichever merges second rebases, and `docs/RELEASE_NOTES.md` is the
+  only file needing real attention (plan Task 7 is written for both orders).
+- **Do not touch the `.setting` primitive.** Designer confirms it was not read,
+  extended or clarified for this work, and nothing here changes the settings view
+  at all. `overview.md` §3's placement decision is likewise untouched.
+- **Two things the design brief did not list and the plan adds**, both flagged in
+  its §Deviations: a `margin-top` on the relocated `#advRow` (the handoff snippet
+  omits spacing, which would butt the link against `.btn.big`), and a rewrite of
+  the now-false `outline-offset` hazard comment at `styles.css:64–73`, which
+  duplicates the 2.57:1 claim `tokens.md` §2a retired. **Keep the offset itself.**
 
 ### Item 8 — briefing notes
 
