@@ -251,6 +251,20 @@ class _NoInfoClient(FakeClient):
         return super().get(url, **k)
 
 
+def _client_warnings(caplog) -> list[str]:
+    """WARNINGs from the upload client only.
+
+    caplog captures everything that propagates to root, so asserting over
+    caplog.records would let an unrelated logger fail these tests — and would
+    make the "stays quiet" test below assert something broader than it claims.
+    """
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelname == "WARNING" and r.name == "yoto_maker.yoto"
+    ]
+
+
 def test_format_fallback_is_logged(sample_mp3, temp_config, caplog):
     """The fallback re-introduces the format mismatch that stalls offline sync,
     so it must leave a diagnosable trace naming the track and the format used."""
@@ -260,12 +274,11 @@ def test_format_fallback_is_logged(sample_mp3, temp_config, caplog):
     result = yc.create_card("X", [TrackInput(audio_path=sample_mp3, title="Track Title")])
 
     assert result.content_id == "CARD123"  # observability only: card still built
-    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
-    assert len(warnings) == 1, [r.getMessage() for r in warnings]
-    msg = warnings[0].getMessage()
-    assert "Track Title" in msg  # which track
+    warnings = _client_warnings(caplog)
+    assert len(warnings) == 1, warnings
+    assert "Track Title" in warnings[0]  # which track
     fallback_fmt = yc._client.last_content["content"]["chapters"][0]["tracks"][0]["format"]
-    assert repr(fallback_fmt) in msg  # and what we declared instead
+    assert repr(fallback_fmt) in warnings[0]  # and what we declared instead
 
 
 def test_no_warning_when_transcoded_format_is_present(sample_mp3, temp_config, caplog):
@@ -277,4 +290,4 @@ def test_no_warning_when_transcoded_format_is_present(sample_mp3, temp_config, c
 
     assert yc._client.last_content["content"]["chapters"][0]["tracks"][0]["format"] == "opus"
     assert result.content_id == "CARD123"
-    assert [r.getMessage() for r in caplog.records if r.levelname == "WARNING"] == []
+    assert _client_warnings(caplog) == []

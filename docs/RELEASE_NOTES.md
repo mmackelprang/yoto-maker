@@ -27,11 +27,13 @@ from source by the maintainer to fix cards that were already made; there is
 nothing to press for it in Yoto Maker itself.
 
 - **The repair tool now writes track links and icons in the form Yoto's API
-  requires.** When it read a card back, some fields came in as full web
-  addresses; writing those straight back could leave a repaired card worse than
-  it started. It now converts them to the short reference form Yoto expects
-  (`yoto:#…`) before saving, for both the audio of each track and each track's
-  16×16 icon, and refuses to write at all if anything looks unrecognisable.
+  requires.** Reading a card back gives those fields as full web addresses, and
+  Yoto refuses to accept them in that form — a repair attempt came back rejected
+  outright, so nothing was written and no card was harmed, but the repair
+  couldn't finish either. The tool now converts them to the short reference form
+  Yoto expects (`yoto:#…`) before saving — both the audio link and the 16×16
+  icons — and if any value is one it can't recognise it declines to write that
+  card at all rather than write half of it.
 
 ### 🆕 New in v0.1.11
 - **You can add several audio files at once.** Press **📁 Choose audio files**
