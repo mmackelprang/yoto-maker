@@ -1,6 +1,25 @@
 # Builder queue
 
-**Last updated:** 2026-07-21 by Builder — **item 13 claimed and in flight.**
+**Last updated:** 2026-07-21 by Builder — **item 17 shipped: Yoto's true
+transcoded `format` now flows into the card payload**
+([PR #18](https://github.com/mmackelprang/yoto-maker/pull/18)). The card
+previously advertised `format: "mp3"` for every track while Yoto actually serves
+**Ogg Opus**. **The scope was narrowed from the original plan after a live
+capture:** a real upload→transcode-poll confirmed `transcodedInfo.format ==
+"opus"` (a child of `transcode`), and a read-only diagnostic on the three real
+cards showed declared `fileSize`/`duration` **already match** the served values —
+Yoto self-corrects those server-side. So the fix is **format-only, best-effort**:
+a missing/misshapen `transcodedInfo` degrades to the local probe and still builds
+the card (it can NEVER block card creation), and `channels` stays the existing
+`"stereo"`/`"mono"` string. The wider fail-loud / fileSize-propagation / int-
+channels design was tried and reverted. Backend-only, **no version bump** — rides
+the next release cut. Item 17 landed independently of **item 13 (PR #19), which
+merged to `main` just before it**; both edit this queue file but no code files
+overlap. Suite **142 passed**; pre-merge review clean. On-device confirmation that
+`format: "opus"` cures the physical player's stuck offline download is the
+post-merge maintainer step.
+
+Previously: 2026-07-21 by Builder — **item 13 claimed and in flight.**
 Branch `feat/client-id-validation-and-multi-upload`; shipping as v0.1.11 in the
 four commit stacks (0 → A → B → C) the plan mandates. **Protocol override for
 this item: it will be taken to green and left awaiting maintainer sign-off, NOT
@@ -510,6 +529,7 @@ the `POST /api/tracks/file` contract that PR B builds against.
 | 7 | **Client ID reveal control + the v0.1.9 release cut** — show the value in effect (full mask, monospace, `Show the whole thing` disclosure) for `saved`/`env`; then actually tag, build and publish v0.1.9 | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) (amended in `884fa6a`) | [`superpowers/plans/2026-07-20-client-id-reveal-and-v0.1.9-release.md`](superpowers/plans/2026-07-20-client-id-reveal-and-v0.1.9-release.md) | [#11](https://github.com/mmackelprang/yoto-maker/pull/11) (Part A), [#12](https://github.com/mmackelprang/yoto-maker/pull/12) (corrections) | ✅ 2026-07-20 | 🚢 v0.1.9 |
 | 8 | **Browsers serve a stale `app.js`/`styles.css` after auto-update** — new HTML runs against old JavaScript, which is what made Settings unreachable on v0.1.9 | brief in plan §The defect | [`superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`](superpowers/plans/2026-07-20-stale-asset-cache-after-update.md) | [#15](https://github.com/mmackelprang/yoto-maker/pull/15) (`77d499c`) | ✅ 2026-07-20 | 🚢 v0.1.10 |
 | 9 | **A connected user cannot find the way into Settings** — `#advRow` leaves `#connectRow` for the end of step 3 and its copy names the *account*; pill fill inverted for legibility; pill `aria-label` deleted | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12, amended in `e52908e` | [`superpowers/plans/2026-07-20-settings-discoverability.md`](superpowers/plans/2026-07-20-settings-discoverability.md) | [#16](https://github.com/mmackelprang/yoto-maker/pull/16) (`be93ee1`) | ✅ 2026-07-20 | 🚢 v0.1.10 |
+| 17 | **Transcoded `format` propagation** — the card advertises Yoto's true transcoded format (Ogg Opus) instead of a hardcoded `"mp3"`; best-effort, degrades to the local probe if `transcodedInfo` is absent. Live-verified shape; `fileSize`/`duration`/`channels` deliberately left as-is (Yoto self-corrects them) | brief in plan §The defect | [`superpowers/plans/2026-07-21-transcoded-metadata-propagation.md`](superpowers/plans/2026-07-21-transcoded-metadata-propagation.md) | [#18](https://github.com/mmackelprang/yoto-maker/pull/18) | ✅ 2026-07-21 | ⏳ next cut |
 
 Item 1 shipped all 12 tasks as one PR, as planned. Its Builder briefing notes
 were consumed and removed; the spec and plan above remain the durable record.
