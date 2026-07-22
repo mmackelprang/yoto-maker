@@ -38,6 +38,7 @@ from ..yoto import (
     connection_status,
     finish_login,
     logout,
+    redirect_uri,
     start_login,
 )
 from .draft import get_draft
@@ -139,6 +140,15 @@ async def status() -> dict:
         "version": __version__,
         "tools": {"ffmpeg": bool(tools.ffmpeg), "yt_dlp": tools.yt_dlp, "ok": tools.ok},
         "yoto": connection_status(),
+        # The config summary (copy.md §7). Every value comes from the server —
+        # none may be constructed in JS. The port is not a constant
+        # (config.py:108: "chosen at runtime if busy"), so a hardcoded frontend
+        # redirect URL would be wrong in exactly the case where the row matters.
+        "config": {
+            "version": __version__,
+            "redirect_uri": redirect_uri(),
+            "data_dir": str(get_config().data_dir),
+        },
         "ai_available": ai_available(),
         "remove_sponsors": bool(get_settings().get("remove_sponsors", True)),
     }

@@ -58,6 +58,20 @@ def _redirect_uri() -> str:
     return f"http://{cfg.host}:{cfg.port}{config_mod.YOTO_REDIRECT_PATH}"
 
 
+def redirect_uri() -> str:
+    """The loopback callback URL, for the settings summary (copy.md §7 row 4).
+
+    A delegation and deliberately not a second construction: the string the user
+    reads out to whoever is helping her and the string start_login() actually
+    sends to Yoto must be the same string, or the row is worse than useless —
+    it would confirm a match that does not exist. SETUP-YOTO-CONNECTION.md:30
+    warns "This must match exactly", and a mismatch produces an Auth0 error page
+    — the same failure mode as the incident this change answers, from a
+    different cause.
+    """
+    return _redirect_uri()
+
+
 def _client_id() -> str:
     cid = config_mod.resolve_client_id()
     if not cid:
@@ -194,6 +208,9 @@ def connection_status() -> dict:
     # One traversal, destructured: the value and the label the UI reports it
     # under are read from the same chain walk and so cannot disagree.
     cid, source = config_mod.resolve_client_id_with_source()
+    # One traversal, one classification. The frontend and both server gates read
+    # this same verdict, so they cannot drift. config.py owns the rule.
+    verdict, reason = config_mod.validate_client_id(cid)
     return {
         # Legacy: resolve_client_id() falls back to a non-empty constant, so this
         # is permanently True and carries no information. Kept so nothing that
@@ -217,6 +234,8 @@ def connection_status() -> dict:
         # special logging handling, or a "sensitive field" wrapper. See
         # overview.md §7.8.
         "client_id_full": None if source == "builtin" else cid,
+        "client_id_verdict": verdict,
+        "client_id_reason": reason,
     }
 
 

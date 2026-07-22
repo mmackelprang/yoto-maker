@@ -133,3 +133,35 @@ def test_verdict_and_reason_are_only_meaningful_as_a_pair():
     """
     assert validate_client_id("<b>") == ("invalid", "charset")
     assert validate_client_id("not-32-chars") == ("unusual", "charset")
+
+
+# --- what the frontend actually reads -----------------------------------------
+
+def test_status_carries_the_verdict_and_the_config_summary(client):
+    """Both fields are derived from the ONE function in config.py.
+
+    A second implementation is how the save gate and the sign-in gate come to
+    disagree, and a user allowed to save a value she is then not allowed to use
+    is in a worse state than the one this change is fixing.
+    """
+    body = client.get("/api/status").json()
+
+    assert body["yoto"]["client_id_verdict"] in ("ok", "unusual", "invalid")
+    assert "client_id_reason" in body["yoto"]
+
+    cfg = body["config"]
+    assert cfg["version"]
+    # Rendered from auth._redirect_uri(), the same function start_login() uses,
+    # so the string the user reads out to a helper and the string sent to Yoto
+    # cannot disagree. That is the entire reason the row exists.
+    assert cfg["redirect_uri"].startswith("http://127.0.0.1:")
+    assert cfg["redirect_uri"].endswith("/yoto/callback")
+    assert cfg["data_dir"]
+
+
+def test_redirect_uri_is_not_a_frontend_constant(client):
+    """config.py:108 notes the port is chosen at runtime if 8777 is busy, so a
+    hardcoded frontend string would be wrong exactly when it matters most."""
+    from yoto_maker.yoto import auth
+
+    assert client.get("/api/status").json()["config"]["redirect_uri"] == auth.redirect_uri()
