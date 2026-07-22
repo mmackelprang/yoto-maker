@@ -1707,7 +1707,62 @@ function renderAddError() {
   // and 17), because those results ARE synchronous responses to a press.
 }
 
-async function repairOrderIfNeeded() {}                    // Task 16
+// The server appends, so a file retried after files 4-12 lands LAST — she
+// picked twelve, one failed, and the fix drops it at position 12 instead of 3.
+// She would then press ▲ nine times, which is the friction this feature exists
+// to remove. One /api/tracks/reorder at the end puts it back.
+async function repairOrderIfNeeded() {
+  const b = BATCH;
+  if (!b) return;
+
+  // A CANCELLED BATCH NEVER ISSUES THE REORDER. The call sends a FULL order
+  // array, and after a cancel the files that never arrived have no ids — the
+  // array would be built against an incomplete set, permuting real tracks
+  // against positions that do not exist. Nothing is lost by skipping it: the
+  // files that DID land arrived sequentially in sorted order, so they are
+  // already correct. The reorder exists only to repair a retry, and a cancelled
+  // batch has no repair to make.
+  if (b.cancelled) return;
+  // FIRE IT ONLY IF A RETRY ACTUALLY SUCCEEDED. On the happy path the
+  // sequential upload already produced the right order, so the call is skipped
+  // entirely. The reorder is a REPAIR, not a step.
+  if (!b.repaired) return;
+
+  const draft = await api("/api/draft");
+  const present = new Set(draft.tracks.map((t) => t.id));
+
+  // ONE FILE -> ONE OR MORE TRACK IDS. _add_result_as_tracks (app.py:213-240)
+  // splits anything over MAX_TRACK_SECONDS (50 minutes) into "Title (part 1)",
+  // "(part 2)"… each its own track. So sorting the batch by filename SORTS
+  // GROUPS, NOT INDIVIDUAL TRACKS, and within a file the parts must stay in
+  // their part order — which they do, because groups.get(file) preserves the
+  // order the draft reported them in.
+  const ordered = sortByFilename(b.ok);
+  const batchIds = [];
+  for (const file of ordered) {
+    for (const id of (b.groups.get(file) || [])) if (present.has(id)) batchIds.push(id);
+  }
+  if (!batchIds.length) return;
+
+  // NEVER RE-SORT THE WHOLE DRAFT. Tracks she added earlier — YouTube tracks,
+  // an earlier batch — may have been ordered BY HAND. Re-sorting them would
+  // destroy deliberate work to fix an incidental problem. Only indices
+  // belonging to this batch are permuted, and everything else keeps its
+  // current relative order, ahead of them.
+  //
+  // The "before" set is rebuilt from the draft AS IT IS NOW rather than from a
+  // start-of-batch snapshot: the per-row delete controls are deliberately not
+  // disabled during a batch, and a snapshot could send a dead id.
+  const batchSet = new Set(batchIds);
+  const order = draft.tracks.map((t) => t.id).filter((id) => !batchSet.has(id)).concat(batchIds);
+
+  // Once, at the end — not after each retried file. One write, one re-render.
+  await api("/api/tracks/reorder", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ order }),
+  });
+  await refreshDraft();
+}
 
 // Try again re-enters the batch flow of Task 13 with the failed subset as its
 // file list. Same sequential loop, same progress bar, same #addMsg format, same
