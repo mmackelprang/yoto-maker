@@ -165,3 +165,63 @@ def test_redirect_uri_is_not_a_frontend_constant(client):
     from yoto_maker.yoto import auth
 
     assert client.get("/api/status").json()["config"]["redirect_uri"] == auth.redirect_uri()
+
+
+# --- the save gate ------------------------------------------------------------
+
+def test_saving_an_email_is_refused(client):
+    r = client.post("/api/yoto/client-id", json={"client_id": "mandydeogie@gmail.com"})
+    assert r.status_code == 400
+    assert r.json()["reason"] == "email"
+
+
+def test_the_refusal_runs_BEFORE_the_write_and_BEFORE_logout(client, monkeypatch):
+    """The invariant the whole of Item A rests on, asserted as ordering.
+
+    The refusal copy ends with "Nothing was changed, and you're still signed in
+    to Yoto." That sentence is TRUE ONLY BECAUSE OF THIS ORDERING. If a refactor
+    moves the verdict check below get_settings().set(...) or below logout(), the
+    copy silently becomes a lie about the one thing this change exists to
+    guarantee — a user with a working sign-in must never lose it to a typo.
+
+    Asserting "the value wasn't saved" alone would not catch a check placed
+    between the write and logout(). This asserts NEITHER side effect fired.
+
+    IF THIS TEST FAILS, DO NOT RELAX IT. Either the ordering regressed, or the
+    ordering changed on purpose and copy.md §4c's reassurance line must change
+    with it.
+    """
+    from yoto_maker.server import app as app_mod
+
+    calls = []
+    monkeypatch.setattr(app_mod, "logout", lambda: calls.append("logout"))
+
+    from yoto_maker.settings import get_settings
+    before = get_settings().get("yoto_client_id")
+
+    r = client.post("/api/yoto/client-id", json={"client_id": "mandydeogie@gmail.com"})
+
+    assert r.status_code == 400
+    assert calls == [], "logout() ran on a refused save — a working sign-in was destroyed"
+    assert get_settings().get("yoto_client_id") == before, "the refused value was written"
+
+
+@pytest.mark.parametrize(
+    "value,reason",
+    [("someone@example.com", "email"),
+     ("http://127.0.0.1:8777/yoto/callback", "url"),
+     ("two words here", "spaces"),
+     ("a" * 200, "too_long")],
+)
+def test_every_invalid_reason_reaches_the_client(client, value, reason):
+    r = client.post("/api/yoto/client-id", json={"client_id": value})
+    assert r.status_code == 400
+    assert r.json()["reason"] == reason
+    assert r.json()["error"]
+
+
+def test_an_unusual_value_still_saves(client):
+    """Soft, not hard. A truncated paste is warned about and then allowed —
+    the false-positive cost of hard-blocking it is a total lockout."""
+    r = client.post("/api/yoto/client-id", json={"client_id": "a8OGO6EfbWit5tDUU"})
+    assert r.status_code == 200

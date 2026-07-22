@@ -30,7 +30,17 @@ class NotConnectedError(RuntimeError):
 
 
 class AuthError(RuntimeError):
-    """User-friendly authentication failure."""
+    """User-friendly authentication failure.
+
+    ``reason`` is an optional machine tag the frontend maps to its own wording
+    through SIGNIN_ERRORS (app.js:1033). When absent the handler in
+    server/app.py falls back to the offline/rejected split it has always
+    computed, so every existing raise site is unaffected.
+    """
+
+    def __init__(self, message: str, reason: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class AuthNetworkError(AuthError):
