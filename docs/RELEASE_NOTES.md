@@ -1,7 +1,37 @@
-# Yoto Maker v0.1.11
+# Yoto Maker v0.1.12
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
+
+### 🆕 New in v0.1.12
+
+- **Nothing you do changes in this release.** Making a card works exactly as it
+  did in v0.1.11 — same screen, same steps, same buttons. Everything below is
+  groundwork for one specific problem: a card that sits on the player and never
+  finishes downloading.
+- **If the app can't confirm what Yoto really made, it now writes that down.**
+  When you send a card, Yoto converts your audio and tells the app what it
+  produced. The app puts that answer on the card so the player knows what it's
+  fetching. If Yoto doesn't answer, the app falls back to describing the file on
+  your computer instead — and that guess can be wrong, which is the leading
+  suspect when a card downloads forever and never completes. Until now that
+  fallback happened in silence. It now records which track it happened on and
+  what it wrote instead, so whoever is helping you can look it up rather than
+  guess. **Nothing about how cards are made has changed** — the app makes the
+  same card it made before; it just no longer keeps quiet about this one thing.
+
+### 🛠️ Maintainer tooling in v0.1.12
+
+Not part of the app. `python -m yoto_maker.repair` is a command-line tool run
+from source by the maintainer to fix cards that were already made; there is
+nothing to press for it in Yoto Maker itself.
+
+- **The repair tool now writes track links and icons in the form Yoto's API
+  requires.** When it read a card back, some fields came in as full web
+  addresses; writing those straight back could leave a repaired card worse than
+  it started. It now converts them to the short reference form Yoto expects
+  (`yoto:#…`) before saving, for both the audio of each track and each track's
+  16×16 icon, and refuses to write at all if anything looks unrecognisable.
 
 ### 🆕 New in v0.1.11
 - **You can add several audio files at once.** Press **📁 Choose audio files**
