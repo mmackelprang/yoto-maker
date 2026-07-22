@@ -33,7 +33,7 @@
               "display": {
                 "icon16x16": "https://card-content.yotoplay.com/1xJ_Tu4k345UwMBV_8OSfLr_ZcZFQsn4uwTuaHbMOgTA~/xV2a9v63mNcsYy5QYsBhlmK5MXgoM5Fuk8ed4nQqcUg"
               },
-              "trackUrl": "https://secure-media.yotoplay.com/1xJ_Tu4k345UwMBV_8OSfLr_ZcZFQsn4uwTuaHbMOgTA~/44aJeE5Xj4OTnmK3VpoYNATWziizU3w4HLucKHqjmec?<REDACTED>"
+              "trackUrl": "https://secure-media.yotoplay.com/1xJ_Tu4k345UwMBV_8OSfLr_ZcZFQsn4uwTuaHbMOgTA~/44aJeE5Xj4OTnmK3VpoYNATWziizU3w4HLucKHqjmec?Expires=1753052400&Signature=REDACTED&Key-Pair-Id=REDACTED#sha256=44aJeE5Xj4OTnmK3VpoYNATWziizU3w4HLucKHqjmec"
             }
           ]
         }

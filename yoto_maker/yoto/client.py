@@ -387,13 +387,14 @@ class YotoClient:
         keys, ordering and every unmodelled field survive. This is deliberately
         NOT routed through build_content_payload.
 
-        CAVEAT (pre-merge review HIGH #1): repair.py hands us the deep-copied GET
-        body, whose track ``trackUrl`` values are RESOLVED, time-limited signed CDN
-        URLs (not the ``yoto:#<sha>`` refs written at create time). We POST them back
-        verbatim on the "change only format" principle, relying on Yoto re-mapping
-        its own CDN URL to the internal audio reference. That round-trip is UNPROVEN
-        by this tool's verify (which runs inside the signing window). The repair CLI
-        prints a staged-rollout warning in --apply mode for exactly this reason.
+        HIGH #1 (pre-merge review, now hardened): a GET /card RESOLVES each track's
+        ``trackUrl`` to a short-lived, pre-signed CDN URL. repair.py canonicalizes
+        every ``trackUrl`` back to the ``yoto:#<sha>`` ref (exactly what the create
+        flow POSTs) BEFORE calling us, so the body we POST carries no resolved/expiring
+        URL - the round-trip is the same reference form the card was created with, and
+        repair's sha-based verify confirms the re-GET re-resolves to the same sha.
+        (This method itself just posts what it is given; the canonicalization is the
+        caller's contract - see yoto/repair.py build_repair_payload.)
         """
         payload = dict(body)
         payload["cardId"] = card_id
