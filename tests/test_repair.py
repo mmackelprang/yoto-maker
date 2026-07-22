@@ -702,6 +702,38 @@ def test_verify_fails_when_the_sha_actually_changes(tmp_path):
     assert any("trackurl" in p.lower() for p in res.problems)
 
 
+def test_verify_fails_when_an_icon_mediaid_changes(tmp_path):
+    """Parity with the trackUrl case: a re-GET whose icon points at a DIFFERENT
+    mediaId is caught even though the <policy>~ prefix also rotated."""
+    before = _real_shaped_card(("mp3", "mp3"), prefix="POLICYA", sig="SIGA")
+    after = _real_shaped_card(("opus", "opus"), prefix="POLICYB", sig="SIGB")
+    other_mid = ("COMPLETELYdifferentMediaId" + "z" * 43)[:43]
+    after["content"]["chapters"][0]["tracks"][0]["display"]["icon16x16"] = (
+        f"https://card-content.example/POLICYB~/{other_mid}")
+    fake = FakeClient(before, after=after)
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "verify-failed"
+    assert any("icon16x16" in p.lower() for p in res.problems)
+
+
+def test_card_level_icon_problem_reports_blocked_not_empty(tmp_path):
+    """A card the walker finds no tracks on but with an un-canonicalizable chapter
+    icon reports 'blocked' (with the reason), never a silent 'empty'."""
+    body = {"cardId": "C1", "title": "Weird",
+            "content": {"chapters": [
+                {"key": "01", "display": {"icon16x16": "https://card-content.example/P~/short"},
+                 "tracks": []}]}}
+    fake = FakeClient(body)
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "blocked"
+    assert fake.posts == []
+    assert any("icon" in p.lower() for p in res.problems)
+
+
 def test_real_fixture_canonicalizes_track_and_icon():
     """Against the sanitized REAL GET /card/gzP2B body: the resolved trackUrl
     canonicalizes to yoto:#<sha>, and the resolved icon (chapter- AND track-level)

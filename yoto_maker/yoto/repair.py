@@ -526,10 +526,13 @@ class CardPlan:
 
     @property
     def outcome(self) -> str:
-        if not self.decisions:
-            return "empty"
+        # Blocked is checked FIRST so a card-level blocker (e.g. an unresolvable
+        # chapter-level icon) is reported even on a card the walker found no tracks on
+        # - otherwise it would silently read as "empty" and its reason go unprinted.
         if self.blocked or self.card_problems:   # all-or-nothing: ANY blocker skips the card
             return "blocked"
+        if not self.decisions:
+            return "empty"
         if self.correct_keys:
             return "apply"
         return "already"            # every track already 'opus' -> idempotent no-op
