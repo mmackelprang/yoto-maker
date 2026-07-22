@@ -32,6 +32,28 @@ function show(el, on = true) { el.classList.toggle("hidden", !on); }
 function showError(el, msg) { el.textContent = msg; show(el, true); }
 function clearError(el) { el.textContent = ""; show(el, false); }
 
+// Render a .msg-box's contents. A string sets one text node — byte for byte
+// what showError() has always done. An array becomes one <p> per entry.
+//
+// The array shape is not new: CLIENT_ID_CONFIRM.body is already an array and
+// openClientIdConfirm() already renders it exactly this way into
+// #clientIdConfirmBody. This lifts that loop out of one call site so the two
+// places that now need it — the Client ID refusal messages (copy.md §4c) and
+// the grouped upload summary (spec §B.3.3) — share one implementation instead
+// of growing two. Landed as its own commit ahead of both items for that reason.
+//
+// replaceChildren() and not innerHTML: every string here is user-facing copy or
+// a filename the user chose, and a filename is attacker-controllable in the
+// only sense that matters locally — it is not ours to trust into markup.
+function setMsgBoxContent(box, content) {
+  if (!Array.isArray(content)) { box.textContent = content; return; }
+  box.replaceChildren(...content.map((text) => {
+    const p = document.createElement("p");
+    p.textContent = text;
+    return p;
+  }));
+}
+
 // Poll a background job until it finishes. Calls onProgress(percent, message).
 async function pollJob(jobId, onProgress) {
   while (true) {
