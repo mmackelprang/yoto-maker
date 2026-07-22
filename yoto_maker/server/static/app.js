@@ -1058,6 +1058,13 @@ async function refreshDraft() {
   renderTracks(draft.tracks);
   renderPicture(draft.has_picture ? draft.picture_url + "?t=" + Date.now() : null);
   show($("#adjustPic"), !!(draft.has_picture && draft.has_source));
+  // Returned so the batch runner can learn which track ids each file produced.
+  // POST /api/tracks/file reports `count` but only the FIRST track's view, and
+  // one file can become several tracks (split_audio at 50 minutes,
+  // normalize.py:191). Diffing the draft is how one file maps to one OR MORE
+  // ids without changing the endpoint's contract, which is out of scope.
+  // Every existing caller ignores this and is unaffected.
+  return draft;
 }
 
 // ---- picture crop editor (pan + zoom) -------------------------------------
@@ -1245,22 +1252,219 @@ async function addYouTube() {
   }
 }
 
-async function addFile(file) {
-  clearError($("#addError"));
-  show($("#addProgress"), true);
-  $("#addBar").style.width = "40%";
-  $("#addMsg").textContent = "Adding your file…";
-  try {
-    const fd = new FormData();
-    fd.append("file", file);
-    await api("/api/tracks/file", { method: "POST", body: fd });
-    await refreshDraft();
-  } catch (e) {
-    showError($("#addError"), e.message);
-  } finally {
-    show($("#addProgress"), false);
-  }
+// ---- add audio: the batch -------------------------------------------------
+// Upload order is natural sort by filename, applied BEFORE any upload begins.
+// Use the platform. Do NOT hand-roll digit-run splitting — it is the obvious
+// implementation, it is what gets written, and it gets 07-vs-7, unicode digits
+// and case wrong in ways that only show up on a user's machine.
+//   numeric: true        digit runs compare as numbers, so track9 < track10
+//   sensitivity: "base"  case-insensitive, so Track2 and track2 don't straddle
+//                        a case boundary — the behaviour a file manager gives
+//   ties                 keep the browser's FileList order: Array.sort has been
+//                        stable by specification since ES2019, so no tiebreak
+//                        rule is needed
+const FILENAME_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+function sortByFilename(files) {
+  return files.slice().sort((a, b) => FILENAME_COLLATOR.compare(a.name, b.name));
 }
+
+// The likely real scenario is not one corrupt MP3 — it is that she selected
+// everything in a folder, which included cover.jpg, AlbumArt.ini and notes.txt.
+// Each of those costs a round-trip and returns a server error, turning one
+// mistake into several confusing lines.
+//
+// The extension list is READ FROM #fileInput's own `accept` attribute rather
+// than restated here, so there is literally one list and it cannot drift.
+function isProbablyAudio(file) {
+  if (file.type && file.type.startsWith("audio/")) return true;
+  const exts = ($("#fileInput").getAttribute("accept") || "")
+    .split(",").map((s) => s.trim().toLowerCase()).filter((s) => s.startsWith("."));
+  const name = (file.name || "").toLowerCase();
+  return exts.some((ext) => name.endsWith(ext));
+}
+
+// The batch in flight, or the one that just finished. Null when idle.
+//   total      — files.length at the ORIGINAL pick. Summary counts are always
+//                against this, so "11 of your 12" is stable across retries.
+//   ok         — Files that landed.
+//   failed     — [{file, cls: "transient"|"deterministic", text}]
+//   notStarted — Files never attempted, because she cancelled.
+//   inflight   — the File that was going when she cancelled, or null.
+//   groups     — Map<File, string[]>. ONE FILE -> ONE OR MORE TRACK IDS.
+//   cancelled  — set on cancel; the reorder is skipped unconditionally when set.
+//   repaired   — a retry actually recovered something, so a reorder is owed.
+let BATCH = null;
+let addAbort = null;
+
+function newBatch(files) {
+  return {
+    total: files.length, ok: [], failed: [], notStarted: [], inflight: null,
+    groups: new Map(), cancelled: false, repaired: false,
+  };
+}
+
+// Entry point from the file picker. Sorts, pre-checks, then runs.
+async function addFiles(fileList) {
+  const picked = sortByFilename(Array.from(fileList));
+  if (!picked.length) return;
+
+  BATCH = newBatch(picked);
+  // Seed the "already there before this batch" set. Without it the first file
+  // would claim every pre-existing track as its own, and the reorder would then
+  // permute tracks she ordered by hand.
+  try { BATCH.__seen = (await api("/api/draft")).tracks.map((t) => t.id); }
+  catch (_) { BATCH.__seen = []; }
+  const toUpload = [];
+  for (const f of picked) {
+    if (isProbablyAudio(f)) toUpload.push(f);
+    // Pre-check skips are ALWAYS deterministic and never enter the retry set:
+    // they never reached the network, so there is nothing about them a retry
+    // could change. They land straight in the "can't be added" group with no
+    // control beside them.
+    else BATCH.failed.push({ file: f, cls: "deterministic", text: "That isn’t an audio file." });
+  }
+  await runBatch(toUpload);
+}
+
+// Seam S3 — the ONE place #addBar and #addMsg are written. No inlined "40%" or
+// width strings scattered at call sites. PR A and PR C of the job-system arc both
+// change what feeds the bar, and neither should have to touch the batch loop to
+// do it. pct is a number 0–100, or null to LEAVE THE BAR WHERE IT IS (the cancel
+// case freezes the bar and changes only the message — §B.5). msg is the status
+// line.
+function setAddProgress(pct, msg) {
+  if (pct !== null) $("#addBar").style.width = pct + "%";
+  $("#addMsg").textContent = msg;
+}
+
+// Seam S1 — the ONE upload call site. The batch loop, the retry round and the
+// n=1 path all send a file through here, so the eventual move of
+// POST /api/tracks/file onto the job system (ADR 2026-07-21, out of scope here)
+// rewrites THIS FUNCTION BODY and nothing around it — no call-site hunt.
+//
+// Returns the endpoint's {count, track} payload. Throws on failure exactly as
+// api() does, including re-throwing AbortError (Task 11) so the caller can tell
+// a cancel from a network drop.
+//
+// `onProgress` is accepted and, today, unused: fetch() has no upload-progress
+// event, so there is no intra-file percentage to report — the file-count bar the
+// loop drives is the honest signal available now. The parameter exists because
+// PR C of that arc swaps fetch() here for XMLHttpRequest + upload.onprogress, and
+// this is the seam it plugs into. Do not delete it for being unused; that is the
+// point of a seam.
+async function uploadOneFile(file, { signal, onProgress } = {}) {
+  void onProgress;
+  const fd = new FormData();
+  fd.append("file", file);
+  return api("/api/tracks/file", { method: "POST", body: fd, signal });
+}
+
+// The sequential loop. Retry re-enters this same function with the failed
+// subset as its file list (spec §B.3.1.3) — same progress bar, same #addMsg
+// format, same disabling, same summary rendering. There is no second batch flow.
+async function runBatch(files) {
+  clearError($("#addError"));
+  addAbort = new AbortController();
+  $("#addCancel").disabled = false;
+  show($("#addProgress"), true);
+  // Sequential, and that is a CORRECTNESS decision, not a performance one.
+  // _add_result_as_tracks (app.py:295) appends, so parallel uploads would land
+  // in the draft in nondeterministic order — destroying the sort order this
+  // feature just promised. Sequential upload is what makes the natural-sort
+  // rule true rather than approximately true.
+  //
+  // Both pickers are disabled for the same reason: a YouTube add or a second
+  // file batch landing mid-sequence would interleave and break the order.
+  // (#filePick was NOT disabled during a YouTube add before this change — a
+  // pre-existing interleave that multi-select makes far easier to hit. The fix
+  // is symmetric and lands in the same place.)
+  $("#filePick").disabled = true;
+  $("#ytAdd").disabled = true;
+
+  const n = files.length;
+  const single = BATCH.total === 1;
+  try {
+    for (let i = 0; i < n; i++) {
+      const file = files[i];
+      if (BATCH.cancelled) { BATCH.notStarted.push(file); continue; }
+
+      BATCH.inflight = file;
+      // n=1 keeps today's behaviour EXACTLY: bar at 40%, "Adding your file…".
+      // It is the overwhelmingly common case, it works, and changing it is a
+      // regression risk for no gain. The batch treatment appears only when
+      // there is a batch.
+      //
+      // In a retry round, n is the RETRY count and not the original batch size:
+      // she is watching two files go by, and "Adding 1 of 12" would be a lie.
+      // The summary count stays against the original — different numbers,
+      // different questions.
+      setAddProgress(
+        single ? 40 : Math.round((i / n) * 100),
+        single ? "Adding your file…" : `Adding ${i + 1} of ${n} — ${file.name}`,
+      );
+
+      try {
+        await uploadOneFile(file, { signal: addAbort.signal });
+        // refreshDraft() runs after EACH success, so rows appear one by one as
+        // she watches. The track list is the per-file progress display — it
+        // already exists, it is the app's own model of truth, and on a partial
+        // failure it does the hardest job for free: the successes are already
+        // on screen and obviously safe. Cost is n round-trips over loopback.
+        const draft = await refreshDraft();
+        BATCH.ok.push(file);
+        BATCH.groups.set(file, newTrackIds(draft));
+        BATCH.inflight = null;
+      } catch (e) {
+        BATCH.inflight = null;
+        if (e && e.name === "AbortError") {
+          // Cancellation is NOT a failure and goes in neither group. She
+          // stopped on purpose; classifying her decision as a failure and
+          // offering to retry it would be presumptuous, and it would blur
+          // "Try again" into meaning two different things.
+          BATCH.cancelled = true;
+          BATCH.inflight = file;
+          continue;
+        }
+        // Continue, never stop. Stopping strands the files she already chose,
+        // for a reason she did not cause, and forces her to re-pick a subset
+        // she now has to compute by hand. The failures here are properties of
+        // individual files — one bad file says nothing about the next.
+        const cls = classifyUploadError(e);
+        BATCH.failed.push({ file, cls, text: uploadReasonText(e, cls, BATCH.total) });
+      }
+    }
+  } finally {
+    addAbort = null;
+    show($("#addProgress"), false);
+    $("#filePick").disabled = false;
+    $("#ytAdd").disabled = false;
+  }
+
+  await repairOrderIfNeeded();
+  renderAddError();
+}
+
+// Track ids present in `draft` that this batch has not already claimed.
+// A set difference and not a tail slice: the per-row delete buttons are
+// deliberately NOT disabled during a batch, so the list can shrink under us and
+// a slice would mis-attribute. Uploads are sequential and both pickers are
+// disabled, so nothing else appends.
+function newTrackIds(draft) {
+  const claimed = new Set();
+  for (const ids of BATCH.groups.values()) for (const id of ids) claimed.add(id);
+  const priorOk = new Set(BATCH.__seen || []);
+  const all = draft.tracks.map((t) => t.id);
+  const fresh = all.filter((id) => !claimed.has(id) && !priorOk.has(id));
+  BATCH.__seen = all.filter((id) => !fresh.includes(id));
+  return fresh;
+}
+
+// ---- forward stubs; filled in by Tasks 14–16 ------------------------------
+function classifyUploadError(e) { return "transient"; }   // Task 14
+function uploadReasonText(e, cls, total) { return e.message; }   // Task 14
+async function repairOrderIfNeeded() {}                    // Task 16
+function renderAddError() {}                               // Task 14
 
 // ---- picture --------------------------------------------------------------
 function renderPicture(url) {
@@ -1430,7 +1634,13 @@ function wire() {
   $("#ytAdd").addEventListener("click", addYouTube);
   $("#ytUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") addYouTube(); });
   $("#filePick").addEventListener("click", () => $("#fileInput").click());
-  $("#fileInput").addEventListener("change", (e) => { if (e.target.files[0]) addFile(e.target.files[0]); e.target.value = ""; });
+  $("#fileInput").addEventListener("change", (e) => {
+    if (e.target.files && e.target.files.length) addFiles(e.target.files);
+    // The File objects are held in BATCH from here on, so nothing is re-read
+    // from disk on a retry and she is never re-prompted. Clearing the input is
+    // what lets her pick the same files again.
+    e.target.value = "";
+  });
   $("#skipSponsors").addEventListener("change", (e) => {
     api("/api/settings/remove-sponsors", {
       method: "POST", headers: { "Content-Type": "application/json" },
