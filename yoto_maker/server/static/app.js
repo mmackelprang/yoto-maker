@@ -918,6 +918,40 @@ function renderClientId() {
   // "Go back to the built-in one" would be a lie (overview.md §7.4).
   const reset = $("#clientIdReset");
   if (reset) reset.classList.toggle("primary", verdict === "invalid");
+
+  // Setting 3 reads the same STATUS.yoto (its "Client ID in use" row obeys the
+  // same mask-suppression rule). Render it in the SAME PASS so a save that
+  // changes the value cannot leave the two sections disagreeing (§A.3.3).
+  // Guarded so renderClientId() is still safe to call before setting 3 exists.
+  if (typeof renderHelpSection === "function") renderHelpSection();
+}
+
+// copy.md §7 row 3. Bare facts answering "where did it come from?", NOT the §4b
+// status headlines, which answer "what state am I in?" as a sentence. Reusing
+// "Using the built-in Client ID" as a value under the label "Where that came
+// from" would read as a fragment.
+const CLIENT_ID_ORIGIN = {
+  builtin: "Built in",
+  saved: "Saved on this computer",
+  env: "Set outside the app",
+};
+
+function renderHelpSection() {
+  const cfg = (STATUS && STATUS.config) || {};
+  const y = (STATUS && STATUS.yoto) || {};
+  const verdict = y.client_id_verdict || "ok";
+
+  $("#helpVersion").textContent = cfg.version || "";
+  // Same mask-suppression rule as setting 2, and no drift risk: both render
+  // from the same STATUS.yoto object in the same pass (overview.md §7.2).
+  const shapeFailed = verdict === "invalid" || verdict === "unusual";
+  $("#helpClientId").textContent =
+    shapeFailed ? (y.client_id_full || y.client_id_masked || "")
+                : (y.client_id_masked || "");
+  $("#helpClientIdSource").textContent =
+    CLIENT_ID_ORIGIN[y.client_id_source] || CLIENT_ID_ORIGIN.builtin;
+  $("#helpRedirect").textContent = cfg.redirect_uri || "";
+  $("#helpDataDir").textContent = cfg.data_dir || "";
 }
 
 function openClientIdConfirm(kind, unusual = false) {
@@ -1500,6 +1534,11 @@ function wire() {
     confirm: $("#clientIdConfirm"),
     closeConfirm: closeClientIdConfirm,
   });
+
+  // Setting 3 — read-only. No confirm, no closeConfirm, nothing to clear on
+  // close. It re-renders on entry so a value that changed while she was on the
+  // card view (a saved Client ID, a restart onto a different port) is current.
+  registerSetting({ onOpen: renderHelpSection });
 
   // Fails loudly in the console if a future .setting-confirm forgets to
   // register. Runs after every section above has registered.
