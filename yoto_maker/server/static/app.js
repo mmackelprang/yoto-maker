@@ -1367,6 +1367,11 @@ async function runBatch(files) {
   clearError($("#addError"));
   addAbort = new AbortController();
   $("#addCancel").disabled = false;
+  // #addCancel is hidden by default and revealed here, for the file-batch flow
+  // ONLY. #addProgress is shared with addYouTube(), which wires no
+  // AbortController, so a Cancel shown on that path would be a dead button.
+  // Scoping the reveal to runBatch keeps it off the YouTube add.
+  show($("#addCancel"), true);
   show($("#addProgress"), true);
   // Sequential, and that is a CORRECTNESS decision, not a performance one.
   // _add_result_as_tracks (app.py:295) appends, so parallel uploads would land
@@ -1387,7 +1392,15 @@ async function runBatch(files) {
   try {
     for (let i = 0; i < n; i++) {
       const file = files[i];
-      if (BATCH.cancelled) { BATCH.notStarted.push(file); continue; }
+      // Per-invocation abort signal, NOT the sticky BATCH.cancelled. A fresh
+      // AbortController is created at the top of every runBatch (including a
+      // retry re-entry), so this guard resets each call. Reading BATCH.cancelled
+      // here — which is set on cancel and never cleared — would make a retry
+      // after any cancel re-enter with it still true and route every retried
+      // file straight to notStarted WITHOUT uploading it, silently no-oping the
+      // retry she just pressed (Test Plan §I.9). BATCH.cancelled stays sticky,
+      // but only for the summary/reorder rendering that legitimately needs it.
+      if (addAbort.signal.aborted) { BATCH.notStarted.push(file); continue; }
 
       BATCH.inflight = file;
       // n=1 keeps today's behaviour EXACTLY: bar at 40%, "Adding your file…".
@@ -1437,6 +1450,7 @@ async function runBatch(files) {
   } finally {
     addAbort = null;
     show($("#addProgress"), false);
+    show($("#addCancel"), false);
     $("#filePick").disabled = false;
     $("#ytAdd").disabled = false;
   }

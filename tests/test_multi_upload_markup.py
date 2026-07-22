@@ -257,3 +257,36 @@ def test_seam_s3_one_progress_setter(app_js):
     batch = app_js[app_js.index("async function runBatch") : app_js.index("async function retryTransient")]
     assert '$("#addBar").style.width' not in batch
     assert 'setAddProgress(' in batch
+
+
+# --- pre-merge review fixes (Stack B): two regressions caught before merge -----
+
+def test_the_batch_skip_guard_resets_per_invocation_not_the_sticky_flag(app_js):
+    """Pre-merge HIGH. The loop's "skip remaining files" guard must read the
+    per-invocation abort signal — a fresh AbortController is created at the top of
+    every runBatch, including a retry re-entry, so it resets each call. Reading the
+    sticky BATCH.cancelled (set on cancel, never cleared) would make a retry after
+    ANY cancel re-enter with it still true and route every retried file to
+    notStarted WITHOUT uploading it — a silent no-op of the retry (Test Plan §I.9).
+    BATCH.cancelled stays sticky, but only for summary/reorder rendering."""
+    fn = app_js[app_js.index("async function runBatch") : app_js.index("function newTrackIds")]
+    assert "if (addAbort.signal.aborted) { BATCH.notStarted.push(file); continue; }" in fn
+    # The old sticky-flag guard must be gone from the loop.
+    assert "if (BATCH.cancelled) { BATCH.notStarted.push(file); continue; }" not in fn
+
+
+def test_cancel_is_scoped_to_the_file_batch_not_youtube(index_html, app_js):
+    """Pre-merge MEDIUM. #addCancel shares #addProgress with addYouTube(), which
+    wires no AbortController — so a Cancel shown on the YouTube path is a dead
+    button. It is hidden by default and revealed ONLY by runBatch(); addYouTube()
+    never reveals it."""
+    btn = index_html[index_html.index('id="addCancel"'):]
+    btn = btn[:btn.index(">") + 1]
+    assert "hidden" in btn, "#addCancel must be hidden by default"
+
+    rb = app_js[app_js.index("async function runBatch") : app_js.index("function newTrackIds")]
+    assert 'show($("#addCancel"), true)' in rb
+    assert 'show($("#addCancel"), false)' in rb
+
+    yt = app_js[app_js.index("async function addYouTube") : app_js.index("// ---- add audio: the batch")]
+    assert '$("#addCancel")' not in yt, "addYouTube must not touch #addCancel"

@@ -90,10 +90,12 @@
              copy.md §3 already uses for the signing_in state, where
              interactions.md §2.4 puts Cancel next to a disabled primary during
              a long wait. Same problem, same answer, no new vocabulary.
-             It appears whenever #addProgress does, INCLUDING for a single file:
-             that is where the multi-minute waits actually live today, so
-             excluding n=1 would withhold the button from the case that
-             motivated it.
+             Hidden by default and revealed by runBatch() for the file-batch flow
+             ONLY, INCLUDING a single file: that is where the multi-minute waits
+             actually live today, so excluding n=1 would withhold the button from
+             the case that motivated it. It is deliberately NOT shown for a
+             YouTube add, which shares #addProgress but wires no AbortController,
+             so revealing it there would be a dead button.
              align-items and the inline margin-top mirror .progress .msg's own
              8px so the two tops align. Zero new CSS. -->
         <div class="row wrap" style="align-items:flex-start">
@@ -103,7 +105,7 @@
                user has, and hearing nothing for forty seconds is
                indistinguishable from a hung app. -->
           <div class="msg grow" id="addMsg" role="status"></div>
-          <button id="addCancel" class="btn small" style="margin-top:8px">Cancel</button>
+          <button id="addCancel" class="btn small hidden" style="margin-top:8px">Cancel</button>
         </div>
       </div>
       <!-- role="alert" and tabindex="-1": neither existed, a pre-existing gap
