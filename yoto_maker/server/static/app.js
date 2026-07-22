@@ -530,10 +530,75 @@ const CLIENT_ID_CONFIRM = {
   },
 };
 
-function clientIdMsg(kind, text) {
+// The client-side mirror of config.py's validate_client_id(). It exists ONLY
+// for the honesty of the confirmation flow — never confirm an action that will
+// be refused (interactions.md §3.6.3, extending §3.2's "never confirm a no-op"
+// from no-op to no-op or refusal). Showing the save confirmation for a value
+// that will be refused would ask the user to accept a frightening consequence
+// ("you'll need to sign in to Yoto again") that is never going to happen, and
+// then error at her.
+//
+// THE SERVER CHECK IS THE SAFETY PROPERTY (app.py set_client_id). This one is
+// allowed to be a second implementation for that reason and for no other; it
+// must stay in lockstep with config.py. Same deny-list, same order, same
+// reasons. It is NOT the 32-character rule — see config.validate_client_id.
+function clientIdVerdict(value) {
+  const t = (value || "").trim();
+  if (!t) return { verdict: "invalid", reason: "length" };
+  if (t.includes("@")) return { verdict: "invalid", reason: "email" };
+  if (t.includes("/") || t.includes(":")) return { verdict: "invalid", reason: "url" };
+  if (t.includes("<") || t.includes(">")) return { verdict: "invalid", reason: "charset" };
+  if (/\s/.test(t)) return { verdict: "invalid", reason: "spaces" };
+  if (t.length > 128) return { verdict: "invalid", reason: "too_long" };
+  if (!/^[A-Za-z0-9]{32}$/.test(t)) return { verdict: "unusual", reason: "charset" };
+  return { verdict: "ok", reason: null };
+}
+
+// copy.md §4c, verbatim. Three paragraphs each: what you entered / what it
+// should be / reassurance. The reassurance line is appended at render time
+// because it is state-dependent.
+const CLIENT_ID_REFUSAL = {
+  email: [
+    "That looks like an email address, not a Client ID.",
+    "A Client ID is a code from Yoto’s developer website — letters and numbers, with " +
+    "no @ sign. It isn’t the email address you sign in to Yoto with.",
+  ],
+  url: [
+    "That looks like a web address, not a Client ID.",
+    "The setup page shows a web address and a Client ID next to each other, and it’s " +
+    "easy to copy the wrong one. The Client ID is the shorter one — just letters and " +
+    "numbers.",
+  ],
+  _default: [
+    "That doesn’t look like a Client ID.",
+    "A Client ID is one unbroken run of letters and numbers, with no spaces. It may " +
+    "help to copy it again from Yoto’s developer website.",
+  ],
+};
+
+// The reassurance line is TRUE ONLY BECAUSE the server's verdict check runs
+// above get_settings().set(...) and above logout() (app.py set_client_id). It is
+// the readable form of that invariant. If the ordering ever changes, this string
+// must change with it.
+//
+// And it is state-dependent because "you're still signed in" is false when she
+// isn't, and a reassurance that is audibly wrong about her situation costs more
+// trust than it buys. copy.md §4c; same rule §1a and §4 already apply twice.
+function clientIdReassurance() {
+  const connected = !!(STATUS && STATUS.yoto && STATUS.yoto.connected);
+  return connected
+    ? "Nothing was changed, and you’re still signed in to Yoto."
+    : "Nothing was changed.";
+}
+
+function clientIdMsg(kind, content) {
   const box = $("#clientIdMsg");
   box.className = "msg-box " + kind;
-  box.textContent = text;
+  // A string is one text node, exactly as before; an array is one <p> each.
+  // The refusal messages (copy.md §4c) are three paragraphs — what you entered
+  // / what it should be / reassurance — and the reassurance line keeps its own
+  // visual separation because it is the sentence doing the most work.
+  setMsgBoxContent(box, content);
   show(box, true);
 }
 
@@ -667,13 +732,21 @@ function renderClientId() {
   }
 }
 
-function openClientIdConfirm(kind) {
+function openClientIdConfirm(kind, unusual = false) {
   const c = CLIENT_ID_CONFIRM[kind];
   $("#clientIdConfirm").dataset.kind = kind;
   $("#clientIdConfirmText").textContent = c.title;
   const body = $("#clientIdConfirmBody");
   body.innerHTML = "";
-  c.body.forEach((para) => {
+  // An `unusual` value IS saved — the concern is named, not enforced. One extra
+  // paragraph, inserted FIRST, above "Yoto Maker will start using the Client ID
+  // you pasted." No new UI: the slot already carries multi-paragraph bodies.
+  // copy.md §4c. Buttons unchanged: Never mind / Yes, use it.
+  const paras = unusual
+    ? ["Just so you know: a Client ID is usually 32 letters and numbers, and this one " +
+       "isn’t. If you’re sure it’s right, go ahead."].concat(c.body)
+    : c.body;
+  paras.forEach((para) => {
     const p = document.createElement("p");
     p.textContent = para;
     body.appendChild(p);
@@ -1197,7 +1270,20 @@ function wire() {
       $("#clientIdInput").focus();
       return;
     }
-    openClientIdConfirm("save");
+    const { verdict, reason } = clientIdVerdict(cid);
+    if (verdict === "invalid") {
+      // Never confirm a refusal, either — the same rule, extended.
+      // Focus and input handling mirror interactions.md §3.2 exactly: show the
+      // message, focus the input, LEAVE THE VALUE INTACT so nothing she pasted
+      // is lost, open no confirmation, touch neither the value display nor the
+      // actions. Select-all on focus was considered and rejected — her first
+      // job here is to READ what she typed and recognise it.
+      const body = CLIENT_ID_REFUSAL[reason] || CLIENT_ID_REFUSAL._default;
+      clientIdMsg("err", body.concat(clientIdReassurance()));
+      $("#clientIdInput").focus();
+      return;
+    }
+    openClientIdConfirm("save", verdict === "unusual");
   };
   $("#clientIdSave").addEventListener("click", trySave);
   $("#clientIdInput").addEventListener("keydown", (e) => { if (e.key === "Enter") trySave(); });
