@@ -488,26 +488,81 @@ function cancelSignIn() {
 
 // ---- setting 2: Yoto Client ID --------------------------------------------
 // Copy is verbatim from the design handoff (copy.md §4). Do not reword.
+// copy.md §4b. Replaces the three-row table this object used to hold.
+//
+// Keyed source-then-verdict, and the table is TOTAL: every combination of
+// source and verdict has a row, including builtin+invalid, which is unreachable
+// in a correct build and guarded by test_the_shipped_default_scores_ok. It
+// exists so nobody has to reason about whether a gap is a decision. Same
+// completeness discipline tokens.md §4 adopted after an unmeasured pair shipped
+// a 2.56:1 label.
+const ENV_SUB =
+  "Someone set this up on this computer using YOTO_CLIENT_ID, and that takes " +
+  "priority. To change it, they’ll need to change it there.";
+
+const CANT_SIGN_IN_FIX_BELOW =
+  "Yoto Maker can’t sign in to Yoto until this is fixed. " +
+  "Press \"Go back to the built-in one\" below.";
+
 const CLIENT_ID_STATUS = {
   builtin: {
-    cls: "is-ok", head: "Using the built-in Client ID",
-    sub: "This is what most people use. Nothing to do here.",
+    ok: {
+      cls: "is-ok", head: "Using the built-in Client ID",
+      sub: "This is what most people use. Nothing to do here.",
+    },
+    invalid: {
+      cls: "is-err", head: "Something’s wrong with the built-in Client ID",
+      sub: "Yoto Maker can’t sign in to Yoto. This shouldn’t be possible — the " +
+           "details at the bottom of this page are what someone will need to help you.",
+    },
   },
   saved: {
-    cls: "is-ok", head: "Using your own Client ID",
-    // Was "Ends in {last3}. Saved on this computer only." The value fragment
-    // moved to the body (copy.md §4a), where the whole mask is shown instead of
-    // three characters — the sentence is not losing information, it is losing a
-    // worse copy of it. It also retires a mild breach of the primitive's rule
-    // §4.3.2 (never surface a raw stored value in the status slot).
-    sub: "Saved on this computer only.",
+    ok: {
+      cls: "is-ok", head: "Using your own Client ID",
+      sub: "Saved on this computer only.",
+    },
+    unusual: {
+      cls: "is-warn", head: "Using your own Client ID",
+      sub: "Saved on this computer only. It isn’t the usual 32 letters and numbers, " +
+           "so signing in to Yoto may not work.",
+    },
+    invalid: { cls: "is-err", head: "This isn’t a Client ID", sub: CANT_SIGN_IN_FIX_BELOW },
+    // The email case gets its OWN headline. The thesis of this whole change is
+    // that NAMING the mistake is what visibility failed to do — the mask
+    // rendered mandydeogie@gmail.com as "mand…com", deleting the one substring
+    // that would have made it self-evident. Being explicit in the save refusal
+    // while being coy here would be inconsistent, and this is the exact user in
+    // the incident.
+    invalid_email: {
+      cls: "is-err", head: "That’s an email address, not a Client ID",
+      sub: CANT_SIGN_IN_FIX_BELOW,
+    },
   },
   env: {
-    cls: "is-warn", head: "Set outside the app",
-    sub: "Someone set this up on this computer using YOTO_CLIENT_ID, and that takes " +
-         "priority. To change it, they’ll need to change it there.",
+    // env + unusual DELIBERATELY has no row of its own. On a value a developer
+    // set on purpose, "that isn't the usual shape" is precisely the
+    // false-positive noise the deny-list's conservatism exists to suppress. On
+    // env we speak up only when the value is definitely wrong.
+    ok: { cls: "is-warn", head: "Set outside the app", sub: ENV_SUB },
+    unusual: { cls: "is-warn", head: "Set outside the app", sub: ENV_SUB },
+    invalid: {
+      cls: "is-err", head: "Set outside the app, and it isn’t a Client ID",
+      sub: "Yoto Maker can’t sign in to Yoto until this is fixed. YOTO_CLIENT_ID on " +
+           "this computer holds something that isn’t a Client ID, and only whoever " +
+           "set it can change it.",
+    },
   },
 };
+
+function clientIdStatusRow(source, verdict, reason) {
+  const tier = CLIENT_ID_STATUS[source] || CLIENT_ID_STATUS.builtin;
+  if (verdict === "invalid" && reason === "email" && tier.invalid_email) {
+    return tier.invalid_email;
+  }
+  // Falls back to the tier's `ok` row for any combination the table does not
+  // enumerate (builtin+unusual, which the shipped default makes unreachable).
+  return tier[verdict] || tier.ok;
+}
 
 const CLIENT_ID_CONFIRM = {
   save: {
@@ -660,7 +715,9 @@ function renderClientId() {
   const source = y.client_id_source || "builtin";
   const masked = y.client_id_masked || "";
   const full = y.client_id_full || "";
-  const s = CLIENT_ID_STATUS[source] || CLIENT_ID_STATUS.builtin;
+  const verdict = y.client_id_verdict || "ok";
+  const reason = y.client_id_reason || null;
+  const s = clientIdStatusRow(source, verdict, reason);
 
   $("#clientIdStatus").className = "setting-status " + s.cls;
   $("#clientIdStatusHead").textContent = s.head;
@@ -679,18 +736,27 @@ function renderClientId() {
   const showValue = source !== "builtin" && !!masked;
   show($("#clientIdCurrent"), showValue);
   if (showValue) {
-    // The toggle is OMITTED, not disabled, whenever it could do nothing:
-    //   - no client_id_full  → a frontend newer than its server. Degrade to the
-    //                          mask alone rather than render a control that
-    //                          cannot act.
-    //   - masked === full    → mask_client_id() returns values of 8 characters
-    //                          or fewer unchanged (config.py:88-89), so the
-    //                          whole thing is already on screen and offering to
-    //                          show it is a lie. Compare the two strings;
-    //                          NEVER re-implement the server's length rule.
-    const canReveal = !!full && full !== masked;
+    // interactions.md §3.6.4 adds two rows ABOVE the existing ones, reached by
+    // the same principle the table already establishes: the toggle is OMITTED,
+    // never disabled, whenever it could do nothing. Here it could do nothing
+    // because the whole value is already displayed.
+    //
+    // THE RULE: the mask is the summary form of a value that has the expected
+    // SHAPE. Applied to a value that does not, it is not a summary — it is
+    // camouflage. mask_client_id("mandydeogie@gmail.com") is "mand…com", which
+    // deleted @gmail.com — the exact substring that would have made the mistake
+    // self-evident — and what survived reads MORE code-like than the original.
+    //
+    // `unusual` matters here as much as `invalid`: a truncated 17-character
+    // paste masks to "a8OG…tDU", hiding the truncation completely and looking
+    // entirely plausible.
+    const shapeFailed = verdict === "invalid" || verdict === "unusual";
+    const canReveal = !shapeFailed && !!full && full !== masked;
+    // clientIdRevealed is irrelevant when there is no toggle and must not be
+    // consulted (§3.6.4). Its three reset events are unchanged.
     const revealed = canReveal && clientIdRevealed;
-    $("#clientIdValue").textContent = revealed ? full : masked;
+    $("#clientIdValue").textContent =
+      shapeFailed ? (full || masked) : (revealed ? full : masked);
     setClientIdRevealLabel(revealed);
     show($("#clientIdReveal"), canReveal);
   }
@@ -730,6 +796,18 @@ function renderClientId() {
     if (isEnv) actions.remove();
     else show(actions, source === "saved");
   }
+
+  // Promoted to .btn primary in the invalid state ONLY, and this does not
+  // breach overview.md §4.3.4's one-primary-per-setting rule: the Client ID
+  // section has NO primary today — Save and the reset are both plain .btn — so
+  // promoting one is within budget. It is the only state in which this section
+  // has a primary action.
+  //
+  // Null when source is "env": the actions block is removed entirely there,
+  // because deleting the saved value would fall through to the env var and
+  // "Go back to the built-in one" would be a lie (overview.md §7.4).
+  const reset = $("#clientIdReset");
+  if (reset) reset.classList.toggle("primary", verdict === "invalid");
 }
 
 function openClientIdConfirm(kind, unusual = false) {
