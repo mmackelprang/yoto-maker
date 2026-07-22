@@ -1,6 +1,38 @@
 # Builder queue
 
-**Last updated:** 2026-07-20 by Builder — **v0.1.10 is released. Items 8 and 9
+**Last updated:** 2026-07-21 by Builder — **item 13 claimed and in flight.**
+Branch `feat/client-id-validation-and-multi-upload`; shipping as v0.1.11 in the
+four commit stacks (0 → A → B → C) the plan mandates. **Protocol override for
+this item: it will be taken to green and left awaiting maintainer sign-off, NOT
+auto-merged** — Item A is auth-adjacent (it rewrites the Client ID / sign-in
+flow) and falls under the "pause before merge on anything sensitive" rule.
+
+Previously: 2026-07-21 by Planner — **two queue edits, no new feature spec.**
+(1) The latent **HTTPException-copy-loss bug is now folded into item 13** as a new
+Stack 0 task (**Task 1b**): `api()` gains a string-guarded `data.detail` fallback so
+every `HTTPException` message becomes visible, with a copy audit of all eleven
+raises and the one developer-ish string (`Unknown icon`) softened. Item 13 is now
+**20 tasks**; its row, briefing, and the plan's §Commit stacks / §Deviations /
+§For the queue / Test Plan §L are all updated. (2) **The job-system arc from the
+file-upload ADR is now tracked as three dependency-ordered rows — items 14 (PR A),
+15 (PR B), 16 (PR C)** — deliberately not collapsed, because PR A is independently
+shippable. All three are **⛔ blocked on item 13 shipping first and on ADR
+approval** (the ADR is still `proposed`); PR C additionally needs a maintainer
+**go/no-go** before it is planned. See the arc briefing.
+
+Previously: 2026-07-21 by Planner — **item 13 filed and planned: Client ID
+validation + multi-file audio upload, one PR in three commit stacks, shipping as
+v0.1.11.** It answers a real incident — the maintainer's daughter typed her email
+address into the Client ID field, the app saved it and called `logout()`,
+destroying her working session behind an opaque Auth0 error. Item A (stacks 0+A)
+prevents that class of failure; Item B (stack B) is the unrelated multi-file
+upload that ships alongside. **Read the row's briefing notes before starting —
+the commit-stack ordering is a hard shipping constraint, and three findings in
+the plan are exactly the things that get lost between spec and build.** The plan
+also builds the three job-system-ADR seams (S1/S2/S3) into Item B; **that arc
+itself is out of scope for this PR.**
+
+Previously: 2026-07-20 by Builder — **v0.1.10 is released. Items 8 and 9
 are both `🚢 released`.** PR #16 merged as `be93ee1` after both gates cleared;
 tag `v0.1.10` → `715bd1c` on the remote; `YotoMaker.exe` (127,040,616 bytes)
 uploaded. Suite **137 passed**. Release:
@@ -163,6 +195,121 @@ day because these two states shared one word.
 | 10 | 📋 | **The header pill's label wraps to two lines at 320px** — the header grows to 110px and the pill to 48px | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic, **pre-existing and proven so** — measured identically (pill 48px, header 110px, `scrollWidth` 305) on the pre-PR `.exe` control at the same width, and removing the new chevron does not change it by a pixel. **No overflow, no horizontal scroll, no overlap with the brand** — the header just gets taller. Item 9's Test Plan §E.5 expected "no wrap" and prescribed dropping the chevron's leading gap if tight; that escalation is **inapplicable**, since even the shortest label wraps with the chevron removed entirely. The real cause is `.brand` + pill exceeding 320px, which is a header-layout question item 9 was explicitly forbidden from touching. |
 | 11 | 📋 | **`⚙️` is unhidden text inside `#advToggle`'s accessible name** — the step-3 link announces as *"gear Connect a different Yoto account"* | _needs Designer pass_ | _needs Designer pass_ | — | LOW, **pre-existing since v0.1.9**, from PR #16's Polisher gate. **Needs Designer, not Builder** — see briefing notes; it is specced-in, not an oversight, and the obvious fix collides with two other rules. |
 | 12 | 📋 | **`#advToggle`'s touch target is ~20px against WCAG 2.2 AA's 24×24** | _needs Planner pass_ | _needs Planner pass_ | — | LOW, **pattern-level and pre-existing**. It matches the canonical footer link `#settingsLink` exactly, so this is a question about the app's link pattern, not about one control. Enlarging *this* link alone is the prominence increase `overview.md` §12.7 forbids. Fix the pattern or accept it — do not special-case one link. |
+| 13 | 🚧 | **Client ID validation + multi-file audio upload** — Item A blocks a malformed Client ID before it can destroy a working sign-in or fire a doomed authorize request; Item B adds sequential multi-file upload with grouped partial-failure reporting, retry and cancel | [`specs/2026-07-21-client-id-validation-and-multi-file-upload-design.md`](superpowers/specs/2026-07-21-client-id-validation-and-multi-file-upload-design.md) | [`plans/2026-07-21-client-id-validation-and-multi-file-upload.md`](superpowers/plans/2026-07-21-client-id-validation-and-multi-file-upload.md) | — | **Ships as v0.1.11. HIGH — Item A closes a live account-lockout footgun a real user hit.** One PR, **three commit stacks in order 0 → A → B → C** (see briefing notes); Item A must revert independently. 20 tasks — Stack 0 also folds in the latent HTTPException-message-visibility fix (Task 1b). **The plan owns the version bump — it must, the version string is the asset cache key.** Extends the `configuration-surface/` handoff (§13, `copy.md` §4b–d/§7, `interactions.md` §3.6); Item B's surface has no handoff by decision. |
+| 14 | ⛔ | **Move `POST /api/tracks/file` onto the background job system (ADR PR A)** — the endpoint returns `{job_id}` and runs on a job thread, matching `/api/tracks/youtube`. Removes a redundant ~260 MB double-write and stops long transcodes from blocking uvicorn's event loop (today a long split hangs `/api/status` and every route) | [ADR §3.1](architecture/decisions/2026-07-21-file-upload-on-job-system.md) | _needs Planner pass_ | **13 ships first; ADR approved** | **Independently shippable and valuable — do NOT collapse the arc into one PR.** Ships without cancel or new progress. Lands on item 13's three seams (S1/S2/S3): ~15–20% client touch, near-zero deleted. **The regression the seams guard:** a job endpoint reports failure through `pollJob` with **no `.status`**, and `jobs.py` has **zero test coverage**, so item 13's reason-precedence test (classifier reads `err.data.reason`+`retryable` before `.status`) is what stops job failures misclassifying as transient (success criterion 12). Add `tests/test_jobs.py`. **Never persist jobs** (ADR §5.4) — a job surviving restart would `add_track` into a fresh empty draft. See arc briefing. |
+| 15 | ⛔ | **Exact server-side cancel + real long-file progress (ADR PR B)** — the ffmpeg `Popen` rewrite in `normalize.py::_run`, a server-side `cancelled` terminal state **distinct from `error`**, `POST /api/jobs/{id}/cancel`, job eviction, partial-segment cleanup | [ADR §3.2](architecture/decisions/2026-07-21-file-upload-on-job-system.md) | _needs Planner pass_ | **14 (PR A); 13; ADR approved** | This is the PR that **deletes the client's *"may still finish"* hedge sentence**. `cancelled` MUST be distinct from `error` or a cancel is reclassified transient and offered `Try again` (ADR §5.2.6). `_run` is shared by `probe_audio` / `normalize_to_mp3` / `split_audio` — default the new kwargs to `None` for byte-identical behavior when unset. See arc briefing. |
+| 16 | ⛔ | **Client-only XHR upload-progress for short files (ADR PR C)** — replace `fetch` with `XMLHttpRequest` in `uploadOneFile` (seam S1) for `upload.onprogress`, fed through `setAddProgress` (seam S3) | [ADR §3.3](architecture/decisions/2026-07-21-file-upload-on-job-system.md) | _needs go/no-go, then plan_ | **14 (PR A); 13; maintainer go/no-go** | **DEFERRABLE cut-line — needs an explicit maintainer go/no-go before it is planned** (ADR open question 1). Open product question: for **under-50-min files the whole wait is the upload leg**, which **only the browser can measure**, so A+B alone leave short files with a differently-fake bar (ADR §1.4, §7.4–7.5). The arc is coherent with A + B alone. See arc briefing. |
+
+### Item 13 — briefing notes
+
+- **Commit-stack order is a hard constraint, not a suggestion.** One PR, but
+  **Stack 0 (shared groundwork, 2 commits: the `.msg-box` helper + the `api()`
+  HTTPException `detail` fallback, Tasks 1 and 1b) → Stack A (Item A, tasks
+  2–10) → Stack B (Item B, tasks 11–18) → Stack C (version bump + notes, task
+  19)**. Item A's commits must be contiguous and revertable without breaking
+  Item B — which is why the shared paragraph helper is its own Stack 0 at the
+  base rather than living inside Item A. Do not interleave; finish and commit a
+  stack before the next. Plan §Commit stacks explains why the maintainer's
+  literal "two stacks" reading needed a third.
+- **The hard gate is a DENY-LIST, never the 32-character rule.** This is the
+  single most important thing not to "simplify". The 32-char alphanumeric shape
+  is *advice* that produces the `unusual` verdict; as a hard gate it would lock
+  every user out the day Yoto issues a differently-shaped ID, with recovery
+  requiring a code change and a release. It is also why `conftest.py`'s
+  `test_client_id` (14 chars, an underscore) still passes under uniform blocking.
+  Task 2's tests guard both the shipped default scoring `ok` and `test_client_id`
+  not being blocked — **a red suite anywhere in Stack A most likely means the
+  deny-list was built as an allow-list.**
+- **The refusal must run BEFORE the write and BEFORE `logout()`.** The whole
+  point is that a user with a working session never loses it to a typo, and the
+  reassurance copy (*"…and you're still signed in to Yoto."*) is true *only*
+  because of that ordering. `test_the_refusal_runs_BEFORE_the_write_and_BEFORE_logout`
+  asserts neither side effect fired — **do not relax it**; if the ordering
+  changes on purpose, the copy must change with it.
+- **Blocking is uniform across all three tiers; only the recovery copy varies.**
+  `env` and `builtin` get a recovery *sentence*, not a button (the button would
+  promise something the app can't do). Two stale sentences in the handoff
+  (`interactions.md` §3.6.2's diagram and §3.6.7's role note) still describe an
+  earlier draft that exempted `env`; **the plan flags them in §Deviations and
+  they need a post-merge amendment.** `env` blocks.
+- **Three findings the plan carries because they get lost between spec and
+  build**, each with its own task or test: `api()` must re-throw `AbortError`
+  distinctly (Task 11 — without it a user's own cancel is reported as a network
+  error *and* offered a retry); the reorder sorts **groups not tracks** and all
+  counts are **files not tracks** (one file can split into many, Task 16); and a
+  cancelled batch must **never** fire the reorder (Task 16/17).
+- **Verified during planning, so nobody re-litigates it:** a cancelled in-flight
+  file almost always still lands (the request body is buffered before the handler
+  runs, and there are no await points after it). The copy says so honestly and
+  must keep saying *"may"*. The synchronous transcode also blocks the server's
+  event loop, which is why cancel is purely client-side. Plan §Verified during
+  planning has the repro output.
+- **The plan builds three job-system-ADR seams into Item B (S1/S2/S3).** They are
+  good factoring on their own terms and cost ~30 min. **The job-system arc itself
+  is out of scope for this PR — do not plan it, do not absorb it.** S2 in
+  particular is guarded by a test because without it a future job failure would
+  misclassify and break success criterion 12.
+- **The plan owns the v0.1.11 bump (Task 19).** The version string is the asset
+  cache key (`index.html`'s `?v=__ASSET_V__`), and this PR is almost all
+  `app.js` — without the bump, existing browsers keep serving the old script
+  against the new markup, which is queue item 8's bug with a new payload.
+- **Two things surfaced for the queue, plus one now folded in** (plan §For the
+  queue): the `HTTPException`-messages-never-reach-the-user copy-loss class
+  (`api()` read `data.error`, FastAPI sends `{detail}`) is **no longer deferred —
+  it is fixed in Stack 0, Task 1b**, with a copy audit of all eleven raises and
+  the one developer-ish string it surfaces (`Unknown icon`) softened; item 2
+  (`--port` doesn't move the redirect URI) becomes *visible* for the first time
+  because setting 3 now displays that value; and the event-loop-blocking transcode
+  is now measured, strengthening the job-system case.
+
+### Items 14–16 — the file-upload-on-job-system arc (briefing)
+
+Source of truth:
+[`docs/architecture/decisions/2026-07-21-file-upload-on-job-system.md`](architecture/decisions/2026-07-21-file-upload-on-job-system.md).
+**The ADR is `proposed` and needs Mark's approval before Planner picks up any of
+the three.** All three also depend on **item 13 shipping first** — PR A rewrites
+the `POST /api/tracks/file` contract that PR B builds against.
+
+- **Do NOT collapse these into one PR.** The ADR is explicit (Option 5 over
+  Option 2): **PR A is independently shippable and valuable on its own.** It
+  removes a redundant ~260 MB double-write and — the bigger win — stops a long
+  transcode from blocking uvicorn's event loop; today a multi-minute split hangs
+  `/api/status` and *every* other route (ADR §1.1, §5.1, measured in item 13's
+  plan §Verified during planning). PR A ships without cancel and without new
+  progress.
+- **PR A is an edit, not a rewrite, because item 13 built the seams.** It lands on
+  S1 (one `uploadOneFile` call site), S2 (classifier reads `err.data.reason` +
+  `retryable` before `.status`) and S3 (one `setAddProgress` writer): ~15–20% of
+  the client touched, near-zero deleted (ADR §4). **The one load-bearing risk:** a
+  job endpoint reports failure through `pollJob` with **no `.status`**, and
+  `jobs.py` has **zero test coverage** (ADR §4.3, §6). Item 13's reason-precedence
+  branch (S2) is the *only* thing stopping a real, permanent job failure from
+  misclassifying as transient and offering a `Try again` that reliably fails
+  (success criterion 12). **PR A must add `tests/test_jobs.py`** covering
+  `reason` / `retryable` / cancelled propagation.
+- **PR A must never let a job outlive the draft — do NOT add persistence**
+  (ADR §5.4). `_draft` is a module-level global that dies with the process; a job
+  surviving a restart would `add_track` into a *fresh, empty* draft, which is
+  strictly worse than losing the job. PR A should also map a `/api/jobs/{id}` 404
+  to a *"Yoto Maker restarted"* message rather than the generic transient branch
+  (ADR §5.2.3) — that is also the owner of the copy for item 13's flagged
+  `"Job not found"` string (item 13 plan Task 1b, copy audit).
+- **PR B is one surgery that buys two things** — exact cancel and real long-file
+  progress both need the same `Popen` rewrite of `normalize.py::_run` (ADR §3.2).
+  It adds a server-side **`cancelled` terminal state that MUST be distinct from
+  `error`**: a cancel arriving as `status: "error"` is reclassified transient and
+  offered `Try again` for the thing she just stopped (ADR §5.2.6). PR B is the one
+  that **deletes the client's *"may still finish"* hedge sentence.** `_run` is
+  shared by `probe_audio` / `normalize_to_mp3` / `split_audio`; default the new
+  kwargs to `None` so unset behavior is byte-identical.
+- **PR C is the deferrable cut-line — get an explicit maintainer go/no-go before
+  planning it** (ADR open question 1, §3.3, §7.5). It is client-only
+  (`fetch` → `XMLHttpRequest` for `upload.onprogress`). The open product question:
+  for a file **under 50 minutes** — the common case — essentially the entire wait
+  is the *upload leg*, which **only the browser can measure** (ADR §1.4). So
+  **A + B alone leave short files with a differently-fake bar** (near-zero, then a
+  jump), which may read *worse* than today's fake 40% (ADR §7.4). The arc is
+  coherent with A + B alone; C is the only PR whose value is not self-evident.
 
 ### Item 9 — briefing notes
 
