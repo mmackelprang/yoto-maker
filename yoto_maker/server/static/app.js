@@ -9,6 +9,17 @@ async function api(path, opts = {}) {
   try {
     res = await fetch(path, opts);
   } catch (e) {
+    // A deliberate cancel is a fetch rejection too, and it MUST NOT be dressed
+    // up as a network failure. Without this branch, pressing Cancel reports
+    // "Couldn't reach the Yoto Maker app. Make sure it's still running" —
+    // alarming, and false. Worse: the upload classifier treats a rejection with
+    // no .status as TRANSIENT, so the user's own cancel would come back with a
+    // "Try again" button offering to retry the thing she just stopped.
+    //
+    // Re-thrown unchanged so callers can test e.name === "AbortError". No
+    // caller passed a signal before this change, so nothing else can reach this
+    // branch and no existing behaviour moves.
+    if (e && e.name === "AbortError") throw e;
     // fetch() throws "Failed to fetch" when the local app server can't be
     // reached — turn that into something a non-technical user can act on.
     throw new Error(
