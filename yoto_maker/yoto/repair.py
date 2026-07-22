@@ -13,12 +13,12 @@ Opus); all-or-nothing per card; backup-then-write (the rollback path);
 verify-after (only format changed); idempotent; DRY-RUN BY DEFAULT.
 
 Shapes pinned against a real GET /card/gzP2B body (plan Task 1/Step 0):
-  * GET /card/{id} returns ``{"card": {...}, "ownership": {...}}`` — client.get_card
+  * GET /card/{id} returns ``{"card": {...}, "ownership": {...}}`` - client.get_card
     unwraps to the inner ``card`` object, which is what we back up / mutate / POST.
   * chapters live at ``content.chapters`` on that inner card.
   * each track's ``format`` is a direct string field.
   * each track's ``trackUrl`` is the RESOLVED, pre-signed https artifact URL
-    (``https://secure-media.yotoplay.com/...?Expires=..&Signature=..``) — that is
+    (``https://secure-media.yotoplay.com/...?Expires=..&Signature=..``) - that is
     what we probe. (On create the app writes ``yoto:#<sha>``; the GET resolves it.)
 """
 from __future__ import annotations
@@ -40,7 +40,7 @@ CORRECT_FORMAT = "opus"
 
 
 # --------------------------------------------------------------------------- #
-# Body shape (PINNED to the real GET /card body — plan §Ground truth, Task 1/0)
+# Body shape (PINNED to the real GET /card body - plan §Ground truth, Task 1/0)
 # --------------------------------------------------------------------------- #
 def _find_chapters(body: dict) -> list[dict]:
     """The chapter list inside a (unwrapped) GET /card body. Confirmed path first.
@@ -144,7 +144,7 @@ def iter_tracks(body: dict) -> list[TrackRef]:
 # --------------------------------------------------------------------------- #
 def apply_format_corrections(body: dict, correct_keys: set[str], fmt: str = CORRECT_FORMAT) -> dict:
     """Return a NEW body (input untouched) with `format = fmt` set ONLY on the
-    tracks named in `correct_keys` (positional 'cid.tid'). Nothing else changes —
+    tracks named in `correct_keys` (positional 'cid.tid'). Nothing else changes -
     not title/trackUrl/duration/fileSize/channels/keys/display/order, not the
     card-level metadata or media aggregates."""
     out = copy.deepcopy(body)
@@ -190,9 +190,9 @@ def _normalize_urls(obj):
 def _strip_volatile(body: dict) -> dict:
     """A deep copy reduced to what a round-trip diff should legitimately compare:
     server-managed fields that change every write (updatedAt/etag/version/...)
-    removed — both at the card root AND inside `content` (the real body carries a
+    removed - both at the card root AND inside `content` (the real body carries a
     `content.version` counter that Yoto may bump on any write; it is never a field
-    this repair intends to change, so dropping it avoids a false verify-failure) —
+    this repair intends to change, so dropping it avoids a false verify-failure) -
     and every signed CDN URL normalized to its stable path (dropping the rotating
     signature). So the diff sees only meaningful changes."""
     out = copy.deepcopy(body)
@@ -232,9 +232,9 @@ def verify_only_format_changed(before: dict, after: dict, correct_keys: set[str]
     result (`before` + the format corrections). [] == verified.
 
     Volatile fields (updatedAt, rotated pre-signed URL signatures) are ignored on
-    both sides. Any residual difference — a changed title, a dropped icon, a
+    both sides. Any residual difference - a changed title, a dropped icon, a
     reordered track, a corrected track that did NOT become 'opus', anything at all
-    beyond the format flip we intended — is returned as a problem string. A
+    beyond the format flip we intended - is returned as a problem string. A
     non-empty result means the write did something we did not sanction: STOP and
     review / roll back."""
     intended = _strip_volatile(apply_format_corrections(before, correct_keys))
@@ -280,7 +280,7 @@ class CardPlan:
 def plan_card(client, body: dict, card_id: str) -> CardPlan:
     """Diagnose one card: probe every track that isn't already 'opus' and decide
     correct / already / blocked. Probing is the ONLY place we decide a track is
-    Opus — we never infer it from the declared value."""
+    Opus - we never infer it from the declared value."""
     decisions: list[TrackDecision] = []
     for ref in iter_tracks(body):
         if ref.declared_format == CORRECT_FORMAT:
@@ -350,7 +350,7 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
     corrected = apply_format_corrections(body, plan.correct_keys)
     # The backup is now durably on disk. If the POST or the verify re-GET raises
     # (a transient timeout is plausible on a live run), we must NOT let a bare error
-    # escape as if nothing happened — the write may already have landed. Report it
+    # escape as if nothing happened - the write may already have landed. Report it
     # as "write-uncertain", carrying the backup path so the operator can re-run
     # (idempotent) to confirm or roll back.
     try:
@@ -360,7 +360,7 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
         return CardResult(
             card_id, plan.title, "write-uncertain", plan, backup_path,
             [f"POST or verify re-GET failed AFTER the backup was written: {exc}. "
-             "The write MAY already have landed — re-run (it is idempotent) to confirm, "
+             "The write MAY already have landed - re-run (it is idempotent) to confirm, "
              f"or roll back with --rollback {backup_path}."])
     problems = verify_only_format_changed(body, after, plan.correct_keys)
     outcome = "applied" if not problems else "verify-failed"
@@ -399,10 +399,10 @@ def _match_title(query: str, summaries: list) -> list:
 def resolve_targets(client, *, card_ids: list[str], titles: list[str]) -> list[tuple[str, str]]:
     """Resolve requested cards to (card_id, label) pairs. cardIds pass straight
     through; titles are fuzzy-matched against GET /content/mine. A title matching
-    0 or >1 cards RAISES with the candidates listed — we never auto-pick a card to
-    mutate. (Note: a card's colloquial name may not match its real title — e.g.
+    0 or >1 cards RAISES with the candidates listed - we never auto-pick a card to
+    mutate. (Note: a card's colloquial name may not match its real title - e.g.
     'rainbow fairy' is titled 'Phoebe The Fashion Fairy', and 'The Wild Robot' is
-    titled 'Wild Robot' — so prefer --card-id.)"""
+    titled 'Wild Robot' - so prefer --card-id.)"""
     targets: list[tuple[str, str]] = []
     seen: set[str] = set()
     for cid in card_ids:
@@ -422,7 +422,7 @@ def resolve_targets(client, *, card_ids: list[str], titles: list[str]) -> list[t
                     f"{m.track_count if m.track_count is not None else '?'} tracks)"
                     for m in matches
                 )
-                raise YotoError(f'"{q}" matched {len(matches)} cards — disambiguate with --card-id:\n{lines}')
+                raise YotoError(f'"{q}" matched {len(matches)} cards - disambiguate with --card-id:\n{lines}')
             m = matches[0]
             if m.card_id not in seen:
                 seen.add(m.card_id)
@@ -439,22 +439,22 @@ def _backup_dir() -> Path:
 
 def _print_card_result(res: CardResult) -> None:
     n = len(res.plan.decisions)
-    print(f"{res.title} ({res.card_id}) — {n} track{'s' if n != 1 else ''}")
+    print(f"{res.title} ({res.card_id}) - {n} track{'s' if n != 1 else ''}")
     if res.backup_path:
         print(f"  backup: {res.backup_path}")
     for d in res.plan.decisions:
         mark = {"already": "=", "correct": ">", "blocked": "x"}.get(d.status, " ")
         print(f'  [{mark}] track {d.ref.key} "{d.ref.title}": {d.reason}')
     summary = {
-        "already": f"already correct (all {n} track(s) '{CORRECT_FORMAT}') — nothing to do",
-        "empty": "no tracks found on this card — nothing to do",
-        "dry-run": f"WOULD correct {len(res.plan.correct_keys)} track(s) — re-run with --apply to write",
+        "already": f"already correct (all {n} track(s) '{CORRECT_FORMAT}') - nothing to do",
+        "empty": "no tracks found on this card - nothing to do",
+        "dry-run": f"WOULD correct {len(res.plan.correct_keys)} track(s) - re-run with --apply to write",
         "applied": f"corrected {len(res.plan.correct_keys)} track(s); POST ok; verify ok",
-        "blocked": (f"SKIPPED — {len(res.plan.blocked)} track(s) could not be confirmed Opus; "
+        "blocked": (f"SKIPPED - {len(res.plan.blocked)} track(s) could not be confirmed Opus; "
                     "card left untouched (all-or-nothing)"),
-        "verify-failed": ("WROTE but VERIFY FAILED — review the diffs below and roll back with "
+        "verify-failed": ("WROTE but VERIFY FAILED - review the diffs below and roll back with "
                           f"--rollback {res.backup_path}"),
-        "write-uncertain": ("the POST or verify re-GET errored AFTER the backup was written — the "
+        "write-uncertain": ("the POST or verify re-GET errored AFTER the backup was written - the "
                             "write MAY have landed; re-run (idempotent) to confirm or roll back"),
         "restored": "restored from backup; verify ok",
     }.get(res.outcome, res.outcome)
@@ -506,15 +506,15 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     banner = ("APPLYING CHANGES (writing to live cards)" if apply
-              else "DRY RUN — no changes will be written (pass --apply to write)")
-    print(f"=== Repair existing cards — {banner} ===\n")
+              else "DRY RUN - no changes will be written (pass --apply to write)")
+    print(f"=== Repair existing cards - {banner} ===\n")
     if apply:
         # The one property this tool CANNOT self-verify (pre-merge review, HIGH #1):
         # it re-POSTs each card's resolved, signed `trackUrl` back to Yoto. The verify
         # runs inside the ~60-min signing window, so it cannot prove Yoto re-maps its
         # own CDN URL back to the internal audio reference rather than freezing an
         # expiring URL. Fail mode would be a card that plays for ~an hour then stops.
-        print("!! trackUrl round-trip is UNPROVEN — do a STAGED rollout:\n"
+        print("!! trackUrl round-trip is UNPROVEN - do a STAGED rollout:\n"
               "   1) apply to ONE card first (gzP2B is smallest),\n"
               "   2) confirm playback on the physical player (ideally also re-GET after\n"
               "      ~60 min and check the signature rotated),\n"
@@ -525,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             res = repair_card(client, card_id, apply=apply, backup_dir=_backup_dir())
         except YotoError as exc:
-            print(f"{card_id}: ERROR — {exc}\n")
+            print(f"{card_id}: ERROR - {exc}\n")
             exit_code = 1
             continue
         _print_card_result(res)
