@@ -7,10 +7,25 @@ repairs the ones already sitting in the account.
 
 Safe by construction: account-first (real cardId, never a local draft); update
 IN PLACE (POST /content WITH cardId -> NFC link survives, no duplicate);
-FORMAT-ONLY (fileSize/duration self-correct server-side, channels already right);
-confirm-before-correct (set "opus" only after the served artifact is PROVEN
-Opus); all-or-nothing per card; backup-then-write (the rollback path);
-verify-after (only format changed); idempotent; DRY-RUN BY DEFAULT.
+FORMAT-ONLY correction (fileSize/duration self-correct server-side, channels
+already right) with CANONICAL references (see below); confirm-before-correct (set
+"opus" only after the served artifact is PROVEN Opus); all-or-nothing per card;
+backup-then-write (the rollback path); verify-after (only format changed);
+idempotent; DRY-RUN BY DEFAULT.
+
+CANONICALIZE-BEFORE-POST (pre-merge review HIGH #1, hardened here). GET /card
+RESOLVES each track's ``trackUrl`` to a short-lived, pre-signed https URL. Posting
+that resolved URL back verbatim would freeze an EXPIRING signature into the card,
+so the audio would break ~60 min later and rollback (which re-POSTs a backup that
+also held an expiring URL) would share the flaw. So before every POST we rewrite
+each track's ``trackUrl`` from the resolved form back to the CANONICAL ``yoto:#<sha>``
+form - byte-for-byte the reference the create flow POSTs (``models.build_content_payload``
+writes ``yoto:#<transcoded_sha>``). The POST body then contains only canonical
+``yoto:#...`` references plus the corrected ``format``: no expiring URL, round-trip
+safe, rollback clean. Icons are left verbatim because the real card serves them from
+STABLE ``https://card-content.yotoplay.com/...`` URLs with no Expires/Signature query
+(confirmed against the real GET /card/gzP2B body); a signed icon URL would instead
+have to be canonicalized to ``yoto:#<mediaId>`` or the card would be blocked.
 
 Shapes pinned against a real GET /card/gzP2B body (plan Task 1/Step 0):
   * GET /card/{id} returns ``{"card": {...}, "ownership": {...}}`` - client.get_card
@@ -18,8 +33,11 @@ Shapes pinned against a real GET /card/gzP2B body (plan Task 1/Step 0):
   * chapters live at ``content.chapters`` on that inner card.
   * each track's ``format`` is a direct string field.
   * each track's ``trackUrl`` is the RESOLVED, pre-signed https artifact URL
-    (``https://secure-media.yotoplay.com/...?Expires=..&Signature=..``) - that is
-    what we probe. (On create the app writes ``yoto:#<sha>``; the GET resolves it.)
+    (``https://secure-media.yotoplay.com/<policy>~/<sha>?Expires=..&Signature=..#sha256=<sha>``)
+    - that is what we probe, and the ``<sha>`` we canonicalize back to ``yoto:#<sha>``
+    for the POST. (On create the app writes ``yoto:#<sha>``; the GET resolves it.)
+  * each track's icon (``display.icon16x16``) is a STABLE ``card-content`` URL with
+    no expiry/signature query, so it is re-POSTed verbatim.
 """
 from __future__ import annotations
 
@@ -27,6 +45,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -87,6 +106,114 @@ def _artifact_url(track: dict) -> str | None:
     return None
 
 
+# --------------------------------------------------------------------------- #
+# Canonicalize a RESOLVED trackUrl back to `yoto:#<sha>` (pre-merge review HIGH #1)
+# --------------------------------------------------------------------------- #
+# A resolved secure-media URL looks like
+#   https://secure-media.yotoplay.com/<policy>~/<sha>?Expires=..&Signature=..#sha256=<sha>
+# The stable identity of the artifact is <sha>: it appears BOTH in the `#sha256=`
+# fragment (most reliable) and as the `<sha>` path segment after `~/`. The
+# `<policy>~` prefix and the query signature rotate every ~60 min (and per request),
+# so they are NOT identity. `yoto:#<sha>` is exactly what the create flow POSTs.
+_SHA_TOKEN = r"[A-Za-z0-9_-]+"
+_FRAG_SHA_RE = re.compile(r"sha256=(" + _SHA_TOKEN + r")")
+
+
+def _sha_from_fragment(url: str) -> str | None:
+    frag = url.partition("#")[2]
+    if not frag:
+        return None
+    m = _FRAG_SHA_RE.search(frag)
+    return m.group(1) if m else None
+
+
+def _sha_from_path(url: str) -> str | None:
+    """The `<sha>` path segment after the last `~/`, with the query+fragment removed.
+    None when the URL carries no `~/<key>` segment (e.g. a differently-shaped CDN)."""
+    path = url.partition("#")[0].partition("?")[0]
+    if "~/" not in path:
+        return None
+    key = path.rsplit("~/", 1)[1].strip("/")
+    return key if key and re.fullmatch(_SHA_TOKEN, key) else None
+
+
+def _extract_sha(url: str) -> str | None:
+    """The artifact sha from a RESOLVED trackUrl, or None if it can't be extracted
+    AND validated. Prefer the `#sha256=<sha>` fragment (most reliable); when the
+    `~/<sha>` path segment is ALSO present the two MUST agree - a mismatch returns
+    None so the caller blocks the card rather than guess (never re-POST a wrong ref)."""
+    frag = _sha_from_fragment(url)
+    path = _sha_from_path(url)
+    if frag and path:
+        return frag if frag == path else None
+    return frag or path or None
+
+
+def canonical_track_url(raw: object) -> tuple[str | None, str | None]:
+    """Map a track's raw ``trackUrl`` to the CANONICAL ``yoto:#<sha>`` ref for the POST.
+
+    Returns ``(canonical, error)``:
+      * ``(raw, None)``              - already a canonical ``yoto:#<sha>`` ref: leave it.
+      * ``("yoto:#<sha>", None)``    - a RESOLVED https URL whose sha was extracted+validated.
+      * ``(None, None)``             - no ``trackUrl`` to rewrite (nothing to do, no risk).
+      * ``(None, "<reason>")``       - a resolved URL whose sha can't be extracted/validated,
+                                       or an unrecognized form -> caller BLOCKS the whole card.
+    """
+    if not isinstance(raw, str) or not raw:
+        return None, None
+    if raw.startswith("yoto:#"):
+        return raw, None
+    if raw.startswith("http"):
+        sha = _extract_sha(raw)
+        if sha:
+            return f"yoto:#{sha}", None
+        return None, ("resolved trackUrl carries no extractable/agreeing sha - refusing "
+                      "to re-POST an expiring signed URL (pre-merge review HIGH #1)")
+    return None, f"unrecognized trackUrl form (not yoto:# or http): {raw[:48]!r}"
+
+
+# --------------------------------------------------------------------------- #
+# Icon safety: this tool re-POSTs icons VERBATIM, which is only safe while the icon
+# URL is STABLE (no expiry/signature). The real gzP2B body serves icons from
+# unsigned card-content URLs, but the other target cards are unverified - so rather
+# than assume, we CHECK: a signed/expiring icon URL blocks the whole card (this tool
+# deliberately does not canonicalize icons to yoto:#<mediaId>, so it must not freeze
+# an expiring icon into the card either).
+# --------------------------------------------------------------------------- #
+_ICON_SIGN_MARKERS = ("Expires=", "Signature=", "expires=", "signature=")
+
+
+def _icon_url_values(body: dict):
+    """Yield ``(location, url)`` for every ``display.icon16x16`` in the card, at both
+    the chapter level and the track level (mirrors how the create flow writes them)."""
+    for ci, chapter in enumerate(_find_chapters(body)):
+        if not isinstance(chapter, dict):
+            continue
+        disp = chapter.get("display")
+        if isinstance(disp, dict) and isinstance(disp.get("icon16x16"), str) and disp["icon16x16"]:
+            yield f"chapter {ci} display.icon16x16", disp["icon16x16"]
+        for ti, tr in enumerate(chapter.get("tracks") or []):
+            if not isinstance(tr, dict):
+                continue
+            tdisp = tr.get("display")
+            if isinstance(tdisp, dict) and isinstance(tdisp.get("icon16x16"), str) and tdisp["icon16x16"]:
+                yield f"track {ci}.{ti} display.icon16x16", tdisp["icon16x16"]
+
+
+def signed_icon_problems(body: dict) -> list[str]:
+    """Return a problem string for each SIGNED/expiring icon URL in the card. Empty
+    == every icon is a stable URL (or a canonical ``yoto:#`` ref) and is safe to
+    re-POST verbatim. A non-empty result must BLOCK the whole card (all-or-nothing)."""
+    problems: list[str] = []
+    for loc, url in _icon_url_values(body):
+        if url.startswith("http") and any(m in url for m in _ICON_SIGN_MARKERS):
+            problems.append(
+                f"{loc} is a SIGNED/expiring icon URL ({url[:64]}...) - this tool "
+                "re-POSTs icons verbatim and does not canonicalize a signed icon to "
+                "yoto:#<mediaId>, so it refuses to freeze an expiring icon into the card")
+    return problems
+
+
 def _card_title(body: dict) -> str | None:
     for path in (("title",), ("card", "title"), ("content", "title")):
         node: object = body
@@ -117,7 +244,8 @@ class TrackRef:
     key: str                 # positional identity "cid.tid" (stable regardless of the card's own keys)
     title: str
     declared_format: str | None
-    artifact_url: str | None
+    artifact_url: str | None      # the URL we PROBE (top-level trackUrl or a nested audio/media url)
+    track_url_raw: object = None  # the raw top-level `trackUrl` field we CANONICALIZE + rewrite
 
 
 def iter_tracks(body: dict) -> list[TrackRef]:
@@ -135,24 +263,72 @@ def iter_tracks(body: dict) -> list[TrackRef]:
                 title=str(tr.get("title") or (chapter.get("title") if isinstance(chapter, dict) else "") or f"track {ci + 1}.{ti + 1}"),
                 declared_format=fmt if isinstance(fmt, str) else None,
                 artifact_url=_artifact_url(tr),
+                track_url_raw=tr.get("trackUrl"),
             ))
     return refs
 
 
 # --------------------------------------------------------------------------- #
-# The safety-critical corrector: deep-copy, overwrite ONLY `format`.
+# The safety-critical correctors: deep-copy, overwrite ONLY the intended fields.
 # --------------------------------------------------------------------------- #
 def apply_format_corrections(body: dict, correct_keys: set[str], fmt: str = CORRECT_FORMAT) -> dict:
     """Return a NEW body (input untouched) with `format = fmt` set ONLY on the
     tracks named in `correct_keys` (positional 'cid.tid'). Nothing else changes -
     not title/trackUrl/duration/fileSize/channels/keys/display/order, not the
-    card-level metadata or media aggregates."""
+    card-level metadata or media aggregates.
+
+    This is the FORMAT-ONLY view used by the round-trip verify (the 'intended'
+    result is `before` + this flip, so trackUrls stay in `before`'s resolved form
+    and compare cleanly against the re-GET). The POST body is built separately by
+    `build_repair_payload`, which ALSO canonicalizes trackUrls."""
     out = copy.deepcopy(body)
     for ci, chapter in enumerate(_find_chapters(out)):
         tracks = chapter.get("tracks") if isinstance(chapter, dict) else None
         for ti, tr in enumerate(tracks or []):
             if isinstance(tr, dict) and f"{ci}.{ti}" in correct_keys:
                 tr["format"] = fmt
+    return out
+
+
+def build_repair_payload(body: dict, correct_keys: set[str], canonical_urls: dict[str, str],
+                         fmt: str = CORRECT_FORMAT) -> dict:
+    """Return the NEW body to POST (input untouched): `format = fmt` on the corrected
+    tracks AND every track's `trackUrl` rewritten to its CANONICAL `yoto:#<sha>` ref
+    (from `canonical_urls`, keyed 'cid.tid'). This is what removes the resolved,
+    EXPIRING signed URL from the POST body entirely (pre-merge review HIGH #1) -
+    the body posted back carries only `yoto:#...` references, exactly the reference
+    form the card was created with. Nothing else changes (icons/keys/duration/
+    fileSize/channels/order/metadata all survive verbatim)."""
+    out = copy.deepcopy(body)
+    for ci, chapter in enumerate(_find_chapters(out)):
+        tracks = chapter.get("tracks") if isinstance(chapter, dict) else None
+        for ti, tr in enumerate(tracks or []):
+            if not isinstance(tr, dict):
+                continue
+            key = f"{ci}.{ti}"
+            canon = canonical_urls.get(key)
+            if canon is not None:
+                tr["trackUrl"] = canon
+            if key in correct_keys:
+                tr["format"] = fmt
+    return out
+
+
+def canonicalize_body_track_urls(body: dict) -> dict:
+    """Return a NEW body with every track's `trackUrl` rewritten to `yoto:#<sha>`
+    where it can be, and left verbatim where it can't (best-effort). Used by
+    rollback so a restore never re-POSTs an expiring signed URL either. Unlike the
+    repair path this never blocks - a restore is a recovery action - but it makes
+    the restored card as canonical as the artifact refs allow."""
+    out = copy.deepcopy(body)
+    for chapter in _find_chapters(out):
+        tracks = chapter.get("tracks") if isinstance(chapter, dict) else None
+        for tr in tracks or []:
+            if not isinstance(tr, dict):
+                continue
+            canon, err = canonical_track_url(tr.get("trackUrl"))
+            if canon is not None and err is None:
+                tr["trackUrl"] = canon
     return out
 
 
@@ -163,18 +339,31 @@ _VOLATILE_TOP_KEYS = ("updatedAt", "updated", "etag", "version", "revision")
 
 
 def _normalize_url(value: str) -> str:
-    """A signed CDN URL reduced to its stable identity: scheme+host+path, with the
-    volatile query signature (Expires / Signature / Key-Pair-Id) and fragment
-    dropped. The resource path token encodes the artifact's sha, so a real change
-    of artifact is still caught while signature rotation across the ~60-min signing
-    window is ignored. (Confirmed: two consecutive GETs return the SAME signed URL;
-    it rotates only across the window.)"""
-    cut = len(value)
-    for sep in ("?", "#"):
-        i = value.find(sep)
-        if i != -1:
-            cut = min(cut, i)
-    return value[:cut]
+    """A media reference reduced to its STABLE artifact identity, so a round-trip diff
+    ignores everything that legitimately rotates but still catches a real change of
+    artifact. All of these map to the SAME identity when they name the same artifact:
+      * a canonical ``yoto:#<sha>`` ref (what we POST);
+      * a resolved URL's ``#sha256=<sha>`` fragment (most reliable on a re-GET);
+      * the ``<sha>`` after ``~/`` in a resolved URL's path (icons / fragment-less URLs);
+    failing all three, scheme+host+path (query and fragment dropped).
+
+    This must NOT be a naive string compare: the re-GET after a write re-resolves each
+    ``trackUrl`` to a FRESH pre-signed URL - a new query signature AND (shared across
+    every media URL in one response) a new ``<policy>~`` path prefix - both of which
+    rotate ~hourly / per request and are not identity. Unifying the canonical and
+    resolved forms means the verify asserts the ARTIFACT is unchanged: our posted
+    ``yoto:#<sha>`` and the re-GET's re-resolved ``...#sha256=<sha>`` compare EQUAL when
+    (and only when) Yoto re-resolved to the same sha - which also confirms the
+    canonicalized round-trip worked. The sha extraction here reuses `_extract_sha`, so
+    it enforces the SAME fragment/path agreement the pre-POST gate does: a re-GET whose
+    fragment and path disagree yields no unified sha and so is flagged by the diff
+    rather than silently trusted."""
+    if value.startswith("yoto:#"):
+        return f"sha256:{value[len('yoto:#'):]}"
+    sha = _extract_sha(value)          # agreement-enforced (fragment must match ~/<key>)
+    if sha:
+        return f"sha256:{sha}"
+    return value.partition("#")[0].partition("?")[0]   # e.g. a fragment-less, ~/-less URL
 
 
 def _normalize_urls(obj):
@@ -182,7 +371,7 @@ def _normalize_urls(obj):
         return {k: _normalize_urls(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_normalize_urls(v) for v in obj]
-    if isinstance(obj, str) and obj.startswith("http"):
+    if isinstance(obj, str) and (obj.startswith("http") or obj.startswith("yoto:#")):
         return _normalize_url(obj)
     return obj
 
@@ -231,12 +420,17 @@ def verify_only_format_changed(before: dict, after: dict, correct_keys: set[str]
     """Return UNEXPECTED differences between `after` (the re-GET) and the intended
     result (`before` + the format corrections). [] == verified.
 
-    Volatile fields (updatedAt, rotated pre-signed URL signatures) are ignored on
-    both sides. Any residual difference - a changed title, a dropped icon, a
-    reordered track, a corrected track that did NOT become 'opus', anything at all
-    beyond the format flip we intended - is returned as a problem string. A
-    non-empty result means the write did something we did not sanction: STOP and
-    review / roll back."""
+    The re-GET RE-RESOLVES every `trackUrl` to a fresh pre-signed URL (new signature,
+    new `<policy>~` prefix), so trackUrls are compared by their extracted SHA, never
+    by the raw string - a naive compare would always differ. Concretely: the sha in
+    `after`'s re-resolved trackUrl must equal the sha in `before`'s (artifact
+    unchanged), `format` must now be 'opus' on the corrected tracks, and EVERYTHING
+    else - title, duration, fileSize, channels, icons (by their stable mediaId), keys,
+    order - must be byte-identical. Volatile server fields (updatedAt, content.version)
+    are ignored on both sides. Any residual difference - a changed title, a dropped
+    icon, a reordered track, a corrected track that did NOT become 'opus', a track now
+    pointing at a DIFFERENT sha - is returned as a problem string. A non-empty result
+    means the write did something we did not sanction: STOP and review / roll back."""
     intended = _strip_volatile(apply_format_corrections(before, correct_keys))
     got = _strip_volatile(after)
     return _diff_paths(intended, got)
@@ -257,6 +451,8 @@ class CardPlan:
     card_id: str
     title: str
     decisions: list[TrackDecision]
+    canonical_urls: dict[str, str] = field(default_factory=dict)  # key -> "yoto:#<sha>" for the POST body
+    card_problems: list[str] = field(default_factory=list)        # card-level blockers (e.g. signed icons)
 
     @property
     def correct_keys(self) -> set[str]:
@@ -270,7 +466,7 @@ class CardPlan:
     def outcome(self) -> str:
         if not self.decisions:
             return "empty"
-        if self.blocked:            # all-or-nothing: ANY blocked track skips the card
+        if self.blocked or self.card_problems:   # all-or-nothing: ANY blocker skips the card
             return "blocked"
         if self.correct_keys:
             return "apply"
@@ -278,11 +474,32 @@ class CardPlan:
 
 
 def plan_card(client, body: dict, card_id: str) -> CardPlan:
-    """Diagnose one card: probe every track that isn't already 'opus' and decide
-    correct / already / blocked. Probing is the ONLY place we decide a track is
-    Opus - we never infer it from the declared value."""
+    """Diagnose one card: canonicalize every track's trackUrl, probe every track that
+    isn't already 'opus', and decide correct / already / blocked. Probing is the ONLY
+    place we decide a track is Opus - we never infer it from the declared value.
+
+    Canonicalization runs FIRST and blocks the whole card (all-or-nothing) if ANY
+    track's resolved trackUrl can't be reduced to a validated `yoto:#<sha>` ref - we
+    must never re-POST an expiring signed URL, and we never guess a sha."""
     decisions: list[TrackDecision] = []
+    canonical: dict[str, str] = {}
     for ref in iter_tracks(body):
+        # 1) Canonicalize the trackUrl we'd POST back. A failure blocks the card.
+        canon, err = canonical_track_url(ref.track_url_raw)
+        if err:
+            decisions.append(TrackDecision(ref, "blocked", err))
+            continue
+        if canon is None and ref.artifact_url and ref.artifact_url.startswith("http"):
+            # A resolved (expiring) artifact URL exists but is not on the rewritable
+            # top-level `trackUrl` field - refuse rather than re-POST it verbatim.
+            decisions.append(TrackDecision(
+                ref, "blocked", "resolved artifact URL is not on the top-level trackUrl field; "
+                                "cannot canonicalize it safely"))
+            continue
+        if canon is not None:
+            canonical[ref.key] = canon
+
+        # 2) Decide the format correction (unchanged logic).
         if ref.declared_format == CORRECT_FORMAT:
             decisions.append(TrackDecision(ref, "already", f"already '{CORRECT_FORMAT}'"))
             continue
@@ -292,10 +509,15 @@ def plan_card(client, body: dict, card_id: str) -> CardPlan:
         probe = client.probe_artifact(ref.artifact_url)
         if probe.is_opus:
             decisions.append(TrackDecision(
-                ref, "correct", f"{ref.declared_format or '?'} -> {CORRECT_FORMAT} ({probe.detail})"))
+                ref, "correct",
+                f"{ref.declared_format or '?'} -> {CORRECT_FORMAT} ({probe.detail}); trackUrl -> {canon}"))
         else:
             decisions.append(TrackDecision(ref, "blocked", f"artifact not confirmed Opus: {probe.detail}"))
-    return CardPlan(card_id=card_id, title=str(_card_title(body) or card_id), decisions=decisions)
+    # Card-level guard: a signed/expiring icon URL would break if re-POSTed verbatim,
+    # and this tool does not canonicalize icons - so block the whole card if any exist.
+    card_problems = signed_icon_problems(body)
+    return CardPlan(card_id=card_id, title=str(_card_title(body) or card_id),
+                    decisions=decisions, canonical_urls=canonical, card_problems=card_problems)
 
 
 # --------------------------------------------------------------------------- #
@@ -341,13 +563,16 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
         # not a genuinely already-correct card.
         return CardResult(card_id, plan.title, plan.outcome, plan)
     if plan.outcome == "blocked":                 # all-or-nothing: write nothing
-        return CardResult(card_id, plan.title, "blocked", plan)
+        return CardResult(card_id, plan.title, "blocked", plan, problems=list(plan.card_problems))
 
     if not apply:                                 # dry run: report intent, no write
         return CardResult(card_id, plan.title, "dry-run", plan)
 
     backup_path = _write_backup(backup_dir, card_id, body, now)   # BEFORE any write
-    corrected = apply_format_corrections(body, plan.correct_keys)
+    # Build the POST body: format flip on the corrected tracks AND every trackUrl
+    # canonicalized to `yoto:#<sha>`, so no resolved/expiring signed URL is written
+    # back (pre-merge review HIGH #1). The backup above holds the verbatim original.
+    corrected = build_repair_payload(body, plan.correct_keys, plan.canonical_urls)
     # The backup is now durably on disk. If the POST or the verify re-GET raises
     # (a transient timeout is plausible on a live run), we must NOT let a bare error
     # escape as if nothing happened - the write may already have landed. Report it
@@ -368,12 +593,18 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
 
 
 def rollback_from_backup(client, backup_path: Path) -> CardResult:
-    """Restore a card in place from a backup JSON (re-POST it with its cardId)."""
+    """Restore a card in place from a backup JSON (re-POST it with its cardId).
+
+    The backup holds the verbatim GET body, whose trackUrls are the RESOLVED, now
+    likely-expired signed URLs. Re-POSTing those verbatim would re-introduce
+    HIGH #1, so the restore POST canonicalizes every trackUrl back to `yoto:#<sha>`
+    first (best-effort - a restore never blocks). The verify still compares by sha,
+    so a restore to the same artifacts passes."""
     body = json.loads(Path(backup_path).read_text(encoding="utf-8"))
     card_id = _card_id_of(body)
     if not card_id:
         raise YotoError(f"Backup {backup_path} has no cardId to restore to.")
-    client.update_card(card_id, body)
+    client.update_card(card_id, canonicalize_body_track_urls(body))
     after = client.get_card(card_id)
     problems = _diff_paths(_strip_volatile(body), _strip_volatile(after))
     title = str(_card_title(body) or card_id)
@@ -450,8 +681,9 @@ def _print_card_result(res: CardResult) -> None:
         "empty": "no tracks found on this card - nothing to do",
         "dry-run": f"WOULD correct {len(res.plan.correct_keys)} track(s) - re-run with --apply to write",
         "applied": f"corrected {len(res.plan.correct_keys)} track(s); POST ok; verify ok",
-        "blocked": (f"SKIPPED - {len(res.plan.blocked)} track(s) could not be confirmed Opus; "
-                    "card left untouched (all-or-nothing)"),
+        "blocked": (f"SKIPPED - {len(res.plan.blocked)} track(s) blocked"
+                    + (f" + {len(res.plan.card_problems)} card-level issue(s)" if res.plan.card_problems else "")
+                    + "; card left untouched (all-or-nothing) - see below"),
         "verify-failed": ("WROTE but VERIFY FAILED - review the diffs below and roll back with "
                           f"--rollback {res.backup_path}"),
         "write-uncertain": ("the POST or verify re-GET errored AFTER the backup was written - the "
@@ -509,16 +741,17 @@ def main(argv: list[str] | None = None) -> int:
               else "DRY RUN - no changes will be written (pass --apply to write)")
     print(f"=== Repair existing cards - {banner} ===\n")
     if apply:
-        # The one property this tool CANNOT self-verify (pre-merge review, HIGH #1):
-        # it re-POSTs each card's resolved, signed `trackUrl` back to Yoto. The verify
-        # runs inside the ~60-min signing window, so it cannot prove Yoto re-maps its
-        # own CDN URL back to the internal audio reference rather than freezing an
-        # expiring URL. Fail mode would be a card that plays for ~an hour then stops.
-        print("!! trackUrl round-trip is UNPROVEN - do a STAGED rollout:\n"
+        # HIGH #1 is addressed: every trackUrl is canonicalized to `yoto:#<sha>` before
+        # the POST, so no resolved/expiring signed URL is ever written back - the body
+        # posted is the same reference form the card was created with, and the verify
+        # confirms the re-GET re-resolves to the SAME sha. A staged rollout is still the
+        # prudent way to prove real playback end-to-end on the physical player.
+        print("A staged rollout is still recommended:\n"
               "   1) apply to ONE card first (gzP2B is smallest),\n"
               "   2) confirm playback on the physical player (ideally also re-GET after\n"
-              "      ~60 min and check the signature rotated),\n"
-              "   3) only then apply the rest. Backups are written before every POST.\n")
+              "      ~60 min - the trackUrl signature should have rotated, same sha),\n"
+              "   3) only then apply the rest. Backups are written before every POST,\n"
+              "      and both apply and rollback POST canonical yoto:#<sha> refs.\n")
 
     exit_code = 0
     for card_id, _label in targets:

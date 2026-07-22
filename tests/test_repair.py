@@ -16,7 +16,11 @@ from yoto_maker.yoto import auth
 from yoto_maker.yoto.client import ArtifactProbe, CardSummary, YotoClient, YotoError
 from yoto_maker.yoto.repair import (
     apply_format_corrections,
+    build_repair_payload,
+    canonical_track_url,
+    canonicalize_body_track_urls,
     iter_tracks,
+    plan_card,
     repair_card,
     resolve_targets,
     verify_only_format_changed,
@@ -430,3 +434,227 @@ def test_rollback_reposts_backup_in_place(tmp_path):
     assert res.outcome == "restored"
     assert len(fake.posts) == 1
     assert fake.posts[0]["cardId"] == "C1"
+
+
+def test_rollback_posts_canonical_refs_not_expiring_urls(tmp_path):
+    """The rollback POST must ALSO canonicalize trackUrls (the backup holds resolved,
+    now-expired signed URLs) so a restore never re-introduces HIGH #1."""
+    original = _card("C1", ("mp3", "mp3"))
+    backup = tmp_path / "C1-backup.json"
+    backup.write_text(json.dumps(original), encoding="utf-8")
+    fake = FakeClient(_card("C1", ("mp3", "mp3")))
+    from yoto_maker.yoto.repair import rollback_from_backup
+
+    res = rollback_from_backup(fake, backup)
+
+    assert res.outcome == "restored"
+    posted = fake.posts[0]
+    urls = [ch["tracks"][0]["trackUrl"] for ch in posted["content"]["chapters"]]
+    assert urls == ["yoto:#SHA1", "yoto:#SHA2"]
+    assert "secure-media" not in json.dumps(posted)     # no resolved/expiring URL restored
+
+
+# --------------------------------------------------------------------------- #
+# HIGH #1 hardening: canonicalize resolved trackUrls to yoto:#<sha> before POST
+# --------------------------------------------------------------------------- #
+def test_canonicalize_extracts_sha_from_fragment():
+    """The #sha256=<sha> fragment is the preferred (most reliable) source."""
+    raw = ("https://secure-media.yotoplay.com/POLICYtoken~/44aJsha?"
+           "Expires=1&Signature=S&Key-Pair-Id=K#sha256=44aJsha")
+    canon, err = canonical_track_url(raw)
+    assert err is None
+    assert canon == "yoto:#44aJsha"
+
+
+def test_canonicalize_enforces_fragment_path_agreement():
+    """If the #sha256 fragment and the ~/<sha> path segment DISAGREE, refuse (block) —
+    never guess which is the real sha."""
+    raw = "https://secure-media.yotoplay.com/POLICYtoken~/PATHsha?Signature=S#sha256=FRAGsha"
+    canon, err = canonical_track_url(raw)
+    assert canon is None
+    assert err and "sha" in err.lower()
+
+
+def test_canonicalize_from_path_when_no_fragment():
+    """No fragment -> fall back to the ~/<sha> path segment."""
+    raw = "https://secure-media.yotoplay.com/POLICYtoken~/onlyPathSha?Expires=1&Signature=S"
+    canon, err = canonical_track_url(raw)
+    assert err is None
+    assert canon == "yoto:#onlyPathSha"
+
+
+def test_canonicalize_leaves_already_canonical_ref_untouched():
+    """An already-canonical yoto:#<sha> ref is returned verbatim (never rewritten)."""
+    canon, err = canonical_track_url("yoto:#alreadyCanonicalSha")
+    assert err is None
+    assert canon == "yoto:#alreadyCanonicalSha"
+
+
+def test_canonicalize_unrecognized_form_is_an_error():
+    canon, err = canonical_track_url("ftp://weird/thing")
+    assert canon is None
+    assert err
+
+
+def test_unextractable_sha_blocks_whole_card_no_post(tmp_path):
+    """A resolved trackUrl whose sha can't be extracted/validated (fragment/path
+    disagree) blocks the ENTIRE card (all-or-nothing) — no POST."""
+    body = _card("C1", ("mp3", "mp3"))
+    # tamper track 1: fragment and path disagree -> unvalidatable sha
+    body["content"]["chapters"][0]["tracks"][0]["trackUrl"] = (
+        "https://secure-media.example/POLICY~/PATHsha?Signature=S#sha256=FRAGsha")
+    fake = FakeClient(body)
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "blocked"
+    assert fake.posts == []
+    assert any("sha" in d.reason.lower() for d in res.plan.blocked)
+
+
+def test_post_body_uses_canonical_refs_not_resolved_urls(tmp_path):
+    """THE core assertion: the body handed to update_card contains yoto:#<sha> for
+    every track and NOT the resolved secure-media signed URL."""
+    fake = FakeClient(_card("C1", ("mp3", "mp3")))
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "applied"
+    assert len(fake.posts) == 1
+    posted = fake.posts[0]
+    urls = [ch["tracks"][0]["trackUrl"] for ch in posted["content"]["chapters"]]
+    assert urls == ["yoto:#SHA1", "yoto:#SHA2"]
+    dumped = json.dumps(posted)
+    assert "secure-media" not in dumped                 # the audio host is gone
+    assert "EPHEMERAL" not in dumped                    # so is the ephemeral signature
+    assert "Expires=" not in dumped
+
+
+def test_mixed_card_canonicalizes_all_tracks_including_already_opus(tmp_path):
+    """Every track in the POST body is canonicalized — even a track that was already
+    'opus' and not format-corrected — because the whole card is re-POSTed."""
+    fake = FakeClient(_card("C1", ("opus", "mp3")))     # track 1 already opus, track 2 mp3
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "applied"
+    posted = fake.posts[0]
+    urls = [ch["tracks"][0]["trackUrl"] for ch in posted["content"]["chapters"]]
+    formats = [ch["tracks"][0]["format"] for ch in posted["content"]["chapters"]]
+    assert urls == ["yoto:#SHA1", "yoto:#SHA2"]         # BOTH canonicalized
+    assert formats == ["opus", "opus"]                  # track 1 stays opus, track 2 corrected
+
+
+def test_icons_left_verbatim_stable_case(tmp_path):
+    """The real card serves icons from STABLE card-content URLs (no Expires/Signature),
+    so they are re-POSTed byte-for-byte — canonicalization touches trackUrl only."""
+    before = _card("C1", ("mp3", "mp3"))
+    fake = FakeClient(copy.deepcopy(before))
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    posted = fake.posts[0]
+    for ch_post, ch_before in zip(posted["content"]["chapters"], before["content"]["chapters"]):
+        assert (ch_post["tracks"][0]["display"]["icon16x16"]
+                == ch_before["tracks"][0]["display"]["icon16x16"])
+
+
+def test_signed_icon_blocks_whole_card_no_post(tmp_path):
+    """A SIGNED/expiring icon URL (Expires/Signature) would break if re-POSTed
+    verbatim, and this tool does not canonicalize icons -> block the whole card."""
+    body = _card("C1", ("mp3", "mp3"))
+    body["content"]["chapters"][0]["tracks"][0]["display"]["icon16x16"] = (
+        "https://card-content.example/POLICY~/mediaid?Expires=1&Signature=SIG&Key-Pair-Id=K")
+    fake = FakeClient(body)
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "blocked"
+    assert fake.posts == []
+    assert any("signed" in p.lower() and "icon" in p.lower() for p in res.problems)
+
+
+def test_signed_chapter_level_icon_also_blocks(tmp_path):
+    """The chapter-level display.icon16x16 is checked too, not just the track-level."""
+    body = _card("C1", ("mp3", "mp3"))
+    body["content"]["chapters"][0]["display"] = {
+        "icon16x16": "https://card-content.example/POLICY~/mediaid?Expires=1&Signature=SIG"}
+    fake = FakeClient(body)
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "blocked"
+    assert fake.posts == []
+
+
+def test_stable_icon_does_not_block(tmp_path):
+    """The stable case (the real card): an unsigned card-content icon URL is fine and
+    the card is corrected normally."""
+    fake = FakeClient(_card("C1", ("mp3", "mp3")))     # _card icons are `?sig=ICONi` (no Expires/Signature)
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+    assert res.outcome == "applied"
+
+
+def _real_shaped_card(formats, *, prefix, sig):
+    """A card whose URLs use the REAL '<policy>~/<key>...#sha256=<key>' shape, so a
+    test can rotate the policy prefix AND the signature (as a real re-GET does)."""
+    chapters = []
+    for i, fmt in enumerate(formats, start=1):
+        sha = f"AUDIOsha{i}base64token"
+        icon = f"ICONmedia{i}base64token"
+        track = {
+            "key": f"{i:02d}", "title": f"Track {i}", "type": "audio", "format": fmt,
+            "duration": 100 + i, "fileSize": 1000 + i, "channels": "stereo",
+            "display": {"icon16x16": f"https://card-content.example/{prefix}~/{icon}"},
+            "trackUrl": (f"https://secure-media.example/{prefix}~/{sha}?"
+                         f"Expires=9&Signature={sig}&Key-Pair-Id=K#sha256={sha}"),
+        }
+        chapters.append({"key": f"{i:02d}", "title": f"Track {i}", "tracks": [track]})
+    return {"cardId": "C1", "title": "Real Shaped", "content": {"chapters": chapters},
+            "updatedAt": "2026-07-22T00:00:00Z"}
+
+
+def test_verify_passes_across_rotated_prefix_and_signature_same_sha(tmp_path):
+    """Real-shaped round-trip: the re-GET rotates BOTH the <policy>~ path prefix and
+    the query signature but keeps the same sha -> verify passes (sha-based, not naive)."""
+    before = _real_shaped_card(("mp3", "mp3"), prefix="POLICYA", sig="SIGA")
+    after = _real_shaped_card(("opus", "opus"), prefix="POLICYB", sig="SIGB")
+    fake = FakeClient(before, after=after)
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "applied", res.problems
+    assert res.problems == []
+
+
+def test_verify_fails_when_the_sha_actually_changes(tmp_path):
+    """If the re-GET's trackUrl carries a DIFFERENT sha, the verify catches it even
+    though the prefix/signature also rotated."""
+    before = _real_shaped_card(("mp3", "mp3"), prefix="POLICYA", sig="SIGA")
+    after = _real_shaped_card(("opus", "opus"), prefix="POLICYB", sig="SIGB")
+    after["content"]["chapters"][0]["tracks"][0]["trackUrl"] = (
+        "https://secure-media.example/POLICYB~/COMPLETELYdifferentsha?"
+        "Expires=9&Signature=SIGB#sha256=COMPLETELYdifferentsha")
+    fake = FakeClient(before, after=after)
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "verify-failed"
+    assert any("trackurl" in p.lower() for p in res.problems)
+
+
+def test_real_fixture_trackurl_canonicalizes_to_yoto_sha():
+    """Against the sanitized REAL GET /card/gzP2B body: the resolved trackUrl
+    canonicalizes to yoto:#<sha>, and the icon is the STABLE case (no expiry/signature),
+    so it is left as-is."""
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    inner = raw["card"]
+    refs = iter_tracks(inner)
+    assert len(refs) == 1
+    canon, err = canonical_track_url(refs[0].track_url_raw)
+    assert err is None
+    assert canon == "yoto:#44aJeE5Xj4OTnmK3VpoYNATWziizU3w4HLucKHqjmec"
+
+    icon = inner["content"]["chapters"][0]["tracks"][0]["display"]["icon16x16"]
+    assert icon.startswith("https://card-content.yotoplay.com/")
+    assert "Expires" not in icon and "Signature" not in icon   # STABLE -> re-POST verbatim
