@@ -97,6 +97,23 @@ def _client_id() -> str:
 # --------------------------------------------------------------------------- #
 def start_login() -> str:
     """Begin login: return the Yoto authorize URL to send the user's browser to."""
+    # Defense in depth against a stale app.js, which this project has shipped
+    # before (overview.md §12.1). The frontend gate in connectYoto() and this
+    # one test the SAME condition — "verdict is invalid" — so they agree
+    # trivially. A server that refused what the frontend permitted would produce
+    # a button that fails with no explanation, which is worse than either
+    # behavior alone.
+    #
+    # NO TIER CONDITION, matching overview.md §13.5. This function needs the
+    # verdict only and never the source, which is exactly where "block all tiers
+    # uniformly, keep it simple" banks its simplicity. Do not add a
+    # resolve_client_id_with_source() call here.
+    verdict, reason = config_mod.validate_client_id(_client_id())
+    if verdict == "invalid":
+        raise AuthError(
+            "Yoto Maker can't sign in to Yoto, because the Client ID it's using isn't one.",
+            reason=reason,
+        )
     verifier = _b64url(os.urandom(48))
     challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
     state = _b64url(os.urandom(16))

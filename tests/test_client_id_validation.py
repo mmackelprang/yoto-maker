@@ -225,3 +225,52 @@ def test_an_unusual_value_still_saves(client):
     the false-positive cost of hard-blocking it is a total lockout."""
     r = client.post("/api/yoto/client-id", json={"client_id": "a8OGO6EfbWit5tDUU"})
     assert r.status_code == 200
+
+
+# --- the sign-in gate ---------------------------------------------------------
+
+def test_start_login_refuses_an_invalid_client_id(monkeypatch):
+    """No doomed authorize request is ever CONSTRUCTED.
+
+    The alternative is the worst outcome available and it is the one that
+    actually happened: an Auth0 error page on a foreign domain, with copy Yoto
+    Maker cannot control and the user cannot interpret.
+    """
+    from yoto_maker import config as config_mod
+    from yoto_maker.yoto import auth
+
+    monkeypatch.setattr(config_mod, "resolve_client_id", lambda: "mandy@gmail.com")
+
+    with pytest.raises(auth.AuthError) as exc:
+        auth.start_login()
+    assert exc.value.reason == "email"
+
+
+@pytest.mark.parametrize("source_value", ["mandy@gmail.com", "http://x/y", "a b c"])
+def test_the_gate_has_no_tier_condition(monkeypatch, source_value):
+    """Uniform across env / saved / builtin (overview.md §13.5).
+
+    start_login() needs the VERDICT only, never the source — which is where the
+    'keep it simple' instruction actually banks its simplicity. This test would
+    fail the moment someone added a resolve_client_id_with_source() call and a
+    tier branch.
+    """
+    from yoto_maker import config as config_mod
+    from yoto_maker.yoto import auth
+
+    monkeypatch.setattr(config_mod, "resolve_client_id", lambda: source_value)
+    with pytest.raises(auth.AuthError):
+        auth.start_login()
+
+
+def test_start_login_proceeds_on_unusual(monkeypatch):
+    """Soft verdicts sign in normally. This is the assertion that keeps the
+    whole test suite runnable — conftest injects test_client_id, which is
+    'unusual'."""
+    from yoto_maker import config as config_mod
+    from yoto_maker.yoto import auth
+
+    monkeypatch.setattr(config_mod, "resolve_client_id", lambda: "test_client_id")
+    url = auth.start_login()
+    assert url.startswith("https://login.yotoplay.com/authorize?")
+    assert "client_id=test_client_id" in url
