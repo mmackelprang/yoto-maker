@@ -290,3 +290,36 @@ def test_cancel_is_scoped_to_the_file_batch_not_youtube(index_html, app_js):
 
     yt = app_js[app_js.index("async function addYouTube") : app_js.index("// ---- add audio: the batch")]
     assert '$("#addCancel")' not in yt, "addYouTube must not touch #addCancel"
+
+
+def test_retry_owes_the_reorder_before_reentering_runbatch(app_js):
+    """UAT HIGH (success criterion 13, §H.5). runBatch calls repairOrderIfNeeded()
+    at its tail, and that check early-returns unless BATCH.repaired is true. So
+    retryTransient must set the flag BEFORE it re-enters runBatch; setting it
+    afterwards meant the reorder never fired on the first retry and recovered files
+    stayed appended instead of returning to their natural-sort position."""
+    fn = app_js[app_js.index("async function retryTransient") : app_js.index("function renderPicture")]
+    assert "BATCH.repaired = true;" in fn
+    assert fn.index("BATCH.repaired = true;") < fn.index("await runBatch(retry)")
+
+
+def test_youtube_add_disables_the_file_picker_too(app_js):
+    """UAT MEDIUM (§F.4). runBatch disables #ytAdd during a file batch;
+    symmetrically a YouTube add must disable #filePick, or a file batch can land
+    mid-download and interleave with add_track's append, breaking both orderings."""
+    fn = app_js[app_js.index("async function addYouTube") : app_js.index("// ---- add audio: the batch")]
+    assert '$("#filePick").disabled = true;' in fn
+    assert '$("#filePick").disabled = false;' in fn
+
+
+def test_retry_button_is_inside_the_transient_group_not_after_the_box(app_js):
+    """UAT MEDIUM (§G.4/§G.5). The Try again button must sit INSIDE the transient
+    group (pushed into kids right after its lines, before replaceChildren), not
+    appended to the bottom of #addError after the deterministic / not-started
+    groups — otherwise it reads as applying to the files it cannot retry."""
+    fn = app_js[app_js.index("function renderAddError") : app_js.index("async function retryTransient")]
+    assert "kids.push(makeRetryButton());" in fn
+    assert fn.index("kids.push(makeRetryButton());") < fn.index("box.replaceChildren(...kids);")
+    # The only post-render append is the single-file (n === 1) case, which renders
+    # no group to sit inside.
+    assert "if (transient.length && n === 1) {" in fn

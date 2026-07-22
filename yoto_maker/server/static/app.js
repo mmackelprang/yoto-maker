@@ -1236,6 +1236,12 @@ async function addYouTube() {
   $("#addBar").style.width = "5%";
   $("#addMsg").textContent = "Getting the audio…";
   $("#ytAdd").disabled = true;
+  // Disable the file picker too, symmetrically with runBatch (which disables
+  // #ytAdd during a file batch). A file batch landing mid-YouTube-add would
+  // interleave with add_track's append and break both orderings — the
+  // pre-existing interleave Task 13's runBatch comment names, closed here on the
+  // reverse direction (Test Plan §F.4).
+  $("#filePick").disabled = true;
   try {
     const { job_id } = await api("/api/tracks/youtube", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -1249,6 +1255,7 @@ async function addYouTube() {
   } finally {
     show($("#addProgress"), false);
     $("#ytAdd").disabled = false;
+    $("#filePick").disabled = false;
   }
 }
 
@@ -1630,6 +1637,19 @@ function renderAddError() {
     });
     kids.push(ul);
   };
+  // The Try again button. Built here so it can be placed INSIDE the transient
+  // group rather than appended to the bottom of the whole box — otherwise the
+  // deterministic and not-started groups sit between the button and the files it
+  // retries, which is the exact "I pressed Try again, why is cover.jpg still
+  // failing?" ambiguity §G.4/§G.5 and the design meant to prevent.
+  const makeRetryButton = () => {
+    const btn = document.createElement("button");
+    btn.className = "btn";
+    btn.id = "addRetry";
+    btn.textContent = "Try again";
+    btn.addEventListener("click", retryTransient);
+    return btn;
+  };
 
   const k = b.ok.length;
   const n = b.total;
@@ -1675,6 +1695,9 @@ function renderAddError() {
       ? "This one didn’t work, but trying again might fix it:"
       : `These ${transient.length} didn’t work, but trying again might fix them:`);
     lines(transient, (f) => `${f.file.name} — ${f.text}`);
+    // Button INSIDE the transient group, right after its files — never after the
+    // deterministic / not-started groups below.
+    kids.push(makeRetryButton());
   }
   if (deterministic.length && n > 1) {
     // "can't be added" is deliberately final: it tells her not to wait, and not
@@ -1708,15 +1731,15 @@ function renderAddError() {
   // cover.jpg still failing?" cannot arise. The deterministic group sits there
   // with no control beside it — "explain, don't offer" made visible.
   //
-  // Genuine failures from before a cancel keep their groups and their button:
+  // For a real batch (n > 1) the button was already placed inside the transient
+  // group above. For a SINGLE failed file (n === 1) no group is rendered, so the
+  // button follows the one summary line here — the n=1 path keeps offering Try
+  // again on a transient failure, exactly as before.
+  //
+  // Genuine failures from before a cancel keep their group and their button:
   // that failure is real and unrelated to her decision.
-  if (transient.length) {
-    const btn = document.createElement("button");
-    btn.className = "btn";
-    btn.id = "addRetry";
-    btn.textContent = "Try again";
-    btn.addEventListener("click", retryTransient);
-    box.appendChild(btn);
+  if (transient.length && n === 1) {
+    box.appendChild(makeRetryButton());
   }
   show(box, true);
 
@@ -1812,9 +1835,19 @@ async function retryTransient() {
   // self-correcting: a retry that returns a 400 moves the file into the
   // deterministic group and the control disappears for it.
   BATCH.failed = BATCH.failed.filter((f) => f.cls !== "transient");
-  const before = BATCH.ok.length;
+  // Mark the batch as owing a reorder BEFORE re-entering runBatch. runBatch calls
+  // repairOrderIfNeeded() at its OWN tail, and that check early-returns unless
+  // BATCH.repaired is true — so setting the flag AFTER runBatch returned (the
+  // first draft) meant the reorder never ran on the first retry, and the
+  // recovered files stayed appended instead of returning to their natural-sort
+  // position (UAT §H.5, success criterion 13). A retry is by definition a repair
+  // of a disturbed order, so it always owes the reorder; the happy INITIAL batch
+  // never sets this flag and so still skips the reorder entirely (§H.6). A retry
+  // that recovers nothing just re-asserts the batch's existing order (a harmless
+  // no-op), and a cancelled retry is still skipped by repairOrderIfNeeded's
+  // earlier `if (b.cancelled) return`.
+  BATCH.repaired = true;
   await runBatch(retry);
-  if (BATCH.ok.length > before) BATCH.repaired = true;
 
   // After a retry, focus IS managed, and the distinction is principled rather
   // than inconsistent: a retry result IS a synchronous response to a press she
