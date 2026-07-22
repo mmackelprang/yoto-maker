@@ -172,6 +172,48 @@ def canonical_track_url(raw: object) -> tuple[str | None, str | None]:
     return None, f"unrecognized trackUrl form (not yoto:# or http): {raw[:48]!r}"
 
 
+# --------------------------------------------------------------------------- #
+# Icon safety: this tool re-POSTs icons VERBATIM, which is only safe while the icon
+# URL is STABLE (no expiry/signature). The real gzP2B body serves icons from
+# unsigned card-content URLs, but the other target cards are unverified - so rather
+# than assume, we CHECK: a signed/expiring icon URL blocks the whole card (this tool
+# deliberately does not canonicalize icons to yoto:#<mediaId>, so it must not freeze
+# an expiring icon into the card either).
+# --------------------------------------------------------------------------- #
+_ICON_SIGN_MARKERS = ("Expires=", "Signature=", "expires=", "signature=")
+
+
+def _icon_url_values(body: dict):
+    """Yield ``(location, url)`` for every ``display.icon16x16`` in the card, at both
+    the chapter level and the track level (mirrors how the create flow writes them)."""
+    for ci, chapter in enumerate(_find_chapters(body)):
+        if not isinstance(chapter, dict):
+            continue
+        disp = chapter.get("display")
+        if isinstance(disp, dict) and isinstance(disp.get("icon16x16"), str) and disp["icon16x16"]:
+            yield f"chapter {ci} display.icon16x16", disp["icon16x16"]
+        for ti, tr in enumerate(chapter.get("tracks") or []):
+            if not isinstance(tr, dict):
+                continue
+            tdisp = tr.get("display")
+            if isinstance(tdisp, dict) and isinstance(tdisp.get("icon16x16"), str) and tdisp["icon16x16"]:
+                yield f"track {ci}.{ti} display.icon16x16", tdisp["icon16x16"]
+
+
+def signed_icon_problems(body: dict) -> list[str]:
+    """Return a problem string for each SIGNED/expiring icon URL in the card. Empty
+    == every icon is a stable URL (or a canonical ``yoto:#`` ref) and is safe to
+    re-POST verbatim. A non-empty result must BLOCK the whole card (all-or-nothing)."""
+    problems: list[str] = []
+    for loc, url in _icon_url_values(body):
+        if url.startswith("http") and any(m in url for m in _ICON_SIGN_MARKERS):
+            problems.append(
+                f"{loc} is a SIGNED/expiring icon URL ({url[:64]}...) - this tool "
+                "re-POSTs icons verbatim and does not canonicalize a signed icon to "
+                "yoto:#<mediaId>, so it refuses to freeze an expiring icon into the card")
+    return problems
+
+
 def _card_title(body: dict) -> str | None:
     for path in (("title",), ("card", "title"), ("content", "title")):
         node: object = body
@@ -312,16 +354,16 @@ def _normalize_url(value: str) -> str:
     resolved forms means the verify asserts the ARTIFACT is unchanged: our posted
     ``yoto:#<sha>`` and the re-GET's re-resolved ``...#sha256=<sha>`` compare EQUAL when
     (and only when) Yoto re-resolved to the same sha - which also confirms the
-    canonicalized round-trip worked."""
+    canonicalized round-trip worked. The sha extraction here reuses `_extract_sha`, so
+    it enforces the SAME fragment/path agreement the pre-POST gate does: a re-GET whose
+    fragment and path disagree yields no unified sha and so is flagged by the diff
+    rather than silently trusted."""
     if value.startswith("yoto:#"):
         return f"sha256:{value[len('yoto:#'):]}"
-    frag_sha = _sha_from_fragment(value)
-    if frag_sha:
-        return f"sha256:{frag_sha}"
-    path = value.partition("#")[0].partition("?")[0]
-    if "~/" in path:
-        return f"sha256:{path.rsplit('~/', 1)[1].strip('/')}"
-    return path
+    sha = _extract_sha(value)          # agreement-enforced (fragment must match ~/<key>)
+    if sha:
+        return f"sha256:{sha}"
+    return value.partition("#")[0].partition("?")[0]   # e.g. a fragment-less, ~/-less URL
 
 
 def _normalize_urls(obj):
@@ -410,6 +452,7 @@ class CardPlan:
     title: str
     decisions: list[TrackDecision]
     canonical_urls: dict[str, str] = field(default_factory=dict)  # key -> "yoto:#<sha>" for the POST body
+    card_problems: list[str] = field(default_factory=list)        # card-level blockers (e.g. signed icons)
 
     @property
     def correct_keys(self) -> set[str]:
@@ -423,7 +466,7 @@ class CardPlan:
     def outcome(self) -> str:
         if not self.decisions:
             return "empty"
-        if self.blocked:            # all-or-nothing: ANY blocked track skips the card
+        if self.blocked or self.card_problems:   # all-or-nothing: ANY blocker skips the card
             return "blocked"
         if self.correct_keys:
             return "apply"
@@ -470,8 +513,11 @@ def plan_card(client, body: dict, card_id: str) -> CardPlan:
                 f"{ref.declared_format or '?'} -> {CORRECT_FORMAT} ({probe.detail}); trackUrl -> {canon}"))
         else:
             decisions.append(TrackDecision(ref, "blocked", f"artifact not confirmed Opus: {probe.detail}"))
+    # Card-level guard: a signed/expiring icon URL would break if re-POSTed verbatim,
+    # and this tool does not canonicalize icons - so block the whole card if any exist.
+    card_problems = signed_icon_problems(body)
     return CardPlan(card_id=card_id, title=str(_card_title(body) or card_id),
-                    decisions=decisions, canonical_urls=canonical)
+                    decisions=decisions, canonical_urls=canonical, card_problems=card_problems)
 
 
 # --------------------------------------------------------------------------- #
@@ -517,7 +563,7 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
         # not a genuinely already-correct card.
         return CardResult(card_id, plan.title, plan.outcome, plan)
     if plan.outcome == "blocked":                 # all-or-nothing: write nothing
-        return CardResult(card_id, plan.title, "blocked", plan)
+        return CardResult(card_id, plan.title, "blocked", plan, problems=list(plan.card_problems))
 
     if not apply:                                 # dry run: report intent, no write
         return CardResult(card_id, plan.title, "dry-run", plan)
@@ -635,8 +681,9 @@ def _print_card_result(res: CardResult) -> None:
         "empty": "no tracks found on this card - nothing to do",
         "dry-run": f"WOULD correct {len(res.plan.correct_keys)} track(s) - re-run with --apply to write",
         "applied": f"corrected {len(res.plan.correct_keys)} track(s); POST ok; verify ok",
-        "blocked": (f"SKIPPED - {len(res.plan.blocked)} track(s) could not be confirmed Opus; "
-                    "card left untouched (all-or-nothing)"),
+        "blocked": (f"SKIPPED - {len(res.plan.blocked)} track(s) blocked"
+                    + (f" + {len(res.plan.card_problems)} card-level issue(s)" if res.plan.card_problems else "")
+                    + "; card left untouched (all-or-nothing) - see below"),
         "verify-failed": ("WROTE but VERIFY FAILED - review the diffs below and roll back with "
                           f"--rollback {res.backup_path}"),
         "write-uncertain": ("the POST or verify re-GET errored AFTER the backup was written - the "

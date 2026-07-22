@@ -559,6 +559,42 @@ def test_icons_left_verbatim_stable_case(tmp_path):
                 == ch_before["tracks"][0]["display"]["icon16x16"])
 
 
+def test_signed_icon_blocks_whole_card_no_post(tmp_path):
+    """A SIGNED/expiring icon URL (Expires/Signature) would break if re-POSTed
+    verbatim, and this tool does not canonicalize icons -> block the whole card."""
+    body = _card("C1", ("mp3", "mp3"))
+    body["content"]["chapters"][0]["tracks"][0]["display"]["icon16x16"] = (
+        "https://card-content.example/POLICY~/mediaid?Expires=1&Signature=SIG&Key-Pair-Id=K")
+    fake = FakeClient(body)
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "blocked"
+    assert fake.posts == []
+    assert any("signed" in p.lower() and "icon" in p.lower() for p in res.problems)
+
+
+def test_signed_chapter_level_icon_also_blocks(tmp_path):
+    """The chapter-level display.icon16x16 is checked too, not just the track-level."""
+    body = _card("C1", ("mp3", "mp3"))
+    body["content"]["chapters"][0]["display"] = {
+        "icon16x16": "https://card-content.example/POLICY~/mediaid?Expires=1&Signature=SIG"}
+    fake = FakeClient(body)
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "blocked"
+    assert fake.posts == []
+
+
+def test_stable_icon_does_not_block(tmp_path):
+    """The stable case (the real card): an unsigned card-content icon URL is fine and
+    the card is corrected normally."""
+    fake = FakeClient(_card("C1", ("mp3", "mp3")))     # _card icons are `?sig=ICONi` (no Expires/Signature)
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+    assert res.outcome == "applied"
+
+
 def _real_shaped_card(formats, *, prefix, sig):
     """A card whose URLs use the REAL '<policy>~/<key>...#sha256=<key>' shape, so a
     test can rotate the policy prefix AND the signature (as a real re-GET does)."""
