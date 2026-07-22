@@ -20,12 +20,15 @@ so the audio would break ~60 min later and rollback (which re-POSTs a backup tha
 also held an expiring URL) would share the flaw. So before every POST we rewrite
 each track's ``trackUrl`` from the resolved form back to the CANONICAL ``yoto:#<sha>``
 form - byte-for-byte the reference the create flow POSTs (``models.build_content_payload``
-writes ``yoto:#<transcoded_sha>``). The POST body then contains only canonical
-``yoto:#...`` references plus the corrected ``format``: no expiring URL, round-trip
-safe, rollback clean. Icons are left verbatim because the real card serves them from
-STABLE ``https://card-content.yotoplay.com/...`` URLs with no Expires/Signature query
-(confirmed against the real GET /card/gzP2B body); a signed icon URL would instead
-have to be canonicalized to ``yoto:#<mediaId>`` or the card would be blocked.
+writes ``yoto:#<transcoded_sha>``). Icons get the SAME treatment: POST /content REJECTS
+a resolved icon URL (confirmed live - Yoto 400: 'icon16x16 must be in format
+"yoto:#{mediaId}" where mediaId is 43 characters'), so every ``display.icon16x16``
+(chapter- AND track-level) is rewritten from ``https://card-content.yotoplay.com/<policy>~/<mediaId>``
+back to ``yoto:#<mediaId>`` (the 43-char path segment after ``~/``). The POST body then
+contains only canonical ``yoto:#...`` references (trackUrl AND icon16x16) plus the
+corrected ``format``: no resolved/expiring URL of either kind, round-trip safe, rollback
+clean. A track sha or an icon mediaId that can't be extracted/validated BLOCKS the whole
+card (all-or-nothing) rather than being guessed.
 
 Shapes pinned against a real GET /card/gzP2B body (plan Task 1/Step 0):
   * GET /card/{id} returns ``{"card": {...}, "ownership": {...}}`` - client.get_card
@@ -36,8 +39,9 @@ Shapes pinned against a real GET /card/gzP2B body (plan Task 1/Step 0):
     (``https://secure-media.yotoplay.com/<policy>~/<sha>?Expires=..&Signature=..#sha256=<sha>``)
     - that is what we probe, and the ``<sha>`` we canonicalize back to ``yoto:#<sha>``
     for the POST. (On create the app writes ``yoto:#<sha>``; the GET resolves it.)
-  * each track's icon (``display.icon16x16``) is a STABLE ``card-content`` URL with
-    no expiry/signature query, so it is re-POSTed verbatim.
+  * each ``display.icon16x16`` (chapter- and track-level) is a resolved
+    ``https://card-content.yotoplay.com/<policy>~/<mediaId>`` URL - we canonicalize the
+    43-char ``<mediaId>`` back to ``yoto:#<mediaId>`` for the POST (Yoto requires it).
 """
 from __future__ import annotations
 
@@ -173,14 +177,52 @@ def canonical_track_url(raw: object) -> tuple[str | None, str | None]:
 
 
 # --------------------------------------------------------------------------- #
-# Icon safety: this tool re-POSTs icons VERBATIM, which is only safe while the icon
-# URL is STABLE (no expiry/signature). The real gzP2B body serves icons from
-# unsigned card-content URLs, but the other target cards are unverified - so rather
-# than assume, we CHECK: a signed/expiring icon URL blocks the whole card (this tool
-# deliberately does not canonicalize icons to yoto:#<mediaId>, so it must not freeze
-# an expiring icon into the card either).
+# Canonicalize a RESOLVED icon URL back to `yoto:#<mediaId>` (live-run finding).
 # --------------------------------------------------------------------------- #
-_ICON_SIGN_MARKERS = ("Expires=", "Signature=", "expires=", "signature=")
+# CONFIRMED LIVE: POST /content REJECTS a resolved icon URL - it requires every
+# `display.icon16x16` to be `yoto:#{mediaId}` where mediaId is EXACTLY 43 chars
+# (Yoto 400: 'icon16x16 must be in format "yoto:#{mediaId}" where mediaId is 43
+# characters'). So icons must be canonicalized exactly like trackUrls, NOT left
+# verbatim. A resolved icon URL looks like
+#   https://card-content.yotoplay.com/<policy>~/<mediaId>
+# with the 43-char mediaId as the path segment after `~/` (no query/fragment on the
+# icon URL). The `<policy>~` prefix rotates per request; the mediaId is the identity.
+_MEDIA_ID_RE = re.compile(r"[A-Za-z0-9_-]{43}")
+
+
+def _extract_media_id(url: str) -> str | None:
+    """The 43-char mediaId from a RESOLVED icon URL (the segment after the last `~/`,
+    query/fragment stripped), or None if it isn't exactly a 43-char base64url token.
+    Yoto's POST /content requires exactly 43 chars, so anything else must block rather
+    than be sent (Yoto would 400 the whole POST)."""
+    path = url.partition("#")[0].partition("?")[0]
+    if "~/" not in path:
+        return None
+    seg = path.rsplit("~/", 1)[1].strip("/")
+    return seg if _MEDIA_ID_RE.fullmatch(seg) else None
+
+
+def canonical_icon(raw: object) -> tuple[str | None, str | None]:
+    """Map a raw ``display.icon16x16`` value to the CANONICAL ``yoto:#<mediaId>`` ref.
+
+    Returns ``(canonical, error)`` mirroring ``canonical_track_url``:
+      * ``(raw, None)``                  - already a canonical ``yoto:#<mediaId>`` ref: leave it.
+      * ``("yoto:#<mediaId>", None)``    - a RESOLVED card-content URL whose 43-char mediaId validated.
+      * ``(None, None)``                 - no icon to rewrite (nothing to do).
+      * ``(None, "<reason>")``           - a resolved URL whose mediaId can't be extracted/validated,
+                                           or an unrecognized form -> caller BLOCKS the whole card.
+    """
+    if not isinstance(raw, str) or not raw:
+        return None, None
+    if raw.startswith("yoto:#"):
+        return raw, None
+    if raw.startswith("http"):
+        media_id = _extract_media_id(raw)
+        if media_id:
+            return f"yoto:#{media_id}", None
+        return None, ('resolved icon URL has no extractable 43-char mediaId - POST /content '
+                      'requires display.icon16x16 == "yoto:#{mediaId}" (43 chars)')
+    return None, f"unrecognized icon16x16 form (not yoto:# or http): {raw[:48]!r}"
 
 
 def _icon_url_values(body: dict):
@@ -200,18 +242,30 @@ def _icon_url_values(body: dict):
                 yield f"track {ci}.{ti} display.icon16x16", tdisp["icon16x16"]
 
 
-def signed_icon_problems(body: dict) -> list[str]:
-    """Return a problem string for each SIGNED/expiring icon URL in the card. Empty
-    == every icon is a stable URL (or a canonical ``yoto:#`` ref) and is safe to
-    re-POST verbatim. A non-empty result must BLOCK the whole card (all-or-nothing)."""
+def icon_problems(body: dict) -> list[str]:
+    """Return a problem string for each icon URL that can't be canonicalized to
+    ``yoto:#<mediaId>``. Empty == every icon is already canonical or a resolved
+    card-content URL with a valid 43-char mediaId (so the POST body will carry only
+    canonical icon refs). A non-empty result must BLOCK the whole card (all-or-nothing)."""
     problems: list[str] = []
     for loc, url in _icon_url_values(body):
-        if url.startswith("http") and any(m in url for m in _ICON_SIGN_MARKERS):
-            problems.append(
-                f"{loc} is a SIGNED/expiring icon URL ({url[:64]}...) - this tool "
-                "re-POSTs icons verbatim and does not canonicalize a signed icon to "
-                "yoto:#<mediaId>, so it refuses to freeze an expiring icon into the card")
+        _canon, err = canonical_icon(url)
+        if err:
+            problems.append(f"{loc}: {err}")
     return problems
+
+
+def _canonicalize_display_icon(display: object) -> None:
+    """In-place: rewrite ``display['icon16x16']`` to its canonical ``yoto:#<mediaId>``
+    when it can be (a resolved card-content URL); leave already-canonical / absent /
+    unrecognized values untouched. (The pre-POST gate in ``plan_card`` has already
+    blocked any card carrying an un-canonicalizable icon, so in the apply path this
+    only ever rewrites resolvable icons or no-ops on already-canonical ones.)"""
+    if not isinstance(display, dict):
+        return
+    canon, err = canonical_icon(display.get("icon16x16"))
+    if canon is not None and err is None:
+        display["icon16x16"] = canon
 
 
 def _card_title(body: dict) -> str | None:
@@ -293,18 +347,22 @@ def apply_format_corrections(body: dict, correct_keys: set[str], fmt: str = CORR
 def build_repair_payload(body: dict, correct_keys: set[str], canonical_urls: dict[str, str],
                          fmt: str = CORRECT_FORMAT) -> dict:
     """Return the NEW body to POST (input untouched): `format = fmt` on the corrected
-    tracks AND every track's `trackUrl` rewritten to its CANONICAL `yoto:#<sha>` ref
-    (from `canonical_urls`, keyed 'cid.tid'). This is what removes the resolved,
-    EXPIRING signed URL from the POST body entirely (pre-merge review HIGH #1) -
-    the body posted back carries only `yoto:#...` references, exactly the reference
-    form the card was created with. Nothing else changes (icons/keys/duration/
-    fileSize/channels/order/metadata all survive verbatim)."""
+    tracks, every track's `trackUrl` rewritten to its CANONICAL `yoto:#<sha>` ref (from
+    `canonical_urls`, keyed 'cid.tid'), AND every `display.icon16x16` (chapter- and
+    track-level) rewritten to its canonical `yoto:#<mediaId>` ref. This removes BOTH
+    the resolved/expiring signed trackUrl AND the resolved icon URL from the POST body
+    (POST /content rejects either) - the body carries only `yoto:#...` references,
+    exactly the reference form the card was created with. Nothing else changes
+    (keys/duration/fileSize/channels/order/metadata all survive verbatim)."""
     out = copy.deepcopy(body)
     for ci, chapter in enumerate(_find_chapters(out)):
+        if isinstance(chapter, dict):
+            _canonicalize_display_icon(chapter.get("display"))       # chapter-level icon
         tracks = chapter.get("tracks") if isinstance(chapter, dict) else None
         for ti, tr in enumerate(tracks or []):
             if not isinstance(tr, dict):
                 continue
+            _canonicalize_display_icon(tr.get("display"))            # track-level icon
             key = f"{ci}.{ti}"
             canon = canonical_urls.get(key)
             if canon is not None:
@@ -314,18 +372,22 @@ def build_repair_payload(body: dict, correct_keys: set[str], canonical_urls: dic
     return out
 
 
-def canonicalize_body_track_urls(body: dict) -> dict:
-    """Return a NEW body with every track's `trackUrl` rewritten to `yoto:#<sha>`
-    where it can be, and left verbatim where it can't (best-effort). Used by
-    rollback so a restore never re-POSTs an expiring signed URL either. Unlike the
-    repair path this never blocks - a restore is a recovery action - but it makes
-    the restored card as canonical as the artifact refs allow."""
+def canonicalize_body_media_refs(body: dict) -> dict:
+    """Return a NEW body with every `trackUrl` AND every `display.icon16x16` rewritten
+    to its canonical `yoto:#<...>` ref where it can be, left verbatim where it can't
+    (best-effort). Used by rollback so a restore never re-POSTs a resolved trackUrl OR
+    a resolved icon URL either (POST /content rejects both). Unlike the repair path
+    this never blocks - a restore is a recovery action - but it makes the restored card
+    as canonical as the refs allow."""
     out = copy.deepcopy(body)
     for chapter in _find_chapters(out):
+        if isinstance(chapter, dict):
+            _canonicalize_display_icon(chapter.get("display"))
         tracks = chapter.get("tracks") if isinstance(chapter, dict) else None
         for tr in tracks or []:
             if not isinstance(tr, dict):
                 continue
+            _canonicalize_display_icon(tr.get("display"))
             canon, err = canonical_track_url(tr.get("trackUrl"))
             if canon is not None and err is None:
                 tr["trackUrl"] = canon
@@ -513,9 +575,10 @@ def plan_card(client, body: dict, card_id: str) -> CardPlan:
                 f"{ref.declared_format or '?'} -> {CORRECT_FORMAT} ({probe.detail}); trackUrl -> {canon}"))
         else:
             decisions.append(TrackDecision(ref, "blocked", f"artifact not confirmed Opus: {probe.detail}"))
-    # Card-level guard: a signed/expiring icon URL would break if re-POSTed verbatim,
-    # and this tool does not canonicalize icons - so block the whole card if any exist.
-    card_problems = signed_icon_problems(body)
+    # Card-level guard: POST /content requires canonical yoto:#<mediaId> icons. Any
+    # icon whose 43-char mediaId can't be extracted/validated blocks the whole card
+    # (all-or-nothing) - the normal case (resolvable icons) is canonicalized in build.
+    card_problems = icon_problems(body)
     return CardPlan(card_id=card_id, title=str(_card_title(body) or card_id),
                     decisions=decisions, canonical_urls=canonical, card_problems=card_problems)
 
@@ -595,16 +658,17 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
 def rollback_from_backup(client, backup_path: Path) -> CardResult:
     """Restore a card in place from a backup JSON (re-POST it with its cardId).
 
-    The backup holds the verbatim GET body, whose trackUrls are the RESOLVED, now
-    likely-expired signed URLs. Re-POSTing those verbatim would re-introduce
-    HIGH #1, so the restore POST canonicalizes every trackUrl back to `yoto:#<sha>`
-    first (best-effort - a restore never blocks). The verify still compares by sha,
-    so a restore to the same artifacts passes."""
+    The backup holds the verbatim GET body, whose trackUrls AND icon URLs are the
+    RESOLVED forms POST /content rejects. Re-POSTing those verbatim would fail (or
+    re-introduce HIGH #1), so the restore POST canonicalizes every trackUrl back to
+    `yoto:#<sha>` and every icon back to `yoto:#<mediaId>` first (best-effort - a
+    restore never blocks). The verify compares by sha/mediaId, so a restore to the
+    same artifacts passes."""
     body = json.loads(Path(backup_path).read_text(encoding="utf-8"))
     card_id = _card_id_of(body)
     if not card_id:
         raise YotoError(f"Backup {backup_path} has no cardId to restore to.")
-    client.update_card(card_id, canonicalize_body_track_urls(body))
+    client.update_card(card_id, canonicalize_body_media_refs(body))
     after = client.get_card(card_id)
     problems = _diff_paths(_strip_volatile(body), _strip_volatile(after))
     title = str(_card_title(body) or card_id)

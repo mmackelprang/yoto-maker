@@ -15,10 +15,13 @@ import pytest
 from yoto_maker.yoto import auth
 from yoto_maker.yoto.client import ArtifactProbe, CardSummary, YotoClient, YotoError
 from yoto_maker.yoto.repair import (
+    _extract_media_id,
     apply_format_corrections,
     build_repair_payload,
+    canonical_icon,
     canonical_track_url,
-    canonicalize_body_track_urls,
+    canonicalize_body_media_refs,
+    icon_problems,
     iter_tracks,
     plan_card,
     repair_card,
@@ -168,25 +171,38 @@ def test_real_fixture_pins_shape_trackurl_and_format(monkeypatch):
 # --------------------------------------------------------------------------- #
 # Orchestration fixtures + fake client (pure Python — no network)
 # --------------------------------------------------------------------------- #
+def _mid(card_id, i):
+    """A deterministic 43-char base64url-ish mediaId (Yoto requires exactly 43)."""
+    return (f"ICONmediaId{card_id}n{i}" + "x" * 43)[:43]
+
+
+def _icon_url(card_id, i, prefix="POLICY"):
+    """A RESOLVED icon URL in the real shape: card-content/<policy>~/<43-char mediaId>."""
+    return f"https://card-content.example/{prefix}{card_id}~/{_mid(card_id, i)}"
+
+
 def _card(card_id="C1", formats=("mp3", "mp3"), with_urls=True, title="Test Card"):
     """A GET /card body in the UNWRAPPED (inner-card) shape — one track per
     chapter, with icons, keys, durations, sizes, channels: everything the verify
     must preserve. `trackUrl` is the RESOLVED, pre-signed https artifact URL when
     Yoto has served the card (reality), or an unresolved `yoto:#sha` ref when it
-    can't be probed (with_urls=False)."""
+    can't be probed (with_urls=False). Icons are RESOLVED card-content URLs (the real
+    shape) at BOTH chapter- and track-level, as the live GET /card returns them."""
     chapters = []
     for i, fmt in enumerate(formats, start=1):
         key = f"{i:02d}"
+        icon = _icon_url(card_id, i)
         track = {
             "key": key, "title": f"Track {i}", "type": "audio", "format": fmt,
             "duration": 100 + i, "fileSize": 1000 + i, "channels": "stereo",
-            "display": {"icon16x16": f"https://card-content.example/{card_id}/{i}?sig=ICON{i}"},
+            "display": {"icon16x16": icon},
             "trackUrl": (
                 f"https://secure-media.example/{card_id}/{i}?Expires=1&Signature=EPHEMERAL{i}#sha256=SHA{i}"
                 if with_urls else f"yoto:#SHA{i}"
             ),
         }
-        chapters.append({"key": key, "title": f"Track {i}", "tracks": [track]})
+        chapters.append({"key": key, "title": f"Track {i}", "tracks": [track],
+                         "display": {"icon16x16": icon}})
     return {"cardId": card_id, "title": title,
             "content": {"chapters": chapters},
             "updatedAt": "2026-07-21T00:00:00Z"}
@@ -322,12 +338,14 @@ def test_verify_passes_when_only_format_changed(tmp_path):
     URL signatures and updatedAt, which must be ignored)."""
     after = _card("C1", ("opus", "opus"))
     after["updatedAt"] = "2026-07-21T23:59:59Z"             # volatile, must be ignored
-    # Rotate the pre-signed signatures (query only) — the sha-bearing path is stable,
-    # exactly as the real CDN URLs behave across the ~60-min signing window.
+    # Rotate the pre-signed trackUrl signature AND the icon <policy>~ prefix — the
+    # sha / mediaId are stable, exactly as the real CDN URLs behave across a re-GET.
     for i, ch in enumerate(after["content"]["chapters"], start=1):
         tr = ch["tracks"][0]
         tr["trackUrl"] = f"https://secure-media.example/C1/{i}?Expires=999&Signature=ROTATED{i}#sha256=SHA{i}"
-        tr["display"]["icon16x16"] = f"https://card-content.example/C1/{i}?sig=ROTATEDICON{i}"
+        rotated_icon = _icon_url("C1", i, prefix="ROTATEDPOLICY")     # same mediaId, new prefix
+        ch["display"]["icon16x16"] = rotated_icon
+        tr["display"]["icon16x16"] = rotated_icon
     fake = FakeClient(_card("C1", ("mp3", "mp3")), after=after)
 
     res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
@@ -436,9 +454,9 @@ def test_rollback_reposts_backup_in_place(tmp_path):
     assert fake.posts[0]["cardId"] == "C1"
 
 
-def test_rollback_posts_canonical_refs_not_expiring_urls(tmp_path):
-    """The rollback POST must ALSO canonicalize trackUrls (the backup holds resolved,
-    now-expired signed URLs) so a restore never re-introduces HIGH #1."""
+def test_rollback_posts_canonical_refs_not_resolved_urls(tmp_path):
+    """The rollback POST must canonicalize BOTH trackUrls and icons (the backup holds
+    resolved URLs POST /content rejects) so a restore never re-POSTs a resolved ref."""
     original = _card("C1", ("mp3", "mp3"))
     backup = tmp_path / "C1-backup.json"
     backup.write_text(json.dumps(original), encoding="utf-8")
@@ -451,7 +469,23 @@ def test_rollback_posts_canonical_refs_not_expiring_urls(tmp_path):
     posted = fake.posts[0]
     urls = [ch["tracks"][0]["trackUrl"] for ch in posted["content"]["chapters"]]
     assert urls == ["yoto:#SHA1", "yoto:#SHA2"]
-    assert "secure-media" not in json.dumps(posted)     # no resolved/expiring URL restored
+    dumped = json.dumps(posted)
+    assert "secure-media" not in dumped                 # no resolved audio URL restored
+    assert "card-content" not in dumped                 # no resolved icon URL restored
+    for ch in posted["content"]["chapters"]:
+        assert ch["display"]["icon16x16"].startswith("yoto:#")
+        assert ch["tracks"][0]["display"]["icon16x16"].startswith("yoto:#")
+
+
+def test_canonicalize_body_media_refs_rewrites_tracks_and_icons():
+    """The rollback helper canonicalizes BOTH trackUrls and icons, best-effort."""
+    out = canonicalize_body_media_refs(_card("C1", ("mp3", "mp3")))
+    dumped = json.dumps(out)
+    assert "secure-media" not in dumped and "card-content" not in dumped
+    for i, ch in enumerate(out["content"]["chapters"], start=1):
+        assert ch["tracks"][0]["trackUrl"] == f"yoto:#SHA{i}"
+        assert ch["display"]["icon16x16"] == f"yoto:#{_mid('C1', i)}"
+        assert ch["tracks"][0]["display"]["icon16x16"] == f"yoto:#{_mid('C1', i)}"
 
 
 # --------------------------------------------------------------------------- #
@@ -513,8 +547,8 @@ def test_unextractable_sha_blocks_whole_card_no_post(tmp_path):
 
 
 def test_post_body_uses_canonical_refs_not_resolved_urls(tmp_path):
-    """THE core assertion: the body handed to update_card contains yoto:#<sha> for
-    every track and NOT the resolved secure-media signed URL."""
+    """THE core assertion: the body handed to update_card contains yoto:#<...> for
+    every trackUrl AND every icon16x16, and NO resolved host of either kind."""
     fake = FakeClient(_card("C1", ("mp3", "mp3")))
 
     res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
@@ -526,8 +560,13 @@ def test_post_body_uses_canonical_refs_not_resolved_urls(tmp_path):
     assert urls == ["yoto:#SHA1", "yoto:#SHA2"]
     dumped = json.dumps(posted)
     assert "secure-media" not in dumped                 # the audio host is gone
+    assert "card-content" not in dumped                 # the icon host is gone too
     assert "EPHEMERAL" not in dumped                    # so is the ephemeral signature
     assert "Expires=" not in dumped
+    # every icon (chapter- AND track-level) is now a canonical yoto:# ref
+    for ch in posted["content"]["chapters"]:
+        assert ch["display"]["icon16x16"].startswith("yoto:#")
+        assert ch["tracks"][0]["display"]["icon16x16"].startswith("yoto:#")
 
 
 def test_mixed_card_canonicalizes_all_tracks_including_already_opus(tmp_path):
@@ -545,71 +584,91 @@ def test_mixed_card_canonicalizes_all_tracks_including_already_opus(tmp_path):
     assert formats == ["opus", "opus"]                  # track 1 stays opus, track 2 corrected
 
 
-def test_icons_left_verbatim_stable_case(tmp_path):
-    """The real card serves icons from STABLE card-content URLs (no Expires/Signature),
-    so they are re-POSTed byte-for-byte — canonicalization touches trackUrl only."""
-    before = _card("C1", ("mp3", "mp3"))
-    fake = FakeClient(copy.deepcopy(before))
+# --------------------------------------------------------------------------- #
+# Icon canonicalization (live-run finding): POST /content REQUIRES every
+# display.icon16x16 to be canonical yoto:#<mediaId> (43 chars) - signed OR not.
+# --------------------------------------------------------------------------- #
+def test_extract_media_id_from_resolved_icon_url():
+    mid = "xV2a9v63mNcsYy5QYsBhlmK5MXgoM5Fuk8ed4nQqcUg"     # 43 chars, base64url-ish
+    assert len(mid) == 43
+    assert _extract_media_id(f"https://card-content.yotoplay.com/POLICYtoken~/{mid}") == mid
+
+
+def test_extract_media_id_rejects_wrong_length():
+    """Yoto requires EXACTLY 43 chars; a non-43-char segment isn't a mediaId."""
+    assert _extract_media_id("https://card-content.example/P~/tooShort") is None
+    assert _extract_media_id("https://card-content.example/no-tilde-segment") is None
+
+
+def test_canonical_icon_canonicalizes_resolved_and_leaves_canonical():
+    mid = "xV2a9v63mNcsYy5QYsBhlmK5MXgoM5Fuk8ed4nQqcUg"
+    canon, err = canonical_icon(f"https://card-content.example/P~/{mid}")
+    assert err is None and canon == f"yoto:#{mid}"
+    # already-canonical yoto:#<mediaId> is left untouched
+    assert canonical_icon(f"yoto:#{mid}") == (f"yoto:#{mid}", None)
+    # no icon to rewrite -> (None, None); unextractable -> error
+    assert canonical_icon(None) == (None, None)
+    assert canonical_icon("https://card-content.example/P~/short")[1]
+
+
+def test_icons_canonicalized_in_post_body(tmp_path):
+    """Icons are canonicalized to yoto:#<mediaId>, at BOTH chapter- and track-level
+    (not left verbatim) — the live 400 was on both display paths."""
+    fake = FakeClient(_card("C1", ("mp3", "mp3")))
 
     res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
 
+    assert res.outcome == "applied"
     posted = fake.posts[0]
-    for ch_post, ch_before in zip(posted["content"]["chapters"], before["content"]["chapters"]):
-        assert (ch_post["tracks"][0]["display"]["icon16x16"]
-                == ch_before["tracks"][0]["display"]["icon16x16"])
+    for i, ch in enumerate(posted["content"]["chapters"], start=1):
+        expected = f"yoto:#{_mid('C1', i)}"
+        assert ch["display"]["icon16x16"] == expected
+        assert ch["tracks"][0]["display"]["icon16x16"] == expected
 
 
-def test_signed_icon_blocks_whole_card_no_post(tmp_path):
-    """A SIGNED/expiring icon URL (Expires/Signature) would break if re-POSTed
-    verbatim, and this tool does not canonicalize icons -> block the whole card."""
+def test_unextractable_icon_blocks_whole_card_no_post(tmp_path):
+    """An icon URL with no extractable 43-char mediaId blocks the ENTIRE card
+    (all-or-nothing) — never POST an icon Yoto will 400 on."""
     body = _card("C1", ("mp3", "mp3"))
     body["content"]["chapters"][0]["tracks"][0]["display"]["icon16x16"] = (
-        "https://card-content.example/POLICY~/mediaid?Expires=1&Signature=SIG&Key-Pair-Id=K")
+        "https://card-content.example/POLICY~/notA43CharMediaId")     # wrong length
     fake = FakeClient(body)
 
     res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
 
     assert res.outcome == "blocked"
     assert fake.posts == []
-    assert any("signed" in p.lower() and "icon" in p.lower() for p in res.problems)
+    assert any("mediaid" in p.lower() or "icon" in p.lower() for p in res.problems)
 
 
-def test_signed_chapter_level_icon_also_blocks(tmp_path):
-    """The chapter-level display.icon16x16 is checked too, not just the track-level."""
-    body = _card("C1", ("mp3", "mp3"))
-    body["content"]["chapters"][0]["display"] = {
-        "icon16x16": "https://card-content.example/POLICY~/mediaid?Expires=1&Signature=SIG"}
-    fake = FakeClient(body)
-
-    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
-
-    assert res.outcome == "blocked"
-    assert fake.posts == []
-
-
-def test_stable_icon_does_not_block(tmp_path):
-    """The stable case (the real card): an unsigned card-content icon URL is fine and
-    the card is corrected normally."""
-    fake = FakeClient(_card("C1", ("mp3", "mp3")))     # _card icons are `?sig=ICONi` (no Expires/Signature)
-    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
-    assert res.outcome == "applied"
+def test_icon_problems_flags_only_unextractable():
+    """icon_problems() is empty for a fully-resolvable card and flags an unextractable
+    icon (both chapter- and track-level are inspected)."""
+    assert icon_problems(_card("C1", ("mp3", "mp3"))) == []
+    bad = _card("C1", ("mp3", "mp3"))
+    bad["content"]["chapters"][0]["display"]["icon16x16"] = "https://card-content.example/P~/short"
+    problems = icon_problems(bad)
+    assert len(problems) == 1 and "chapter 0" in problems[0]
 
 
 def _real_shaped_card(formats, *, prefix, sig):
-    """A card whose URLs use the REAL '<policy>~/<key>...#sha256=<key>' shape, so a
-    test can rotate the policy prefix AND the signature (as a real re-GET does)."""
+    """A card whose URLs use the REAL '<policy>~/<key>' shape (trackUrl also carries a
+    '#sha256=<key>' fragment), so a test can rotate the policy prefix AND the signature
+    (as a real re-GET does). mediaId is a real 43-char token."""
     chapters = []
     for i, fmt in enumerate(formats, start=1):
         sha = f"AUDIOsha{i}base64token"
-        icon = f"ICONmedia{i}base64token"
+        mid = _mid("RS", i)                                # 43-char mediaId
+        icon = f"https://card-content.example/{prefix}~/{mid}"
         track = {
             "key": f"{i:02d}", "title": f"Track {i}", "type": "audio", "format": fmt,
             "duration": 100 + i, "fileSize": 1000 + i, "channels": "stereo",
-            "display": {"icon16x16": f"https://card-content.example/{prefix}~/{icon}"},
+            "display": {"icon16x16": icon},
             "trackUrl": (f"https://secure-media.example/{prefix}~/{sha}?"
                          f"Expires=9&Signature={sig}&Key-Pair-Id=K#sha256={sha}"),
         }
-        chapters.append({"key": f"{i:02d}", "title": f"Track {i}", "tracks": [track]})
+        chapters.append({"key": f"{i:02d}", "title": f"Track {i}", "tracks": [track],
+                         "display": {"icon16x16": icon}})
     return {"cardId": "C1", "title": "Real Shaped", "content": {"chapters": chapters},
             "updatedAt": "2026-07-22T00:00:00Z"}
 
@@ -643,10 +702,10 @@ def test_verify_fails_when_the_sha_actually_changes(tmp_path):
     assert any("trackurl" in p.lower() for p in res.problems)
 
 
-def test_real_fixture_trackurl_canonicalizes_to_yoto_sha():
+def test_real_fixture_canonicalizes_track_and_icon():
     """Against the sanitized REAL GET /card/gzP2B body: the resolved trackUrl
-    canonicalizes to yoto:#<sha>, and the icon is the STABLE case (no expiry/signature),
-    so it is left as-is."""
+    canonicalizes to yoto:#<sha>, and the resolved icon (chapter- AND track-level)
+    canonicalizes to yoto:#<43-char mediaId> — the form POST /content requires."""
     raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
     inner = raw["card"]
     refs = iter_tracks(inner)
@@ -655,6 +714,18 @@ def test_real_fixture_trackurl_canonicalizes_to_yoto_sha():
     assert err is None
     assert canon == "yoto:#44aJeE5Xj4OTnmK3VpoYNATWziizU3w4HLucKHqjmec"
 
-    icon = inner["content"]["chapters"][0]["tracks"][0]["display"]["icon16x16"]
-    assert icon.startswith("https://card-content.yotoplay.com/")
-    assert "Expires" not in icon and "Signature" not in icon   # STABLE -> re-POST verbatim
+    expected_icon = "yoto:#xV2a9v63mNcsYy5QYsBhlmK5MXgoM5Fuk8ed4nQqcUg"
+    chapter = inner["content"]["chapters"][0]
+    mid = _extract_media_id(chapter["tracks"][0]["display"]["icon16x16"])
+    assert mid == "xV2a9v63mNcsYy5QYsBhlmK5MXgoM5Fuk8ed4nQqcUg" and len(mid) == 43
+    assert canonical_icon(chapter["tracks"][0]["display"]["icon16x16"]) == (expected_icon, None)
+    assert canonical_icon(chapter["display"]["icon16x16"]) == (expected_icon, None)
+    assert icon_problems(inner) == []      # the real card is fully resolvable
+
+    # end-to-end: the POST body built from the real fixture carries ONLY yoto:# refs
+    posted = build_repair_payload(inner, {"0.0"}, {"0.0": canon})
+    dumped = json.dumps(posted)
+    assert "card-content.yotoplay.com" not in dumped
+    assert "secure-media.yotoplay.com" not in dumped
+    assert posted["content"]["chapters"][0]["display"]["icon16x16"] == expected_icon
+    assert posted["content"]["chapters"][0]["tracks"][0]["display"]["icon16x16"] == expected_icon
