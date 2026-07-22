@@ -59,6 +59,23 @@ class CardResult:
     raw: dict
 
 
+@dataclass
+class CardSummary:
+    """One card as listed by GET /content/mine."""
+    card_id: str
+    title: str
+    created_at: str | None = None
+    track_count: int | None = None
+
+
+@dataclass
+class ArtifactProbe:
+    """What a served artifact actually is, read from its pre-signed URL."""
+    is_opus: bool
+    detail: str                       # human-readable reason, for the report
+    content_type: str | None = None
+
+
 def _dig(data: dict, *keys: str, default=None):
     """Return the first present key, searching top level then one nesting deep."""
     for k in keys:
@@ -70,6 +87,18 @@ def _dig(data: dict, *keys: str, default=None):
                 if k in v and v[k] not in (None, ""):
                     return v[k]
     return default
+
+
+def _track_count(card: dict) -> int | None:
+    """Best-effort track count from a /content/mine list item (often absent)."""
+    if not isinstance(card, dict):
+        return None
+    for key in ("trackCount", "noOfTracks"):
+        v = card.get(key)
+        if isinstance(v, int):
+            return v
+    tracks = card.get("tracks")
+    return len(tracks) if isinstance(tracks, list) else None
 
 
 def _transcoded_format(info) -> str | None:
@@ -296,6 +325,121 @@ class YotoClient:
 
         content_id = _dig(data, "cardId", "contentId", "id") or ""
         return CardResult(content_id=content_id, title=card_title, raw=data)
+
+    # -- account read/write surface (used by yoto/repair.py) --------------
+    def list_my_cards(self) -> list[CardSummary]:
+        """GET /content/mine -> the account's cards (id + title + createdAt).
+
+        The live shape is ``{"cards": [ {cardId, title, createdAt, ...}, ... ]}``
+        (pinned against a real body); the parsing also tolerates a bare list or
+        another common wrapper so it survives a shape change.
+        """
+        try:
+            resp = self._client.get(f"{self._base}/content/mine", headers=self._headers())
+            resp.raise_for_status()
+            data = resp.json()
+        except auth.NotConnectedError:
+            raise
+        except Exception as exc:
+            raise YotoError(_friendly_http(exc, "listing your cards")) from exc
+
+        items = data if isinstance(data, list) else _dig(data, "cards", "content", "mine", default=[])
+        cards: list[CardSummary] = []
+        for it in items if isinstance(items, list) else []:
+            cid = _dig(it, "cardId", "contentId", "id")
+            if not cid:
+                continue
+            cards.append(CardSummary(
+                card_id=cid,
+                title=_dig(it, "title", default="(untitled)"),
+                created_at=_dig(it, "createdAt", "created", default=None),
+                track_count=_track_count(it),
+            ))
+        return cards
+
+    def get_card(self, card_id: str) -> dict:
+        """GET /card/{card_id} -> the card body, UNWRAPPED from its envelope.
+
+        The live endpoint returns ``{"card": {...}, "ownership": {...}}`` (pinned
+        against a real body — plan Task 1/Step 0). We return the inner ``card``
+        object: the thing repair.py backs up, deep-copies, mutates (format only)
+        and POSTs back via POST /content. It also carries each track's resolved,
+        short-lived pre-signed ``trackUrl`` used to probe the served artifact. A
+        response that is already unwrapped is returned as-is.
+        """
+        try:
+            resp = self._client.get(f"{self._base}/card/{card_id}", headers=self._headers())
+            resp.raise_for_status()
+            data = resp.json()
+        except auth.NotConnectedError:
+            raise
+        except Exception as exc:
+            raise YotoError(_friendly_http(exc, "reading the card")) from exc
+        if isinstance(data, dict) and isinstance(data.get("card"), dict):
+            return data["card"]
+        return data
+
+    def update_card(self, card_id: str, body: dict) -> dict:
+        """POST /content with body['cardId'] = card_id -> update IN PLACE.
+
+        Preserves cardId (and the physical NFC link) and creates NO duplicate.
+        The body is sent verbatim except that cardId is (re)asserted, so icons,
+        keys, ordering and every unmodelled field survive. This is deliberately
+        NOT routed through build_content_payload.
+
+        CAVEAT (pre-merge review HIGH #1): repair.py hands us the deep-copied GET
+        body, whose track ``trackUrl`` values are RESOLVED, time-limited signed CDN
+        URLs (not the ``yoto:#<sha>`` refs written at create time). We POST them back
+        verbatim on the "change only format" principle, relying on Yoto re-mapping
+        its own CDN URL to the internal audio reference. That round-trip is UNPROVEN
+        by this tool's verify (which runs inside the signing window). The repair CLI
+        prints a staged-rollout warning in --apply mode for exactly this reason.
+        """
+        payload = dict(body)
+        payload["cardId"] = card_id
+        try:
+            resp = self._client.post(
+                f"{self._base}/content",
+                headers={**self._headers(), "Content-Type": "application/json"},
+                json=payload,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except auth.NotConnectedError:
+            raise
+        except Exception as exc:
+            raise YotoError(_friendly_http(exc, "saving the repaired card")) from exc
+
+    def probe_artifact(self, url: str) -> ArtifactProbe:
+        """Fetch a track's served artifact and decide whether it is Ogg Opus.
+
+        The URL is PRE-SIGNED (its auth is in the query string), so we send NO
+        bearer header. HEAD first for Content-Type; then sniff the first bytes
+        for the Ogg 'OggS' page header + the 'OpusHead' identification header —
+        the confirmed signature of what Yoto serves the device. (The real
+        Content-Type is ``audio/ogg`` with no ``codecs`` param, so the magic-byte
+        path is the one that actually confirms Opus in the field.) Returns a soft
+        result (never raises): is_opus=False on any non-Opus / unreadable case,
+        with a human-readable reason for the report.
+        """
+        ctype = ""
+        try:
+            h = self._client.head(url, follow_redirects=True)
+            h.raise_for_status()
+            ctype = (h.headers.get("Content-Type") or "").strip()
+        except Exception:
+            ctype = ""  # some CDNs reject HEAD — fall through to the ranged GET
+        if "opus" in ctype.lower():
+            return ArtifactProbe(True, f"Content-Type {ctype}", ctype)
+        try:
+            g = self._client.get(url, headers={"Range": "bytes=0-255"}, follow_redirects=True)
+            g.raise_for_status()
+            head = g.content[:256]
+        except Exception as exc:
+            return ArtifactProbe(False, f"couldn't read the artifact ({exc.__class__.__name__})", ctype or None)
+        if head[:4] == b"OggS" and b"OpusHead" in head:
+            return ArtifactProbe(True, f"OggS/OpusHead magic (Content-Type {ctype or '?'})", ctype or None)
+        return ArtifactProbe(False, f"not Opus (Content-Type {ctype or '?'}, first bytes {head[:4]!r})", ctype or None)
 
     def close(self) -> None:
         self._client.close()

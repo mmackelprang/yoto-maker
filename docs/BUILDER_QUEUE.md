@@ -1,6 +1,28 @@
 # Builder queue
 
-**Last updated:** 2026-07-21 by Builder — **item 17 shipped: Yoto's true
+**Last updated:** 2026-07-22 by Builder — **item 18 shipped as
+[PR #20](https://github.com/mmackelprang/yoto-maker/pull/20): the card-format
+repair CLI** (`python -m yoto_maker.repair`) that fixes existing cards' declared
+`format` (mp3 → opus) **in place**. The
+read-only Step-0 diagnostic ran and **pinned the real `GET /card/{id}` shape**:
+the body is wrapped as `{"card": {...}, "ownership": {...}}` (client unwraps it),
+and each track's pre-signed artifact URL is on **`trackUrl`** itself (a
+`https://secure-media.yotoplay.com/…?Signature=…` URL, not the `yoto:#sha` the
+plan assumed) — so the plan's literal code was adapted at exactly the step it
+told Builder to pin. `gzP2B`'s single artifact was probed read-only and
+confirmed **Ogg Opus** (`OggS`/`OpusHead`; served `Content-Type: audio/ogg`, no
+`codecs` param). Dry-run by default, backup-before-write, all-or-nothing,
+verify-after; **no version bump**. Suite **247 passed**; pre-merge review found 2
+HIGH + 2 MEDIUM, all fixed (HIGH #1 — the resolved-`trackUrl` round-trip can't be
+self-verified inside the signing window — is inherent to the approved
+GET-mutate-POST design and is handed to the coordinator as a **staged-rollout**
+requirement, with an in-tool `--apply` warning). **This PR does NOT run
+`--apply`** — the live 3-card repair is the coordinator's separate post-merge
+step. **Bookkeeping reconciled in this same edit:** items 13 (PR #19) and 17
+(PR #18) are both on `main` and now sit in the Shipped table (13's stale
+in-flight Queue row is retired); item 18 has a Queue row + briefing below.
+
+Previously: 2026-07-21 by Builder — **item 17 shipped: Yoto's true
 transcoded `format` now flows into the card payload**
 ([PR #18](https://github.com/mmackelprang/yoto-maker/pull/18)). The card
 previously advertised `format: "mp3"` for every track while Yoto actually serves
@@ -214,10 +236,51 @@ day because these two states shared one word.
 | 10 | 📋 | **The header pill's label wraps to two lines at 320px** — the header grows to 110px and the pill to 48px | _needs Planner pass_ | _needs Planner pass_ | — | LOW, cosmetic, **pre-existing and proven so** — measured identically (pill 48px, header 110px, `scrollWidth` 305) on the pre-PR `.exe` control at the same width, and removing the new chevron does not change it by a pixel. **No overflow, no horizontal scroll, no overlap with the brand** — the header just gets taller. Item 9's Test Plan §E.5 expected "no wrap" and prescribed dropping the chevron's leading gap if tight; that escalation is **inapplicable**, since even the shortest label wraps with the chevron removed entirely. The real cause is `.brand` + pill exceeding 320px, which is a header-layout question item 9 was explicitly forbidden from touching. |
 | 11 | 📋 | **`⚙️` is unhidden text inside `#advToggle`'s accessible name** — the step-3 link announces as *"gear Connect a different Yoto account"* | _needs Designer pass_ | _needs Designer pass_ | — | LOW, **pre-existing since v0.1.9**, from PR #16's Polisher gate. **Needs Designer, not Builder** — see briefing notes; it is specced-in, not an oversight, and the obvious fix collides with two other rules. |
 | 12 | 📋 | **`#advToggle`'s touch target is ~20px against WCAG 2.2 AA's 24×24** | _needs Planner pass_ | _needs Planner pass_ | — | LOW, **pattern-level and pre-existing**. It matches the canonical footer link `#settingsLink` exactly, so this is a question about the app's link pattern, not about one control. Enlarging *this* link alone is the prominence increase `overview.md` §12.7 forbids. Fix the pattern or accept it — do not special-case one link. |
-| 13 | 🚧 | **Client ID validation + multi-file audio upload** — Item A blocks a malformed Client ID before it can destroy a working sign-in or fire a doomed authorize request; Item B adds sequential multi-file upload with grouped partial-failure reporting, retry and cancel | [`specs/2026-07-21-client-id-validation-and-multi-file-upload-design.md`](superpowers/specs/2026-07-21-client-id-validation-and-multi-file-upload-design.md) | [`plans/2026-07-21-client-id-validation-and-multi-file-upload.md`](superpowers/plans/2026-07-21-client-id-validation-and-multi-file-upload.md) | — | **Ships as v0.1.11. HIGH — Item A closes a live account-lockout footgun a real user hit.** One PR, **three commit stacks in order 0 → A → B → C** (see briefing notes); Item A must revert independently. 20 tasks — Stack 0 also folds in the latent HTTPException-message-visibility fix (Task 1b). **The plan owns the version bump — it must, the version string is the asset cache key.** Extends the `configuration-surface/` handoff (§13, `copy.md` §4b–d/§7, `interactions.md` §3.6); Item B's surface has no handoff by decision. |
+| 13 | ✅ | **Client ID validation + multi-file audio upload** — **MERGED to `main` as [PR #19](https://github.com/mmackelprang/yoto-maker/pull/19) (`6481aca`, v0.1.11); also recorded in the Shipped table. Row kept because items 14–16's arc briefing references it.** Item A blocks a malformed Client ID before it can destroy a working sign-in or fire a doomed authorize request; Item B adds sequential multi-file upload with grouped partial-failure reporting, retry and cancel | [`specs/2026-07-21-client-id-validation-and-multi-file-upload-design.md`](superpowers/specs/2026-07-21-client-id-validation-and-multi-file-upload-design.md) | [`plans/2026-07-21-client-id-validation-and-multi-file-upload.md`](superpowers/plans/2026-07-21-client-id-validation-and-multi-file-upload.md) | — | **Ships as v0.1.11. HIGH — Item A closes a live account-lockout footgun a real user hit.** One PR, **three commit stacks in order 0 → A → B → C** (see briefing notes); Item A must revert independently. 20 tasks — Stack 0 also folds in the latent HTTPException-message-visibility fix (Task 1b). **The plan owns the version bump — it must, the version string is the asset cache key.** Extends the `configuration-surface/` handoff (§13, `copy.md` §4b–d/§7, `interactions.md` §3.6); Item B's surface has no handoff by decision. |
 | 14 | ⛔ | **Move `POST /api/tracks/file` onto the background job system (ADR PR A)** — the endpoint returns `{job_id}` and runs on a job thread, matching `/api/tracks/youtube`. Removes a redundant ~260 MB double-write and stops long transcodes from blocking uvicorn's event loop (today a long split hangs `/api/status` and every route) | [ADR §3.1](architecture/decisions/2026-07-21-file-upload-on-job-system.md) | _needs Planner pass_ | **13 ships first; ADR approved** | **Independently shippable and valuable — do NOT collapse the arc into one PR.** Ships without cancel or new progress. Lands on item 13's three seams (S1/S2/S3): ~15–20% client touch, near-zero deleted. **The regression the seams guard:** a job endpoint reports failure through `pollJob` with **no `.status`**, and `jobs.py` has **zero test coverage**, so item 13's reason-precedence test (classifier reads `err.data.reason`+`retryable` before `.status`) is what stops job failures misclassifying as transient (success criterion 12). Add `tests/test_jobs.py`. **Never persist jobs** (ADR §5.4) — a job surviving restart would `add_track` into a fresh empty draft. See arc briefing. |
 | 15 | ⛔ | **Exact server-side cancel + real long-file progress (ADR PR B)** — the ffmpeg `Popen` rewrite in `normalize.py::_run`, a server-side `cancelled` terminal state **distinct from `error`**, `POST /api/jobs/{id}/cancel`, job eviction, partial-segment cleanup | [ADR §3.2](architecture/decisions/2026-07-21-file-upload-on-job-system.md) | _needs Planner pass_ | **14 (PR A); 13; ADR approved** | This is the PR that **deletes the client's *"may still finish"* hedge sentence**. `cancelled` MUST be distinct from `error` or a cancel is reclassified transient and offered `Try again` (ADR §5.2.6). `_run` is shared by `probe_audio` / `normalize_to_mp3` / `split_audio` — default the new kwargs to `None` for byte-identical behavior when unset. See arc briefing. |
 | 16 | ⛔ | **Client-only XHR upload-progress for short files (ADR PR C)** — replace `fetch` with `XMLHttpRequest` in `uploadOneFile` (seam S1) for `upload.onprogress`, fed through `setAddProgress` (seam S3) | [ADR §3.3](architecture/decisions/2026-07-21-file-upload-on-job-system.md) | _needs go/no-go, then plan_ | **14 (PR A); 13; maintainer go/no-go** | **DEFERRABLE cut-line — needs an explicit maintainer go/no-go before it is planned** (ADR open question 1). Open product question: for **under-50-min files the whole wait is the upload leg**, which **only the browser can measure**, so A+B alone leave short files with a differently-fake bar (ADR §1.4, §7.4–7.5). The arc is coherent with A + B alone. See arc briefing. |
+| 18 | ✅ | **Repair existing cards' declared `format` (mp3 → opus) IN PLACE** — a CLI utility (`python -m yoto_maker.repair --card-id … [--apply]`) that reads a card via `GET /card/{id}`, probes each track's served artifact for Ogg Opus, and rewrites **only** each track's `format` via `POST /content` with `cardId` — preserving the physical NFC link, icons, keys, order and every other field. Dry-run by default; backup-before-write; all-or-nothing per card; verify-after; idempotent | [ADR](architecture/decisions/2026-07-21-repair-existing-cards.md) (design basis; committed by this PR) | [plan](superpowers/plans/2026-07-21-repair-existing-cards.md) | 17 (PR #18) + 13 (PR #19) — both on main | **MERGED as [PR #20](https://github.com/mmackelprang/yoto-maker/pull/20); also in the Shipped table. The live 3-card `--apply` run is the coordinator's next step (staged rollout).** New `yoto/repair.py` (pure corrector + orchestration + CLI) + 4 small `client.py` methods + a `yoto_maker/repair.py` shim + `tests/test_repair.py` + `tests/fixtures/card_sample.json`. **`format` is the only field ever written.** **Step-0 pinning found the real body is wrapped `{"card":…,"ownership":…}` and the artifact URL is `trackUrl` itself** (adapted from the plan's assumptions). **No version bump.** The live 3-card `--apply` run is the coordinator's post-merge step — this PR does not write. 6 tasks. |
+
+### Item 18 — briefing notes
+
+- **It mutates LIVE production cards. Every safety property is load-bearing.** The
+  apply-mode order is fixed: GET → plan (probe) → all-or-nothing gate → **BACKUP**
+  → POST → re-GET → **verify**. A blocked card never reaches the POST; the backup
+  is durable on disk (flush + `fsync`) before the POST; the verify fails loudly on
+  any change beyond the intended `format` flip. **This PR does not run `--apply`;
+  the live 3-card run is the coordinator's separate post-merge step.**
+- **Step-0 pinning (read-only `GET /card/gzP2B`) corrected the plan's assumptions
+  — this is what the plan told Builder to pin, and it mattered.** The real body is
+  **wrapped**: `{"card": {…}, "ownership": {…}}`; `client.get_card` unwraps to the
+  inner `card` object (which carries `content.chapters`, `cardId`, `title`,
+  `metadata`) — that inner object is what we back up, mutate and POST. The
+  pre-signed artifact URL is **`trackUrl` itself** (a full
+  `https://secure-media.yotoplay.com/…?Expires=…&Signature=…#sha256=…` URL, stable
+  within the ~60-min signing window), **not** the `yoto:#sha` the plan assumed — so
+  `_ARTIFACT_URL_KEYS` leads with `trackUrl` and the verify **normalizes** signed
+  URLs to their sha-bearing path (ignores signature rotation, still catches a real
+  resource remap). `gzP2B`'s artifact was probed read-only and confirmed **Ogg
+  Opus** (`OggS`/`OpusHead`; served `Content-Type: audio/ogg`, no `codecs` param, so
+  the magic-byte sniff is the path that actually confirms it). `/content/mine`
+  returns `{"cards":[…]}`; all three cardIds present (`1WCvI`'s real title is
+  **"Wild Robot"**, not "The Wild Robot" — a second reason to use `--card-id`).
+- **`format` is the ONLY field ever written.** `fileSize`/`duration` self-correct
+  server-side and `channels` is already right, so the whole correction is one string
+  per track. **Never rebuild via `build_content_payload`** — it only models new-card
+  fields and would drop icons/keys/order. Deep-copy the (unwrapped) GET body and
+  overwrite only `format`.
+- **Confirm before correcting — never guess.** A track is set to `"opus"` only after
+  its served artifact is PROVEN Opus. Unprobeable or non-Opus → that track blocks the
+  **whole** card (all-or-nothing); the card is left byte-for-byte untouched.
+- **Dry-run is the DEFAULT; `--apply` is opt-in** (and `--dry-run` wins if both are
+  passed). Backups are written only in apply mode, only before the POST.
+- **Use `--card-id` for the live run, not `--title`.** Discovery **refuses to
+  auto-pick** an ambiguous title by design. All three cardIds are known: `1WCvI`,
+  `gzP2B`, `7FcVe`.
+- **The architecture docs are committed by this PR** (plan Task 6): the repair ADR
+  (design basis + an addendum recording the 1-PR simplification), the job-system ADR,
+  and `docs/architecture/README.md`. **No version bump; no release cut.**
 
 ### Item 13 — briefing notes
 
@@ -529,7 +592,9 @@ the `POST /api/tracks/file` contract that PR B builds against.
 | 7 | **Client ID reveal control + the v0.1.9 release cut** — show the value in effect (full mask, monospace, `Show the whole thing` disclosure) for `saved`/`env`; then actually tag, build and publish v0.1.9 | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) (amended in `884fa6a`) | [`superpowers/plans/2026-07-20-client-id-reveal-and-v0.1.9-release.md`](superpowers/plans/2026-07-20-client-id-reveal-and-v0.1.9-release.md) | [#11](https://github.com/mmackelprang/yoto-maker/pull/11) (Part A), [#12](https://github.com/mmackelprang/yoto-maker/pull/12) (corrections) | ✅ 2026-07-20 | 🚢 v0.1.9 |
 | 8 | **Browsers serve a stale `app.js`/`styles.css` after auto-update** — new HTML runs against old JavaScript, which is what made Settings unreachable on v0.1.9 | brief in plan §The defect | [`superpowers/plans/2026-07-20-stale-asset-cache-after-update.md`](superpowers/plans/2026-07-20-stale-asset-cache-after-update.md) | [#15](https://github.com/mmackelprang/yoto-maker/pull/15) (`77d499c`) | ✅ 2026-07-20 | 🚢 v0.1.10 |
 | 9 | **A connected user cannot find the way into Settings** — `#advRow` leaves `#connectRow` for the end of step 3 and its copy names the *account*; pill fill inverted for legibility; pill `aria-label` deleted | [`design-handoffs/configuration-surface/`](design-handoffs/configuration-surface/) §12, amended in `e52908e` | [`superpowers/plans/2026-07-20-settings-discoverability.md`](superpowers/plans/2026-07-20-settings-discoverability.md) | [#16](https://github.com/mmackelprang/yoto-maker/pull/16) (`be93ee1`) | ✅ 2026-07-20 | 🚢 v0.1.10 |
+| 13 | **Client ID validation + multi-file audio upload** — Item A blocks a malformed Client ID from destroying a working sign-in before the write/`logout()`; Item B adds sequential multi-file upload with grouped partial-failure reporting, retry and cancel | [`specs/2026-07-21-client-id-validation-and-multi-file-upload-design.md`](superpowers/specs/2026-07-21-client-id-validation-and-multi-file-upload-design.md) | [`superpowers/plans/2026-07-21-client-id-validation-and-multi-file-upload.md`](superpowers/plans/2026-07-21-client-id-validation-and-multi-file-upload.md) | [#19](https://github.com/mmackelprang/yoto-maker/pull/19) (`6481aca`) | ✅ 2026-07-21 | ⏳ next cut (v0.1.11) |
 | 17 | **Transcoded `format` propagation** — the card advertises Yoto's true transcoded format (Ogg Opus) instead of a hardcoded `"mp3"`; best-effort, degrades to the local probe if `transcodedInfo` is absent. Live-verified shape; `fileSize`/`duration`/`channels` deliberately left as-is (Yoto self-corrects them) | brief in plan §The defect | [`superpowers/plans/2026-07-21-transcoded-metadata-propagation.md`](superpowers/plans/2026-07-21-transcoded-metadata-propagation.md) | [#18](https://github.com/mmackelprang/yoto-maker/pull/18) | ✅ 2026-07-21 | ⏳ next cut |
+| 18 | **Repair existing cards' declared `format` (mp3 → opus) IN PLACE** — CLI utility `python -m yoto_maker.repair`; dry-run by default, backup-before-write, all-or-nothing per card, verify-after, idempotent. Step-0 pinning found the real `GET /card` body is wrapped and the artifact URL is `trackUrl` itself. `format` is the only field written. No version bump | [ADR](architecture/decisions/2026-07-21-repair-existing-cards.md) | [`superpowers/plans/2026-07-21-repair-existing-cards.md`](superpowers/plans/2026-07-21-repair-existing-cards.md) | [#20](https://github.com/mmackelprang/yoto-maker/pull/20) | ✅ 2026-07-22 | n/a (maintainer tooling; the live 3-card `--apply` run is a separate coordinator step) |
 
 Item 1 shipped all 12 tasks as one PR, as planned. Its Builder briefing notes
 were consumed and removed; the spec and plan above remain the durable record.

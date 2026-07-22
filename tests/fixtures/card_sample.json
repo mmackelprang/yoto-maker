@@ -1,0 +1,73 @@
+{
+  "card": {
+    "content": {
+      "playbackType": "linear",
+      "version": "1",
+      "activity": "yoto_Player",
+      "availability": "",
+      "cover": {},
+      "config": {
+        "resumeTimeout": 2592000
+      },
+      "chapters": [
+        {
+          "key": "01",
+          "title": "RAINBOW MAGIC, PHOEBE,The Fashion Fairy",
+          "availableFrom": null,
+          "ambient": null,
+          "fileSize": 19105003,
+          "duration": 1603,
+          "display": {
+            "icon16x16": "https://card-content.yotoplay.com/1xJ_Tu4k345UwMBV_8OSfLr_ZcZFQsn4uwTuaHbMOgTA~/xV2a9v63mNcsYy5QYsBhlmK5MXgoM5Fuk8ed4nQqcUg"
+          },
+          "tracks": [
+            {
+              "channels": "stereo",
+              "duration": 1603,
+              "fileSize": 19105003,
+              "format": "mp3",
+              "key": "01",
+              "title": "RAINBOW MAGIC, PHOEBE,The Fashion Fairy",
+              "type": "audio",
+              "ambient": null,
+              "display": {
+                "icon16x16": "https://card-content.yotoplay.com/1xJ_Tu4k345UwMBV_8OSfLr_ZcZFQsn4uwTuaHbMOgTA~/xV2a9v63mNcsYy5QYsBhlmK5MXgoM5Fuk8ed4nQqcUg"
+              },
+              "trackUrl": "https://secure-media.yotoplay.com/1xJ_Tu4k345UwMBV_8OSfLr_ZcZFQsn4uwTuaHbMOgTA~/44aJeE5Xj4OTnmK3VpoYNATWziizU3w4HLucKHqjmec?<REDACTED>"
+            }
+          ]
+        }
+      ]
+    },
+    "metadata": {
+      "abridged": false,
+      "authors": [],
+      "narrators": [],
+      "copyrights": [],
+      "accents": [],
+      "media": {
+        "duration": 1603,
+        "fileSize": 19105003
+      }
+    },
+    "title": "Phoebe The Fashion Fairy",
+    "cardId": "gzP2B",
+    "userId": "auth0|690ff4e5127850621d393171",
+    "createdAt": "2026-07-20T22:50:47.447Z",
+    "updatedAt": "2026-07-20T22:50:47.447Z"
+  },
+  "ownership": {
+    "canAccess": true,
+    "userHasRole": false,
+    "cardIsFree": false,
+    "cardIsMadeByUser": true,
+    "cardIsInFamilyLibrary": true,
+    "cardIsCreatedByFamily": true,
+    "isAccessibleUsingSubscription": false,
+    "isAccessibleAsPhysicalPlay": false,
+    "isShareLink": false,
+    "isReconditionCard": false,
+    "inCardPacks": false,
+    "previewAccessOnly": false
+  }
+}

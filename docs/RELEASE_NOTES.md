@@ -205,3 +205,18 @@ Adding audio, pictures, and printing labels all work without it.
   listened to it with NVDA or Narrator. If you use a screen reader and it
   announces something confusing, that's worth reporting — it hasn't been ruled
   out.
+
+---
+
+## 🛠️ Maintainer tooling (not part of the app UI, no version bump)
+
+- **`python -m yoto_maker.repair` — repair an existing card's declared audio
+  format.** Cards this app made before v0.1.11 advertise `format: "mp3"` while
+  Yoto actually serves Ogg Opus; on the physical player that mismatch is the
+  leading suspect for an offline download that never completes. This CLI reads a
+  card in place, confirms each track's served artifact really is Opus, and
+  rewrites **only** the `format` field — preserving the NFC link, icons, keys and
+  order. It is **dry-run by default** (writing needs `--apply`), backs up every
+  card before writing, is all-or-nothing per card, verifies the round-trip, and
+  is idempotent. Run from source; it ships in the package but is not surfaced in
+  the app. (Queue item 18.)
