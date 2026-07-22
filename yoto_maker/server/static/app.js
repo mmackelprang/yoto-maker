@@ -1460,11 +1460,255 @@ function newTrackIds(draft) {
   return fresh;
 }
 
-// ---- forward stubs; filled in by Tasks 14–16 ------------------------------
-function classifyUploadError(e) { return "transient"; }   // Task 14
-function uploadReasonText(e, cls, total) { return e.message; }   // Task 14
+// Seam S2 — the server's own tag wins when present, checked BEFORE any status
+// code. An optional reason→class override map; empty on day one. A specific
+// server reason can force a class through it. Same e.data channel SIGNIN_ERRORS
+// already consumes (app.js:1033); do not invent a second one.
+const UPLOAD_ERROR_CLASS = {};   // e.g. { unsupported_format: "deterministic" }
+
+// THE PRINCIPLE: never show a control that RELIABLY fails.
+// A retry on a transient failure has a real chance of succeeding, which is what
+// makes offering it honest. A retry on a deterministic failure has none, which
+// is what makes offering it a lie.
+//
+// SEAM S2, and it is load-bearing beyond forward-compat: a job-based endpoint
+// (job-system ADR 2026-07-21, out of scope here) reports failure as a bare error
+// with NO .status. A classifier that keyed off status alone would then
+// misclassify EVERY future job failure as transient and offer a "Try again" that
+// reliably fails — breaking success criterion 12 from the server side. So the
+// server's tag is consulted FIRST and the status table is only the fallback.
+//
+// The ADR's Job grows `reason` (a string) and `retryable` (bool | None, where
+// None = unknown). pollJob() attaches both to the thrown Error. This branch
+// honors them:
+//   * a reason in UPLOAD_ERROR_CLASS   → that class (an explicit override)
+//   * retryable === true               → transient
+//   * retryable === false              → deterministic
+//   * a reason with neither            → transient, the same default as unknown
+//     (§B.3.1.2): the server flagged the failure but couldn't say whether it is
+//     worth retrying, and guessing deterministic would tell her to change a file
+//     that may be fine.
+//
+// NOTHING EMITS `reason` ON THIS ENDPOINT TODAY — add_file raises SourceError →
+// 400 with {error} and no reason — so on day one this whole block is skipped and
+// the status table is the authority, exactly as the spec's day-one behavior
+// requires. The block and its test (test_the_server_tag_beats_the_status_code)
+// exist so PR A of that arc is one function-body rewrite.
+function classifyUploadError(e) {
+  const d = (e && e.data) || {};
+  if (d.reason) {
+    if (UPLOAD_ERROR_CLASS[d.reason]) return UPLOAD_ERROR_CLASS[d.reason];
+    if (d.retryable === true) return "transient";
+    if (d.retryable === false) return "deterministic";
+    return "transient";
+  }
+
+  const s = e && e.status;
+  // fetch() rejected — connection refused, dropped, DNS. api() throws a plain
+  // Error with no .status in exactly this case.
+  if (s === undefined || s === null) return "transient";
+  if (s >= 500) return "transient";
+  if (s === 408 || s === 429) return "transient";
+  // Any other 4xx. Reliably deterministic HERE specifically: app.py:99-109 maps
+  // SourceError / AudioError / ImageError to 400 with a plain-language `error`
+  // string, and app.py:5-6 states those messages are written to be shown
+  // verbatim. So a 400 from this endpoint means "the server looked at this file
+  // and rejected it", and it arrives with the sentence explaining why already
+  // written. That is exactly the branch that must not offer a retry, and
+  // exactly the branch that can explain itself instead.
+  if (s >= 400 && s < 500) return "deterministic";
+
+  // UNKNOWN DEFAULTS TO TRANSIENT, and this is a decision, not a fallthrough.
+  // The principle forbids offering a control we KNOW will fail; an unknown
+  // failure is by definition not reliably anything. And the two wrong guesses
+  // cost wildly different amounts. Guessing transient when it was
+  // deterministic costs one press and two seconds. Guessing deterministic when
+  // it was transient TELLS HER TO CHANGE THE FILE — she opens a file that is
+  // fine, finds nothing wrong, and concludes the app is broken, or re-encodes
+  // or deletes a perfectly good file on the app's bad advice. That is not a
+  // slower path to the same place; it is wrong advice, and wrong advice from a
+  // tool aimed at a non-technical user is the most expensive failure here.
+  //
+  // The default is also self-correcting: a retry that returns a 400 lands the
+  // file in the deterministic group, replaces "Something went wrong." with the
+  // server's specific sentence, and REMOVES the control. The app corrects
+  // itself in front of her.
+  return "transient";
+}
+
+function uploadReasonText(e, cls, total) {
+  // n = 1 is deliberately untouched: it shows exactly what it shows today, the
+  // server's message alone. The short strings below exist for the GROUPED list,
+  // where "Couldn't reach the Yoto Maker app. Make sure it's still running
+  // (look for the 🎵 icon near the clock), then try again." repeated on four
+  // lines would be unreadable. See §Deviations, resolution 5.
+  if (total === 1) return e.message;
+  if (cls === "deterministic") return e.message;   // the server's sentence, verbatim
+  const s = e && e.status;
+  if (s === undefined || s === null) return "Yoto Maker stopped responding.";
+  if (s >= 500 || s === 408 || s === 429) return "Yoto Maker had a problem with this one.";
+  // Claims nothing. It does not assert the connection dropped and does not
+  // assert the file is bad — the default went to transient precisely BECAUSE we
+  // do not know, and a reason string that guessed would undo that honesty.
+  return "Something went wrong.";
+  // (No timeout branch. Per-file timeouts were withdrawn — any threshold
+  // generous enough to survive a real three-hour audiobook is far too long to
+  // rescue a hang, and any threshold short enough to rescue a hang would kill
+  // audiobooks. Cancel replaces them and needs no number. If a future PR adds
+  // one, its string is "This one took too long." and its class is transient.)
+}
+
+// #addError renders STRUCTURED CHILDREN — a summary paragraph, group headings,
+// per-file lines and a button — not one text node. .msg-box has no rule
+// forbidding child elements and .setting-confirm already sets the precedent for
+// a box with a heading, body lines and actions.
+//
+// COUNTS ARE FILES, NOT TRACKS, throughout. One file can become several tracks
+// (split_audio at 50 minutes), so "11 of your 12 files were added" stays correct
+// even when the track list gained seventeen rows. She picked files, and the
+// part-splitting is pre-existing behaviour she has already met on the
+// single-file path.
+//
+// Class is .msg-box err even for a mostly-successful batch. Eleven of twelve is
+// mostly a success, but a silently missing track is a real problem she must
+// notice, and tokens.md §1 already argued .info is "too quiet to slow anyone
+// down". The copy carries the proportionality by LEADING WITH WHAT WORKED.
+function renderAddError() {
+  const box = $("#addError");
+  const b = BATCH;
+  if (!b) { clearError(box); return; }
+
+  const transient = b.failed.filter((f) => f.cls === "transient");
+  const deterministic = b.failed.filter((f) => f.cls === "deterministic");
+
+  // When everything succeeded, NOTHING appears. The tracks in the list are the
+  // success message; a "12 files added!" box would linger or need dismissing,
+  // carrying information already on screen in a more useful form. This is the
+  // current single-file behaviour, preserved. It also covers a retry that
+  // recovered everything: the end state is indistinguishable from a batch that
+  // never failed, so nothing lingers to explain a problem that no longer exists.
+  if (!b.failed.length && !b.cancelled) { clearError(box); return; }
+
+  const kids = [];
+  const p = (text, cls) => {
+    const el = document.createElement("p");
+    el.textContent = text;
+    if (cls) el.className = cls;
+    kids.push(el);
+  };
+  const lines = (items, render) => {
+    const ul = document.createElement("ul");
+    ul.style.margin = "0 0 10px";
+    ul.style.paddingLeft = "18px";
+    items.forEach((it) => {
+      const li = document.createElement("li");
+      li.textContent = render(it);
+      ul.appendChild(li);
+    });
+    kids.push(ul);
+  };
+
+  const k = b.ok.length;
+  const n = b.total;
+
+  // --- summary line ---
+  if (b.cancelled) {
+    // A cancelled batch is the one end state where she cannot infer what the
+    // draft now contains — she stopped partway and does not know where. The
+    // summary must state it exactly.
+    p(n === 1 && k === 0 ? "Stopped. Nothing was added."
+                         : `Stopped. ${k} of your ${n} files were added.`);
+    if (b.inflight) {
+      // The honest sentence. Verified by observation during planning: after
+      // the request body is received there are no await points left in
+      // add_file, so the transcode and the split run to completion and the
+      // track lands seconds or minutes after she pressed Cancel. Without this
+      // line, a track appearing thirty seconds later looks like the button
+      // failed. It says "may", and it must keep saying "may".
+      p("The one that was still going may still finish — it’ll turn up in your list if it does.");
+    }
+  } else if (n === 1) {
+    // Unchanged from today: the server's message alone, no summary, no groups,
+    // no heading. "1 of your 1 files were added." is what a naive template
+    // produces and it is the failure mode this branch exists to prevent.
+    p(b.failed[0].text);
+  } else if (k === 0) {
+    p(`None of your ${n} files could be added.`);
+  } else {
+    // Counts are always against the ORIGINAL batch size, so the number is
+    // stable across retries: after one file recovers, "10 of your 12" simply
+    // becomes "11 of your 12".
+    p(`${k} of your ${n} files were added.`);
+  }
+
+  // --- groups, rendered only when they have members ---
+  // The common cases (all transient, all deterministic) show one group and read
+  // as simply as before.
+  if (transient.length && n > 1) {
+    // "might" is deliberate: it sets the expectation honestly — a retry is a
+    // real chance, not a promise — and it is what keeps the control truthful
+    // even when the retry fails.
+    p(transient.length === 1
+      ? "This one didn’t work, but trying again might fix it:"
+      : `These ${transient.length} didn’t work, but trying again might fix them:`);
+    lines(transient, (f) => `${f.file.name} — ${f.text}`);
+  }
+  if (deterministic.length && n > 1) {
+    // "can't be added" is deliberately final: it tells her not to wait, and not
+    // to press anything.
+    p(deterministic.length === 1
+      ? "This one can’t be added:"
+      : `These ${deterministic.length} can’t be added:`);
+    lines(deterministic, (f) => `${f.file.name} — ${f.text}`);
+  }
+  if (b.notStarted.length) {
+    // "You stopped before…" and not "These didn't work". These files did not
+    // fail; she chose. Factual, carries no fault, and deliberately does not
+    // offer to resume — a control that restarts what she just stopped is a
+    // confusing thing to put in front of someone who has just pressed Cancel.
+    p(b.notStarted.length === 1
+      ? "You stopped before this one:"
+      : `You stopped before these ${b.notStarted.length}:`);
+    // Filenames alone — NO reason string, because there is no reason beyond her
+    // own decision, and inventing one would read as blame.
+    lines(b.notStarted, (f) => f.name);
+  }
+
+  box.className = "msg-box err";
+  box.replaceChildren(...kids);
+
+  // ONE button per group, never one per file (spec §B.3.1.4). A network blip
+  // takes out a CONTIGUOUS RUN of files, not one, so per-file buttons would
+  // mean three presses for one cause — and twelve buttons on twelve rows is
+  // twelve tab stops in a visually heavy box. The button lives INSIDE the group
+  // it acts on, which is why the groups exist: "I pressed Try again, why is
+  // cover.jpg still failing?" cannot arise. The deterministic group sits there
+  // with no control beside it — "explain, don't offer" made visible.
+  //
+  // Genuine failures from before a cancel keep their groups and their button:
+  // that failure is real and unrelated to her decision.
+  if (transient.length) {
+    const btn = document.createElement("button");
+    btn.className = "btn";
+    btn.id = "addRetry";
+    btn.textContent = "Try again";
+    btn.addEventListener("click", retryTransient);
+    box.appendChild(btn);
+  }
+  show(box, true);
+
+  // Focus: after the INITIAL batch, focus does NOT move here. That is a
+  // deliberate divergence from interactions.md §3.2 step 4, which does move
+  // focus after a save — the difference is that a save is a synchronous
+  // response to a press she just made, and this lands up to a minute after her
+  // click, by which time she may have moved on. role="alert" announces it
+  // without stealing focus, which is exactly what the role is for. Retry and
+  // cancel DO manage focus, and they do it at their own call sites (Tasks 15
+  // and 17), because those results ARE synchronous responses to a press.
+}
+
 async function repairOrderIfNeeded() {}                    // Task 16
-function renderAddError() {}                               // Task 14
+async function retryTransient() {}   // Task 15
 
 // ---- picture --------------------------------------------------------------
 function renderPicture(url) {
