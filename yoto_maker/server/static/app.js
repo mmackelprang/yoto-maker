@@ -1708,7 +1708,46 @@ function renderAddError() {
 }
 
 async function repairOrderIfNeeded() {}                    // Task 16
-async function retryTransient() {}   // Task 15
+
+// Try again re-enters the batch flow of Task 13 with the failed subset as its
+// file list. Same sequential loop, same progress bar, same #addMsg format, same
+// disabling, same summary rendering. THERE IS NO SECOND BATCH FLOW and no
+// second partial-failure state — a retry that half-fails simply produces the
+// batch summary again over a smaller n.
+//
+// The File objects are held from the original FileList, so nothing is re-read
+// from disk and she is never re-prompted.
+async function retryTransient() {
+  if (!BATCH) return;
+  const retry = BATCH.failed.filter((f) => f.cls === "transient").map((f) => f.file);
+  if (!retry.length) return;
+
+  // DISABLE, do not remove. Removing the button destroys it while it is
+  // focused and focus falls to <body> — the single most common way a keyboard
+  // user gets lost in a flow like this. Disabling also keeps #addError's
+  // layout still rather than collapsing it under her cursor.
+  const btn = $("#addRetry");
+  if (btn) btn.disabled = true;
+
+  // Drop the transient entries; whatever fails again is re-added by runBatch()
+  // with a FRESH classification. That is what makes the unknown default
+  // self-correcting: a retry that returns a 400 moves the file into the
+  // deterministic group and the control disappears for it.
+  BATCH.failed = BATCH.failed.filter((f) => f.cls !== "transient");
+  const before = BATCH.ok.length;
+  await runBatch(retry);
+  if (BATCH.ok.length > before) BATCH.repaired = true;
+
+  // After a retry, focus IS managed, and the distinction is principled rather
+  // than inconsistent: a retry result IS a synchronous response to a press she
+  // just made, which is exactly interactions.md §3.2 step 4's condition.
+  const again = $("#addRetry");
+  if (again) again.focus();                       // she may want to press again
+  else if (!$("#addError").classList.contains("hidden")) $("#addError").focus();
+  // If #addError is hidden, everything recovered and there is nothing to
+  // announce — leaving focus where it fell is correct, because the box that
+  // held it no longer exists and the track list is the outcome.
+}
 
 // ---- picture --------------------------------------------------------------
 function renderPicture(url) {
