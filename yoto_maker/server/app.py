@@ -319,7 +319,7 @@ async def set_track_icon(track_id: str, body: IconBody) -> dict:
     if not track:
         raise HTTPException(404, "Track not found")
     if icon_path(body.icon_id) is None:
-        raise HTTPException(400, "Unknown icon")
+        raise HTTPException(400, "That icon isn't available. Please pick another.")
     track.icon_id = body.icon_id
     return {"track": track.view()}
 
@@ -392,7 +392,7 @@ async def picture_library(body: IconBody) -> dict:
 
     p = icon_path(body.icon_id)
     if not p:
-        raise HTTPException(400, "Unknown icon")
+        raise HTTPException(400, "That icon isn't available. Please pick another.")
     # Upscale the 16x16 icon with nearest-neighbor for crisp pixel-art on the label.
     big = get_config().work_dir / "library_src.png"
     Image.open(p).resize((640, 640), Image.NEAREST).save(big)

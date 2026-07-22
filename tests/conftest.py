@@ -11,9 +11,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from yoto_maker import config as config_mod
 from yoto_maker.config import Config, set_config
+from yoto_maker.server.app import app
 from yoto_maker.tools import find_ffmpeg
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -63,3 +65,9 @@ def has_ffmpeg() -> bool:
     if not find_ffmpeg():
         pytest.skip("ffmpeg not available")
     return True
+
+
+@pytest.fixture
+def client(temp_config):
+    """A FastAPI TestClient against a temp data dir (via temp_config)."""
+    return TestClient(app)

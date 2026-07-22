@@ -19,7 +19,19 @@ async function api(path, opts = {}) {
   let data = null;
   try { data = await res.json(); } catch (_) { /* some routes return files */ }
   if (!res.ok) {
-    const msg = (data && data.error) || "Something went wrong. Please try again.";
+    // Prefer our own {error} envelope. Fall back to FastAPI's {detail} — the shape
+    // a bare HTTPException(status, "message") serialises to — so those messages
+    // reach the user instead of being swallowed to the generic line below.
+    //
+    // typeof === "string" is load-bearing: FastAPI ALSO uses `detail` for 422
+    // request-validation errors, where it is a LIST of error objects, not a
+    // sentence. new Error([{…}]) renders "[object Object]", which is worse than the
+    // generic fallback — so a non-string detail is ignored and the generic line
+    // stands. Guarded by tests/test_httpexception_reaches_user.py.
+    const msg =
+      (data && data.error) ||
+      (data && typeof data.detail === "string" && data.detail) ||
+      "Something went wrong. Please try again.";
     const err = new Error(msg);
     err.data = data;
     err.status = res.status;
