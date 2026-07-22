@@ -171,7 +171,20 @@ class YotoClient:
             # Advertise Yoto's true transcoded format (it serves Ogg Opus) when it
             # reports one; otherwise fall back to the local probe. Best-effort: a
             # missing transcodedInfo degrades, it never blocks the card.
-            fmt = _transcoded_format(transcoded_info) or info.format
+            fmt = _transcoded_format(transcoded_info)
+            if fmt is None:
+                # The fallback re-introduces the original mismatch (we declare the
+                # local file's format while Yoto serves Ogg Opus), which is what
+                # stalls a player's offline sync. Still best-effort — never raise,
+                # never block, never change `fmt` — but no longer silent: this line
+                # is how a stalled card gets diagnosed from the log.
+                fmt = info.format
+                log.warning(
+                    "transcodedInfo gave no usable format for track %d/%d %r; "
+                    "falling back to the local probe's format %r "
+                    "(the card may declare a format Yoto does not serve)",
+                    i, total, tr.title, fmt,
+                )
             icon_ref = None
             if tr.icon_path:
                 icon_ref = self._upload_icon_best_effort(tr.icon_path)
