@@ -72,6 +72,24 @@ def _dig(data: dict, *keys: str, default=None):
     return default
 
 
+def _transcoded_format(info) -> str | None:
+    """Return Yoto's true transcoded ``format`` (e.g. ``"opus"``), else ``None``.
+
+    Yoto re-transcodes every upload and reports the real artifact's format in the
+    ``transcodedInfo`` block of the poll response. The card should advertise that
+    (Yoto serves Ogg Opus), not the local pre-upload file's format. This is
+    **best-effort**: a missing / empty / wrong-type ``transcodedInfo`` returns
+    ``None`` so the caller falls back to the local probe rather than failing —
+    the card is always built. ``fileSize``/``duration``/``channels`` are left to
+    the local probe because Yoto already self-corrects those server-side.
+    """
+    if isinstance(info, dict):
+        fmt = info.get("format")
+        if isinstance(fmt, str) and fmt:
+            return fmt
+    return None
+
+
 class YotoClient:
     def __init__(self, *, timeout: float = 60.0, client: httpx.Client | None = None):
         self._timeout = timeout
@@ -112,7 +130,7 @@ class YotoClient:
             self._put_audio(upload_url, tr.audio_path)
 
             emit("transcode", i, total, f"Preparing track {i} of {total}…")
-            sha = self._poll_transcode(
+            sha, transcoded_info = self._poll_transcode(
                 upload_id,
                 on_wait=lambda secs: emit(
                     "transcode", i, total,
@@ -121,6 +139,10 @@ class YotoClient:
             )
 
             info = _safe_probe(tr.audio_path)
+            # Advertise Yoto's true transcoded format (it serves Ogg Opus) when it
+            # reports one; otherwise fall back to the local probe. Best-effort: a
+            # missing transcodedInfo degrades, it never blocks the card.
+            fmt = _transcoded_format(transcoded_info) or info.format
             icon_ref = None
             if tr.icon_path:
                 icon_ref = self._upload_icon_best_effort(tr.icon_path)
@@ -131,7 +153,7 @@ class YotoClient:
                     transcoded_sha=sha,
                     duration_s=info.duration_s,
                     file_size=info.file_size,
-                    fmt=info.format,
+                    fmt=fmt,
                     channels="stereo" if info.channels >= 2 else "mono",
                     icon_ref=icon_ref,
                 )
@@ -186,8 +208,13 @@ class YotoClient:
         timeout_s: float = 600.0,
         interval: float = 2.0,
         on_wait=None,
-    ) -> str:
-        """Poll until Yoto finishes transcoding (returns the sha).
+    ) -> tuple[str, dict | None]:
+        """Poll until Yoto finishes transcoding; return ``(sha, transcodedInfo)``.
+
+        ``transcodedInfo`` is the block Yoto returns alongside the sha describing
+        the real transcoded artifact (its ``format``/``fileSize``/etc). It is
+        returned as-is (a dict, or ``None`` if Yoto didn't include one) for the
+        caller to use best-effort — the sha alone is enough to build the card.
 
         Yoto transcodes server-side and returns 202 (with no sha) while working;
         a large track can take minutes, so we wait up to ``timeout_s`` (default
@@ -205,9 +232,10 @@ class YotoClient:
                     headers=self._headers(),
                 )
                 resp.raise_for_status()
-                sha = _dig(resp.json(), "transcodedSha256")
+                body = resp.json()
+                sha = _dig(body, "transcodedSha256")
                 if sha:
-                    return sha
+                    return sha, _dig(body, "transcodedInfo")
                 consecutive_errors = 0
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code in (401, 403):
