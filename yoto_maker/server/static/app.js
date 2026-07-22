@@ -1443,6 +1443,15 @@ async function runBatch(files) {
 
   await repairOrderIfNeeded();
   renderAddError();
+
+  // A cancel IS a synchronous response to a press she just made, so
+  // interactions.md §3.2 step 4's condition is met exactly as it is for retry —
+  // unlike the initial batch, which lands up to a minute after her click.
+  // Announcing the cancelled state matters more than most: it is the one end
+  // state where she cannot infer what the draft now contains.
+  if (BATCH && BATCH.cancelled && !$("#addError").classList.contains("hidden")) {
+    $("#addError").focus();
+  }
 }
 
 // Track ids present in `draft` that this batch has not already claimed.
@@ -1978,6 +1987,31 @@ function wire() {
     // from disk on a retry and she is never re-prompted. Clearing the input is
     // what lets her pick the same files again.
     e.target.value = "";
+  });
+  // Cancel ABORTS THE REQUEST IN FLIGHT. It does not merely decline to start
+  // the next file — large split audio files already run for MULTIPLE MINUTES on
+  // the existing single-file path (add_file is fully synchronous: it reads the
+  // upload, transcodes via ffmpeg, then splits at 50 minutes, all inside one
+  // held-open request). Stop-after-current would leave her waiting minutes
+  // after pressing it, which is WORSE than having no button, because a control
+  // that appears to do nothing reads as broken.
+  //
+  // Purely client-side, and it has to be: the transcode runs synchronously
+  // inside an async def, so it blocks uvicorn's event loop and the server can
+  // acknowledge nothing until it finishes. AbortController rejects the fetch
+  // promise locally with no round trip, which is the only reason this returns
+  // in seconds. Do NOT add a server-side cancel endpoint or wait for an ack.
+  $("#addCancel").addEventListener("click", () => {
+    if (!addAbort || !BATCH) return;
+    BATCH.cancelled = true;
+    // Disabled rather than removed, for the same focus reason as Try again.
+    $("#addCancel").disabled = true;
+    // A real state, not a flourish. The abort is not instantaneous — the
+    // request has to unwind — and the multi-minute file that provoked the
+    // cancel is exactly the case where a frozen bar with no acknowledgement
+    // reads as a second failure. Bar frozen (pct null), message only.
+    setAddProgress(null, "Stopping…");
+    addAbort.abort();
   });
   $("#skipSponsors").addEventListener("change", (e) => {
     api("/api/settings/remove-sponsors", {
