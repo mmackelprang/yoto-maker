@@ -349,6 +349,46 @@ def test_verify_catches_a_changed_artifact_resource(tmp_path):
     assert any("trackurl" in p.lower() or "different" in p.lower() for p in res.problems)
 
 
+def test_verify_ignores_a_bumped_content_version(tmp_path):
+    """Pre-merge review MEDIUM #3: Yoto may bump the nested `content.version`
+    counter on any write; that must not read as a verify failure."""
+    before = _card("C1", ("mp3", "mp3"))
+    before["content"]["version"] = "1"
+    after = _card("C1", ("opus", "opus"))
+    after["content"]["version"] = "2"                       # server bumped it on write
+    fake = FakeClient(before, after=after)
+
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "applied"
+    assert res.problems == []
+
+
+def test_write_uncertain_when_post_errors_after_backup(tmp_path):
+    """Pre-merge review HIGH #2: if the POST raises AFTER the backup is durable,
+    the result is 'write-uncertain' (never a bare escape) and carries the backup."""
+    class RaisingClient(FakeClient):
+        def update_card(self, card_id, body):
+            raise YotoError("connection reset by peer")
+
+    backup_dir = tmp_path / "b"
+    fake = RaisingClient(_card("C1", ("mp3", "mp3")))
+    res = repair_card(fake, "C1", apply=True, backup_dir=backup_dir)
+
+    assert res.outcome == "write-uncertain"
+    assert res.backup_path and res.backup_path.exists()     # backup stayed durable
+    assert any("may already have landed" in p.lower() for p in res.problems)
+
+
+def test_empty_card_reports_empty_not_already(tmp_path):
+    """Pre-merge review MEDIUM #4: a card the walker finds no tracks on reports
+    'empty' (a possible parse miss), distinct from a genuinely already-correct card."""
+    fake = FakeClient({"cardId": "C1", "title": "Empty", "content": {"chapters": []}})
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+    assert res.outcome == "empty"
+    assert fake.posts == []
+
+
 # --------------------------------------------------------------------------- #
 # Discovery
 # --------------------------------------------------------------------------- #

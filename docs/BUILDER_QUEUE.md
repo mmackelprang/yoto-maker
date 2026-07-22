@@ -11,7 +11,11 @@ plan assumed) — so the plan's literal code was adapted at exactly the step it
 told Builder to pin. `gzP2B`'s single artifact was probed read-only and
 confirmed **Ogg Opus** (`OggS`/`OpusHead`; served `Content-Type: audio/ogg`, no
 `codecs` param). Dry-run by default, backup-before-write, all-or-nothing,
-verify-after; **no version bump**. Suite **244 passed**. **This PR does NOT run
+verify-after; **no version bump**. Suite **247 passed**; pre-merge review found 2
+HIGH + 2 MEDIUM, all fixed (HIGH #1 — the resolved-`trackUrl` round-trip can't be
+self-verified inside the signing window — is inherent to the approved
+GET-mutate-POST design and is handed to the coordinator as a **staged-rollout**
+requirement, with an in-tool `--apply` warning). **This PR does NOT run
 `--apply`** — the live 3-card repair is the coordinator's separate post-merge
 step. **Bookkeeping reconciled in this same edit:** items 13 (PR #19) and 17
 (PR #18) are both on `main` and now sit in the Shipped table (13's stale

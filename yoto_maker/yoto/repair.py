@@ -189,13 +189,20 @@ def _normalize_urls(obj):
 
 def _strip_volatile(body: dict) -> dict:
     """A deep copy reduced to what a round-trip diff should legitimately compare:
-    top-level fields that change every write (updatedAt/etag/version/...) removed,
+    server-managed fields that change every write (updatedAt/etag/version/...)
+    removed — both at the card root AND inside `content` (the real body carries a
+    `content.version` counter that Yoto may bump on any write; it is never a field
+    this repair intends to change, so dropping it avoids a false verify-failure) —
     and every signed CDN URL normalized to its stable path (dropping the rotating
     signature). So the diff sees only meaningful changes."""
     out = copy.deepcopy(body)
     if isinstance(out, dict):
         for k in _VOLATILE_TOP_KEYS:
             out.pop(k, None)
+        content = out.get("content")
+        if isinstance(content, dict):
+            for k in _VOLATILE_TOP_KEYS:
+                content.pop(k, None)
     return _normalize_urls(out)
 
 
@@ -298,7 +305,7 @@ def plan_card(client, body: dict, card_id: str) -> CardPlan:
 class CardResult:
     card_id: str
     title: str
-    outcome: str             # "already" | "dry-run" | "applied" | "blocked" | "verify-failed" | "restored"
+    outcome: str             # already|empty|dry-run|applied|blocked|verify-failed|write-uncertain|restored
     plan: CardPlan
     backup_path: Path | None = None
     problems: list[str] = field(default_factory=list)
@@ -329,7 +336,10 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
     plan = plan_card(client, body, card_id)
 
     if plan.outcome in ("already", "empty"):
-        return CardResult(card_id, plan.title, "already", plan)
+        # Pass the outcome through: "empty" (no tracks found) is reported distinctly
+        # from "already" because it can mean an unexpected body shape / parse miss,
+        # not a genuinely already-correct card.
+        return CardResult(card_id, plan.title, plan.outcome, plan)
     if plan.outcome == "blocked":                 # all-or-nothing: write nothing
         return CardResult(card_id, plan.title, "blocked", plan)
 
@@ -338,8 +348,20 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
 
     backup_path = _write_backup(backup_dir, card_id, body, now)   # BEFORE any write
     corrected = apply_format_corrections(body, plan.correct_keys)
-    client.update_card(card_id, corrected)
-    after = client.get_card(card_id)
+    # The backup is now durably on disk. If the POST or the verify re-GET raises
+    # (a transient timeout is plausible on a live run), we must NOT let a bare error
+    # escape as if nothing happened — the write may already have landed. Report it
+    # as "write-uncertain", carrying the backup path so the operator can re-run
+    # (idempotent) to confirm or roll back.
+    try:
+        client.update_card(card_id, corrected)
+        after = client.get_card(card_id)
+    except YotoError as exc:
+        return CardResult(
+            card_id, plan.title, "write-uncertain", plan, backup_path,
+            [f"POST or verify re-GET failed AFTER the backup was written: {exc}. "
+             "The write MAY already have landed — re-run (it is idempotent) to confirm, "
+             f"or roll back with --rollback {backup_path}."])
     problems = verify_only_format_changed(body, after, plan.correct_keys)
     outcome = "applied" if not problems else "verify-failed"
     return CardResult(card_id, plan.title, outcome, plan, backup_path, problems)
@@ -432,6 +454,8 @@ def _print_card_result(res: CardResult) -> None:
                     "card left untouched (all-or-nothing)"),
         "verify-failed": ("WROTE but VERIFY FAILED — review the diffs below and roll back with "
                           f"--rollback {res.backup_path}"),
+        "write-uncertain": ("the POST or verify re-GET errored AFTER the backup was written — the "
+                            "write MAY have landed; re-run (idempotent) to confirm or roll back"),
         "restored": "restored from backup; verify ok",
     }.get(res.outcome, res.outcome)
     print(f"  RESULT: {summary}")
@@ -484,6 +508,17 @@ def main(argv: list[str] | None = None) -> int:
     banner = ("APPLYING CHANGES (writing to live cards)" if apply
               else "DRY RUN — no changes will be written (pass --apply to write)")
     print(f"=== Repair existing cards — {banner} ===\n")
+    if apply:
+        # The one property this tool CANNOT self-verify (pre-merge review, HIGH #1):
+        # it re-POSTs each card's resolved, signed `trackUrl` back to Yoto. The verify
+        # runs inside the ~60-min signing window, so it cannot prove Yoto re-maps its
+        # own CDN URL back to the internal audio reference rather than freezing an
+        # expiring URL. Fail mode would be a card that plays for ~an hour then stops.
+        print("!! trackUrl round-trip is UNPROVEN — do a STAGED rollout:\n"
+              "   1) apply to ONE card first (gzP2B is smallest),\n"
+              "   2) confirm playback on the physical player (ideally also re-GET after\n"
+              "      ~60 min and check the signature rotated),\n"
+              "   3) only then apply the rest. Backups are written before every POST.\n")
 
     exit_code = 0
     for card_id, _label in targets:
@@ -494,7 +529,7 @@ def main(argv: list[str] | None = None) -> int:
             exit_code = 1
             continue
         _print_card_result(res)
-        if res.outcome in ("blocked", "verify-failed"):
+        if res.outcome in ("blocked", "verify-failed", "write-uncertain", "empty"):
             exit_code = 1
     return exit_code
 

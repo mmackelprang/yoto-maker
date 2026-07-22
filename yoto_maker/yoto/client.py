@@ -386,6 +386,14 @@ class YotoClient:
         The body is sent verbatim except that cardId is (re)asserted, so icons,
         keys, ordering and every unmodelled field survive. This is deliberately
         NOT routed through build_content_payload.
+
+        CAVEAT (pre-merge review HIGH #1): repair.py hands us the deep-copied GET
+        body, whose track ``trackUrl`` values are RESOLVED, time-limited signed CDN
+        URLs (not the ``yoto:#<sha>`` refs written at create time). We POST them back
+        verbatim on the "change only format" principle, relying on Yoto re-mapping
+        its own CDN URL to the internal audio reference. That round-trip is UNPROVEN
+        by this tool's verify (which runs inside the signing window). The repair CLI
+        prints a staged-rollout warning in --apply mode for exactly this reason.
         """
         payload = dict(body)
         payload["cardId"] = card_id
