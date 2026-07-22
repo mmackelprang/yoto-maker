@@ -160,6 +160,100 @@ async function doUpdate() {
   }
 }
 
+// copy.md §4d. ONE GATE, NO TIER CONDITION — if the verdict is invalid the
+// sign-in is blocked whichever tier supplied the value. Only the RECOVERY
+// varies, and it varies in copy rather than in control flow. That is what
+// satisfies both "block all tiers uniformly" and the guard rail that every
+// blocked state must be honest about its own way out.
+const CONNECT_WARN = {
+  saved: {
+    body: ["Yoto Maker can’t sign in to Yoto, because the Client ID saved on this " +
+           "computer isn’t one."],
+    button: "Put back the built-in Client ID",
+  },
+  env: {
+    // No button, and the recovery carried in words instead. Yoto Maker didn't
+    // set this value and cannot unset it, and offering a control that cannot
+    // act is the failure overview.md §7.4 already ruled against.
+    //
+    // The env var's real name appears verbatim, TWICE, deliberately: copy.md §4
+    // already licenses this one narrow exception for this one tier, and it
+    // applies with more force here because THE NAME IS THE RECOVERY
+    // INSTRUCTION. A user who cannot act on it will read it out to someone who
+    // can — the same phone call setting 3 exists to serve.
+    //
+    // The second paragraph exists to stop her hunting. Every other blocked
+    // state in this app has a button; without a sentence saying why there
+    // isn't one here, she will scroll looking for it and conclude the screen is
+    // broken.
+    body: ["Yoto Maker can’t sign in to Yoto. The Client ID it’s using comes from " +
+           "outside the app — the YOTO_CLIENT_ID environment variable on this " +
+           "computer — and what’s in there isn’t a Client ID.",
+           "There’s no button here that can fix it, because Yoto Maker didn’t set it. " +
+           "Whoever did will need to clear or correct YOTO_CLIENT_ID and then start " +
+           "Yoto Maker again."],
+    button: null,
+  },
+  builtin: {
+    // Unreachable in a correct build; guarded by
+    // test_the_shipped_default_scores_ok. The row exists so the table is total.
+    //
+    // "Put back the built-in Client ID" would be WRONG here: the built-in one
+    // IS the broken one, so the button would promise to restore the thing that
+    // is already failing. Points at setting 3 instead.
+    body: ["Yoto Maker can’t sign in to Yoto, and the Client ID it came with is the " +
+           "problem — which shouldn’t be possible. The details at the bottom of this " +
+           "page are what someone will need to help you."],
+    button: null,
+  },
+};
+
+// renderStatus() runs on every refreshStatus(), including the 2-second poll
+// connectYoto() starts. #connectWarn carries role="alert", so re-rendering
+// identical content would re-announce the block to a screen-reader user every
+// two seconds for up to three minutes. Re-render only when the state it depends
+// on actually changed.
+let connectWarnKey = null;
+
+function renderConnectWarn() {
+  const y = (STATUS && STATUS.yoto) || {};
+  const blocked = y.client_id_verdict === "invalid";
+  const key = blocked ? "invalid|" + (y.client_id_source || "builtin") : "ok";
+  if (key === connectWarnKey) return;
+  connectWarnKey = key;
+
+  const box = $("#connectWarn");
+  if (!blocked) {
+    box.replaceChildren();
+    show(box, false);
+    return;
+  }
+  const c = CONNECT_WARN[y.client_id_source] || CONNECT_WARN.builtin;
+  setMsgBoxContent(box, c.body);
+  if (c.button) {
+    // Omitted, never disabled, on the two tiers with no reset — the same
+    // discipline interactions.md §3.5.2 applies to the reveal toggle. A
+    // disabled button would invite her to keep pressing it.
+    const btn = document.createElement("button");
+    btn.className = "btn primary";
+    btn.id = "connectWarnReset";
+    btn.style.marginTop = "10px";
+    btn.textContent = c.button;
+    // It does NOT perform the reset. The reset signs her out and forgets her
+    // value, and copy.md §4's confirmation carries the sentence answering the
+    // fear she actually has ("Nothing in your Yoto account changes."). A
+    // one-press control here would skip it. Routing to the ARMED confirmation
+    // is one press from symptom to consequences, and it composes with the
+    // existing flow rather than bypassing it.
+    btn.addEventListener("click", () => {
+      pendingIntent = "reset-client-id";
+      gotoSettings(btn);
+    });
+    box.appendChild(btn);
+  }
+  show(box, true);
+}
+
 function renderStatus() {
   const pill = $("#yotoPill");
   const text = $("#yotoPillText");
@@ -181,6 +275,7 @@ function renderStatus() {
     ? "⚙️ Connect a different Yoto account"
     : "⚙️ Yoto connection settings";
   $("#sendBtn").disabled = !connected;
+  renderConnectWarn();
 }
 
 async function refreshStatus() {
@@ -192,6 +287,12 @@ async function refreshStatus() {
 // The hashchange handler is the single place that swaps views. Every entry point
 // just sets location.hash, so a click and a browser Back press cannot diverge.
 let returnFocusTo = null;
+
+// A one-shot instruction carried across the view swap, consumed by applyRoute().
+// interactions.md §3.6.6: a module-level flag, NOT a second hash route — §1.1
+// step 2 makes hashchange the single place the swap happens, and a second route
+// would give Back and Forward two code paths to diverge across.
+let pendingIntent = null;
 
 function inSettings() { return location.hash === "#settings"; }
 
@@ -207,6 +308,15 @@ function applyRoute() {
     window.scrollTo(0, 0);
     $("#settingsTitle").focus();
     openSettings();
+    // Consumed AFTER focus moved to #settingsTitle and AFTER openSettings()
+    // kicked off the account check, so the confirmation opens into a settled
+    // view (interactions.md §3.6.6). openClientIdConfirm() then moves focus to
+    // #clientIdConfirmNo per §2.3 — the safe option, focused first.
+    if (pendingIntent === "reset-client-id") {
+      pendingIntent = null;
+      $("#setting-client-id").scrollIntoView({ block: "start" });
+      openClientIdConfirm("reset");
+    }
   } else {
     closeSettings();
     const back = returnFocusTo && document.contains(returnFocusTo) ? returnFocusTo : null;
@@ -1200,6 +1310,16 @@ let connectTimer = null;
 
 async function connectYoto() {
   clearError($("#sendError"));
+  // The press does not send a request — it renders the block. Follow the
+  // symptom: her symptom is "connecting doesn't work", and the recovery has to
+  // be adjacent to the button she pressed, not two navigations away
+  // (overview.md §5.1, §12.4). renderConnectWarn() has already drawn it from
+  // the last renderStatus(); this call re-asserts it in case STATUS changed.
+  if (STATUS && STATUS.yoto && STATUS.yoto.client_id_verdict === "invalid") {
+    renderConnectWarn();
+    $("#connectWarn").scrollIntoView({ block: "nearest" });
+    return;
+  }
   try {
     const { url } = await api("/api/yoto/login");
     window.open(url, "_blank");

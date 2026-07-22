@@ -143,6 +143,20 @@
       <div id="sendError" class="msg-box err hidden"></div>
       <div id="sendDone" class="msg-box ok hidden"></div>
 
+      <!-- The sign-in block (copy.md §4d). Second-to-last child, deliberately:
+           it sits directly above the ⚙️ link it refers to, and #advRow stays
+           last per interactions.md §1.4.
+
+           It must NOT be #sendError. Both connectYoto() and sendToYoto() call
+           clearError($("#sendError")) on entry, so a config warning parked
+           there would be wiped by an unrelated action.
+
+           Rendered proactively by renderStatus(): this state is never the
+           everyday path, so overview.md §2's weight constraint is not engaged.
+           In the "ok" state it renders nothing at all and step 3 is
+           byte-for-byte what it was. -->
+      <div id="connectWarn" class="msg-box err hidden" role="alert"></div>
+
       <!-- Last child, deliberately. Ahead of #sendBtn this would push the
            primary action down and take a tab stop before it — a cost paid on
            every card-making visit for a control used twice ever. Last child
