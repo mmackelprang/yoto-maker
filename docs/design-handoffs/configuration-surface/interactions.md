@@ -452,6 +452,164 @@ the correct markup and costs nothing; **no behavior may depend on it.**
 
 ---
 
+### 3.6 Malformed values — verdicts, refusal, and the sign-in block — NEW (amendment, 2026-07-21)
+
+Specified by [`overview.md` §13](overview.md). Copy in
+[`copy.md` §4b–§4d](copy.md). **No CSS.**
+
+#### 3.6.1 The verdict, and where it comes from
+
+One function in `config.py`, beside `_resolve_client_id_with_source()` — the same
+anti-drift discipline `overview.md` §7.2 relies on. It returns a verdict **and** a
+reason code; the frontend and both server call sites
+(`POST /api/yoto/client-id`, `start_login()`) read that one function.
+
+```
+verdict ∈ { "ok", "unusual", "invalid" }
+reason  ∈ { null, "email", "url", "spaces", "length", "charset", "too_long" }
+```
+
+A second implementation is how the save gate and the sign-in gate come to
+disagree — and a user allowed to save a value she is then not allowed to use is in
+a worse state than the one this amendment is fixing.
+
+Surfaced on `/api/status` as `yoto.client_id_verdict` and `yoto.client_id_reason`.
+
+#### 3.6.2 State machine — amends §3.1
+
+```
+   ┌─────────┐   ┌────────┐   ┌──────┐
+   │ builtin │   │ saved  │   │ env  │  ← from status.yoto.client_id_source
+   └────┬────┘   └───┬────┘   └──┬───┘
+        │            │           └── input + Save disabled; reset absent.
+        │            │               invalid → RED status, sign-in still
+        │            │               proceeds (overview.md §13.5). Terminal.
+        │            │
+        │  "Go back to the built-in one" ──▶ confirm_reset ──▶ saving ──▶ builtin
+        │            │
+        │            │        ┌── verdict "invalid" ──▶ REFUSED
+        └──── Save ──┴────────┤       (no write, no logout, no confirmation)
+                              │
+                              ├── verdict "unusual" ──▶ confirm_save
+                              │      (+ the extra first paragraph)  ──▶ saving
+                              │
+                              └── verdict "ok" ───────▶ confirm_save ──▶ saving
+```
+
+#### 3.6.3 Save — amends §3.2
+
+Step 1 of §3.2 gains a clause. Everything else in §3.2 is unchanged.
+
+1. Trim the input. **Empty → as today.** **Verdict `invalid` → show the matching
+   refusal message (`copy.md` §4c), focus the input, stop.**
+2. **No confirmation is opened for a refused value.** This extends §3.2's existing
+   rule — *"never confirm a no-op"* — from *no-op* to *no-op or refusal*. Asking
+   the user to accept *"you'll need to sign in to Yoto again"* for a value that
+   will be refused, then erroring at her, is the same defect that rule forbids.
+3. **The input's value is left intact and focused**, per §3.2 step 5. Select-all
+   on focus was considered and rejected: §3.2's behavior is focus-only, and her
+   first job here is to *read* what she typed and recognise it.
+4. Verdict `unusual` → the normal confirmation, with `copy.md` §4c's extra
+   paragraph inserted first.
+
+**The client check exists for the honesty of the confirmation flow. The server
+check is the safety property** and is non-negotiable — it is what protects a user
+running a stale `app.js`, which this project has shipped before (`overview.md`
+§12.1). Server-side the check goes **above `get_settings().set(...)` and above
+`logout()`**; see `copy.md` §4c on why the reassurance string is the readable form
+of that ordering.
+
+#### 3.6.4 The value display — two new rows for §3.5.2
+
+`renderClientId()`'s table gains two rows. They sit **above** the existing
+`masked === full` row and are reached by the same principle: *the toggle is
+omitted, never disabled, whenever it could do nothing.*
+
+| Condition | Block | Toggle |
+| --- | --- | --- |
+| `client_id_source === "builtin"` | hidden | — |
+| **verdict is `invalid` or `unusual`** | **shown, `client_id_full`** | **omitted** |
+| `client_id_full` is null / absent | shown, mask only | omitted |
+| `client_id_masked === client_id_full` | shown, value only | omitted |
+| otherwise (`saved` / `env`, verdict `ok`) | shown | shown |
+
+**`unusual` matters here as much as `invalid`.** A truncated 17-character paste
+masks to `a8OG…tDU`, which hides the truncation completely and looks entirely
+plausible — the mask would conceal the one thing she needs to see. This is the
+general rule `overview.md` §13.1 states: the mask is the summary form of a value
+that has the expected shape, and applied to one that does not it is camouflage.
+
+`clientIdRevealed` is irrelevant in these states (there is no toggle) and must not
+be consulted. §3.5.4's three reset events are unchanged.
+
+#### 3.6.5 The sign-in block — uniform across tiers *(amended 2026-07-21)*
+
+**Whenever the verdict is `invalid`, regardless of source:**
+
+- `connectYoto()` **returns before `/api/yoto/login`.** The authorize request is
+  never constructed. This is the whole point (`overview.md` §13.5).
+- `start_login()` refuses server-side too, raising `AuthError` with the reason
+  code, consumed through the existing `SIGNIN_ERRORS[e.data && e.data.reason]`
+  mapping at `app.js:1033`. Do not invent a second error-mapping mechanism.
+- **Both gates test the verdict only, never the source.** They therefore agree
+  trivially. `start_login()` does not need `resolve_client_id_with_source()` — the
+  verdict alone is sufficient, and that is where the "keep it simple" instruction
+  actually banks its simplicity.
+- **`#connectBtn` stays enabled.** Disabling it with no visible reason is the
+  dead-end antipattern §2.2 forbids. Pressing it is the fastest path to the
+  explanation — the press renders `#connectWarn` instead of sending a request.
+- The settings section's **input and `Save` stay fully enabled**. The block is on
+  *signing in*, never on *fixing it*.
+
+**The recovery inside `#connectWarn` is what varies by source**, per `copy.md` §4d:
+
+| `source` | `#connectWarn` contains |
+| --- | --- |
+| `saved` | The message + `Put back the built-in Client ID` (§3.6.6). |
+| `env` | The message only. The fix is named in words — clear or correct `YOTO_CLIENT_ID`, then restart. |
+| `builtin` | The message only, pointing at setting 3. Unreachable; guarded by a test. |
+
+**The button is omitted, never disabled**, in the two tiers that have no reset —
+the same discipline §3.5.2 applies to the reveal toggle and §7.4 applies to the
+reset action itself. A disabled button would invite her to keep pressing it.
+
+*An earlier draft of this subsection exempted `env` from the block entirely. It was
+reversed 2026-07-21; `overview.md` §13.5 records both the instruction and why the
+structural objection behind the exemption is satisfied by tier-specific copy rather
+than by a tier-specific gate.*
+
+#### 3.6.6 The recovery deep link
+
+`Put back the built-in Client ID` (`copy.md` §4d) navigates to Settings **and opens
+the reset confirmation already showing**, scrolled to the Client ID section. It
+does **not** perform the reset — §3.3's confirmation carries the sentence
+answering the fear the user actually has, and a one-press control on the card view
+would skip it.
+
+A module-level `pendingIntent` set before `gotoSettings()` and consumed by §1.1's
+on-open sequence is sufficient. **Do not add a second hash route** — §1.1 step 2
+makes `hashchange` the single place the swap happens, and a second route would
+give Back/Forward two code paths to diverge across.
+
+Ordering against §1.1: the intent is consumed **after** step 6 (focus moves to
+`#settingsTitle`) and **after** step 7 kicks off the account check, so the
+confirmation opens into a settled view. Focus then moves to `#clientIdConfirmNo`
+per §2.3's rule — the safe option, focused first.
+
+#### 3.6.7 Announcements
+
+**No new live region**, and none is needed. Verdict changes render through
+`#clientIdStatus` (`role="status"`, shipped) and refusals through `#clientIdMsg`
+(`role="alert"`, shipped). §4.3's prohibition on a second live region in one
+section is not approached.
+
+`#connectWarn` is on the **card view**, in a different section from any settings
+live region. It takes `role="alert"` when blocking (`saved`) and no role when
+advisory (`env`) — the advisory accompanies an action that is proceeding and has
+nothing urgent to interrupt with.
+
+---
+
 ## 4. Keyboard
 
 | Key | Context | Behavior |

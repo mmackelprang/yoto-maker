@@ -1,7 +1,31 @@
-# Yoto Maker v0.1.10
+# Yoto Maker v0.1.11
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
+
+### 🆕 New in v0.1.11
+- **You can add several audio files at once.** Press **📁 Choose audio files**
+  and pick as many as you like. They're added one after another, in order by
+  file name, and you can move them around afterwards. If one of them doesn't
+  work, the rest still get added and Yoto Maker tells you which one it was and
+  why.
+- **You can stop a long add.** A **Cancel** button now sits beside the progress
+  bar. Anything already added stays in your list, and Yoto Maker tells you
+  exactly what got in and what didn't.
+- **A new "If you need to ask for help" section at the bottom of Settings.**
+  It shows the handful of details anyone helping you will ask for. Nothing
+  there can be changed by looking at it.
+
+### Fixed in v0.1.11
+- **Typing the wrong thing in the Client ID box can't sign you out any more.**
+  If you paste something that isn't a Client ID — an email address, say, or a
+  web address — Yoto Maker now says so and changes nothing. Before, it would
+  save it and sign you out, and the only thing you'd see was an error page on
+  Yoto's website.
+- **If a bad Client ID is already saved, Yoto Maker now says so plainly** — on
+  the Settings screen and next to the Connect button — shows you the whole
+  value rather than a shortened version, and gives you a one-press way back to
+  the built-in one.
 
 ### Fixed in v0.1.10
 - **The way to use a different Yoto account is back where you can see it.** The

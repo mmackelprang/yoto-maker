@@ -385,6 +385,176 @@ to go, rather than leaving her to discover a scary red state on her own.
 
 ---
 
+## 4b. Status line — amended for malformed values *(amendment, 2026-07-21)*
+
+`overview.md` §13. **Replaces the three-row table in §4 above.** Rendered in
+`#clientIdStatus`, the existing `role="status"` region — no second live region
+(`interactions.md` §4.3).
+
+| `source` | verdict | Dot | Headline | Sub-line |
+| --- | --- | --- | --- | --- |
+| `builtin` | ok | green `is-ok` | `Using the built-in Client ID` | `This is what most people use. Nothing to do here.` |
+| `saved` | ok | green `is-ok` | `Using your own Client ID` | `Saved on this computer only.` |
+| `saved` | unusual | amber `is-warn` | `Using your own Client ID` | `Saved on this computer only. It isn't the usual 32 letters and numbers, so signing in to Yoto may not work.` |
+| `saved` | invalid, reason `email` | **red `is-err`** | `That's an email address, not a Client ID` | `Yoto Maker can't sign in to Yoto until this is fixed. Press "Go back to the built-in one" below.` |
+| `saved` | invalid, any other reason | **red `is-err`** | `This isn't a Client ID` | `Yoto Maker can't sign in to Yoto until this is fixed. Press "Go back to the built-in one" below.` |
+| `env` | ok **or unusual** | amber `is-warn` | `Set outside the app` | *(unchanged from §4)* |
+| `env` | invalid | **red `is-err`** | `Set outside the app, and it isn't a Client ID` | `Yoto Maker can't sign in to Yoto until this is fixed. YOTO_CLIENT_ID on this computer holds something that isn't a Client ID, and only whoever set it can change it.` |
+| `builtin` | invalid | **red `is-err`** | `Something's wrong with the built-in Client ID` | `Yoto Maker can't sign in to Yoto. This shouldn't be possible — the details at the bottom of this page are what someone will need to help you.` |
+
+*(The `builtin` + `invalid` row is unreachable in a correct build and is guarded by
+`overview.md` §13.2's required test. It exists so the table is **total** — every
+combination of source and verdict has a row. Same completeness discipline
+`tokens.md` §4 adopted after an unmeasured pair shipped a 2.56:1 label.)*
+
+**The email case gets its own headline.** The whole thesis of this amendment is
+that *naming* the mistake is what visibility failed to do (`overview.md` §13.1).
+Being explicit in the refusal message while being coy in the status line would be
+inconsistent, and this is the exact user in the incident.
+
+**`env` + `unusual` deliberately has no row.** On a value a developer set on
+purpose, "that isn't the usual shape" is precisely the false-positive noise
+`overview.md` §13.2's conservatism exists to suppress. On `env` we speak up only
+when the value is definitely wrong.
+
+**The sub-lines point at the recovery by its literal label.** House pattern — §4's
+two success messages both do this (*"Now sign in to Yoto again using the button
+above."*). It makes the affordance obvious without moving it, which matters because
+`overview.md` §4.3.1 fixes slot order and the recovery lives in slot 5, below
+slot 4.
+
+---
+
+## 4c. Save refused — the three refusal messages *(amendment, 2026-07-21)*
+
+Rendered in `#clientIdMsg` (`.msg-box err`, `role="alert"`). Three paragraphs
+each: **what you entered / what it should be / reassurance.**
+
+`clientIdMsg()` sets `textContent` today and will need to take an array of
+paragraphs. Precedent exists in the same file — `CLIENT_ID_CONFIRM.body` is
+already an array.
+
+**Case 1 — reason `email` (contains `@`). The observed real failure.**
+
+> That looks like an email address, not a Client ID.
+>
+> A Client ID is a code from Yoto's developer website — letters and numbers, with
+> no @ sign. It isn't the email address you sign in to Yoto with.
+>
+> {reassurance}
+
+**Case 2 — reason `url` (contains `/` or `:`).**
+
+> That looks like a web address, not a Client ID.
+>
+> The setup page shows a web address and a Client ID next to each other, and it's
+> easy to copy the wrong one. The Client ID is the shorter one — just letters and
+> numbers.
+>
+> {reassurance}
+
+**Case 3 — reason `spaces` or `too_long`.**
+
+> That doesn't look like a Client ID.
+>
+> A Client ID is one unbroken run of letters and numbers, with no spaces. It may
+> help to copy it again from Yoto's developer website.
+>
+> {reassurance}
+
+**`{reassurance}` is state-dependent**, following the rule this file already
+applies twice (§1a and §4 both make a string conditional because a word would
+otherwise be false):
+
+| `STATUS.yoto.connected` | Line |
+| --- | --- |
+| `true` | `Nothing was changed, and you're still signed in to Yoto.` |
+| `false` | `Nothing was changed.` |
+
+*"You're still signed in"* is false when she isn't, and a reassurance that is
+audibly wrong about her situation costs more trust than it buys.
+
+**This line is the readable form of an invariant.** It is true only because the
+verdict check runs before `get_settings().set(...)` and before `logout()`
+(`overview.md` §13.3). **If a refactor changes that ordering, this string must
+change with it** — otherwise the app is lying about the one thing this amendment
+exists to guarantee.
+
+### The `unusual` save — allowed, with the concern named
+
+An `unusual` value **is** saved. The existing save confirmation (§4) gains one
+paragraph, inserted **first**, above `Yoto Maker will start using the Client ID
+you pasted.`:
+
+> Just so you know: a Client ID is usually 32 letters and numbers, and this one
+> isn't. If you're sure it's right, go ahead.
+
+Buttons unchanged: `Never mind` / `Yes, use it`. No new UI — the confirmation slot
+already carries multi-paragraph bodies.
+
+---
+
+## 4d. The sign-in block, on the card view *(amendment, 2026-07-21)*
+
+New `.msg-box` in step 3, `#connectWarn`, rendered by `renderStatus()` as the
+**second-to-last child, immediately above `#advRow`** — so it sits directly above
+the ⚙️ link, and `#advRow` stays last per `interactions.md` §1.4. It must **not**
+be `#sendError`, which both `connectYoto()` and `sendToYoto()` clear on entry.
+
+**`saved` + `invalid` — blocking, `.msg-box err`:**
+
+> Yoto Maker can't sign in to Yoto, because the Client ID saved on this computer
+> isn't one.
+
+| Role | Label |
+| --- | --- |
+| `.btn primary` | `Put back the built-in Client ID` |
+
+The button navigates to Settings **and opens the reset confirmation already
+showing**. It does not perform the reset — see `overview.md` §13.6.
+
+**`env` + `invalid` — blocking, `.msg-box err`, no button** *(amended 2026-07-21:
+all tiers block; an earlier draft made this tier advisory)*:
+
+> Yoto Maker can't sign in to Yoto. The Client ID it's using comes from outside the
+> app — the YOTO_CLIENT_ID environment variable on this computer — and what's in
+> there isn't a Client ID.
+>
+> There's no button here that can fix it, because Yoto Maker didn't set it. Whoever
+> did will need to clear or correct YOTO_CLIENT_ID and then start Yoto Maker again.
+
+**No button, and the recovery is carried in words instead.** The gate is uniform
+across all three tiers; the *recovery* is what varies (`overview.md` §13.5). Here
+the app cannot perform the fix, and offering a control that cannot act is the
+failure `overview.md` §7.4 already ruled against — so the sentence names the
+variable and the exact steps.
+
+**The env var's name appears verbatim, twice, deliberately.** §4 already licenses
+this exception for this tier — *"the only place in the app where an environment
+variable name is spoken to the user… a deliberate, narrow exception"* — and it
+applies with more force here, because **the name is the recovery instruction.** A
+user who cannot act on it will read it aloud to someone who can, which is the same
+phone call §7 exists to serve.
+
+**The second paragraph exists to stop her hunting.** Every other blocked state in
+this app has a button. Without a sentence saying why there isn't one here, she will
+scroll looking for it and conclude the screen is broken.
+
+**`builtin` + `invalid` — blocking, `.msg-box err`, no button.** Unreachable in a
+correct build; the row exists so the table is total.
+
+> Yoto Maker can't sign in to Yoto, and the Client ID it came with is the problem —
+> which shouldn't be possible. The details at the bottom of this page are what
+> someone will need to help you.
+
+`Put back the built-in Client ID` would be **wrong** here: the built-in one is the
+broken one, so the button would promise to restore what is already failing.
+
+**In the `ok` state `#connectWarn` renders nothing at all.** The everyday path is
+byte-for-byte unchanged.
+
+---
+
 ## 5. Strings removed
 
 | Location | Old string | Fate |
@@ -398,3 +568,89 @@ to go, rather than leaving her to discover a scary red state on her own.
 `index.html` steps 1, 2, 4; the `#connectRow` info box and `#connectBtn`; the
 About modal; the update banner; `#startOver`'s `window.confirm()`. This PR does
 not touch them.
+
+---
+
+## 7. Setting 3 — "If you need to ask for help" *(amendment, 2026-07-21)*
+
+`overview.md` §13.4. A read-only section, placed **last**. Slots used: Title,
+Description, Body. Status, Actions and Confirmation are omitted; slot 6 is present
+but empty and hidden.
+
+**Title**
+
+> If you need to ask for help
+
+**Description**
+
+> If something isn't working and you're asking someone for help, these are the
+> details they'll ask for. Nothing here can be changed — it's just what Yoto Maker
+> is using right now.
+
+*(The second sentence is doing real work. A parent who scrolls into a block of
+technical values needs telling immediately that she cannot break anything by
+looking at it — the same instinct as §3's "Nothing in your Yoto account changes.")*
+
+**Title register note.** Rejected: `Details for troubleshooting` and
+`Technical details`. Both name the *contents*; this one names the **occasion**, so
+a user who is not in that occasion knows instantly that the section is not for her
+— which is the whole reason it can sit un-collapsed at the bottom of the page.
+
+### The rows
+
+Label in `.tiny` above the value, stacked. This is the `The one you're using now`
+construction from §4a, reused exactly. **Not a two-column table**: values wrap
+under `.mono-value`'s `word-break: break-all`, and a two-column layout at 720px
+with wrapping values produces ragged rows.
+
+| # | Label | Value | `.mono-value` |
+| --- | --- | --- | --- |
+| 1 | `Version` | *(rendered — e.g.* `0.1.10` *)* | ✅ |
+| 2 | `Client ID in use` | *(rendered — the masked value)* | ✅ |
+| 3 | `Where that came from` | `Built in` / `Saved on this computer` / `Set outside the app` | ❌ prose |
+| 4 | `Redirect URL` | *(rendered — e.g.* `http://127.0.0.1:8777/yoto/callback` *)* | ✅ |
+| 5 | `Where Yoto Maker keeps its files` | *(rendered — the data folder path)* | ✅ |
+
+**Row 3's three values are new strings, not the status headlines.** They answer
+*"where did it come from?"* as a bare fact; §4b's headlines answer *"what state am
+I in?"* as a sentence. Reusing `Using the built-in Client ID` as a value under the
+label `Where that came from` would read as a fragment.
+
+**Row 2 obeys the mask-suppression rule** (`overview.md` §13.1): when the verdict is
+`unusual` or `invalid` this row shows the **full** value, exactly as setting 2 does.
+A summary that re-masked a bad value would undo, 200px lower, the fix directly
+above it.
+
+**There is exactly one reveal toggle on this surface** and it stays in setting 2,
+where the value's controls live. Row 2 shows the masked form only and gains no
+control of its own.
+
+**No copy button.** `tokens.md` §3a already rejected one for the Client ID —
+*"a copy button would need its own transient 'Copied!' state and clipboard-failure
+path"* — and that reasoning carries. The stated use case is **reading aloud**, which
+a copy button does not serve at all.
+
+**No drift between this section and setting 2:** both render from the same
+`STATUS.yoto` object in the same pass, the guarantee `overview.md` §7.2 relies on.
+
+**Row 4's label is `Redirect URL` — the setup guide's words, deliberately, and it
+is the one label in this section that is not plain English.** Decided 2026-07-21.
+
+`Sign-in address` was drafted first and reads better for the primary user. It was
+rejected. This row exists for **one moment**: she is on the phone, and the helper
+is looking at `dashboard.yoto.dev` and at `SETUP-YOTO-CONNECTION.md`, which calls
+it *"the redirect URL"* and warns *"This must match exactly"* (`:27`, `:33`). At
+that moment §12.2's lesson governs — **a string is only findable if it contains
+the word the person is holding** — and the person holding a word here is the
+helper, not the parent.
+
+The register rule bends because the section's own title already says who it is
+for. *"If you need to ask for help"* is the frame that licenses one label
+addressed to the helper; a parent who is not in that occasion never needs to parse
+it. This is the same narrowly-scoped exception §4's `env` sub-line takes, for the
+same reason: **the sentence is addressed to her about them.**
+
+`Sign-in address (redirect URL)` — carrying both — was considered and rejected as
+a hedge. Two names for one value is worse than either name alone on a phone call:
+the helper asks for one of them and she has to work out that the other is the same
+thing.

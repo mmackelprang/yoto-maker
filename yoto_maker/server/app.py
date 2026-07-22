@@ -19,7 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from .. import APP_NAME, __version__
 from .. import updater
 from ..audio.normalize import MAX_TRACK_SECONDS, AudioError, probe_audio, split_audio
-from ..config import get_config
+from ..config import get_config, validate_client_id
 from ..images import crop_image, make_device_icon, prepare_label_image, save_source_image, save_upload
 from ..images.ai import AIUnavailableError, ai_available, generate_image
 from ..images.library import ensure_library, icon_path, list_icons
@@ -38,6 +38,7 @@ from ..yoto import (
     connection_status,
     finish_login,
     logout,
+    redirect_uri,
     start_login,
 )
 from .draft import get_draft
@@ -122,7 +123,11 @@ async def _auth_error(_request, exc):  # noqa: ANN001
     of echoing a message written for a different context. AuthNetworkError is a
     subclass of AuthError, so this handler catches both.
     """
-    reason = "offline" if isinstance(exc, AuthNetworkError) else "rejected"
+    # An explicit reason on the exception wins. Nothing raised one before this
+    # change, so the fallback below is byte-for-byte the previous behavior.
+    reason = getattr(exc, "reason", None)
+    if reason is None:
+        reason = "offline" if isinstance(exc, AuthNetworkError) else "rejected"
     return JSONResponse(status_code=400, content={"error": str(exc), "reason": reason})
 
 
@@ -139,6 +144,15 @@ async def status() -> dict:
         "version": __version__,
         "tools": {"ffmpeg": bool(tools.ffmpeg), "yt_dlp": tools.yt_dlp, "ok": tools.ok},
         "yoto": connection_status(),
+        # The config summary (copy.md §7). Every value comes from the server —
+        # none may be constructed in JS. The port is not a constant
+        # (config.py:108: "chosen at runtime if busy"), so a hardcoded frontend
+        # redirect URL would be wrong in exactly the case where the row matters.
+        "config": {
+            "version": __version__,
+            "redirect_uri": redirect_uri(),
+            "data_dir": str(get_config().data_dir),
+        },
         "ai_available": ai_available(),
         "remove_sponsors": bool(get_settings().get("remove_sponsors", True)),
     }
@@ -319,7 +333,7 @@ async def set_track_icon(track_id: str, body: IconBody) -> dict:
     if not track:
         raise HTTPException(404, "Track not found")
     if icon_path(body.icon_id) is None:
-        raise HTTPException(400, "Unknown icon")
+        raise HTTPException(400, "That icon isn't available. Please pick another.")
     track.icon_id = body.icon_id
     return {"track": track.view()}
 
@@ -392,7 +406,7 @@ async def picture_library(body: IconBody) -> dict:
 
     p = icon_path(body.icon_id)
     if not p:
-        raise HTTPException(400, "Unknown icon")
+        raise HTTPException(400, "That icon isn't available. Please pick another.")
     # Upscale the 16x16 icon with nearest-neighbor for crisp pixel-art on the label.
     big = get_config().work_dir / "library_src.png"
     Image.open(p).resize((640, 640), Image.NEAREST).save(big)
@@ -515,6 +529,34 @@ async def set_client_id(body: ClientIdBody) -> dict:
     cid = body.client_id.strip()
     if not cid:
         raise HTTPException(400, "Please paste a Client ID first.")
+
+    # ------------------------------------------------------------------ #
+    # THE ORDERING BELOW IS THE FEATURE. DO NOT MOVE THIS CHECK.
+    #
+    # It sits above the set() and above the logout() so a user with a working
+    # sign-in can never lose it to a typo. The refusal message the frontend
+    # renders ends with "Nothing was changed, and you're still signed in to
+    # Yoto." — that sentence is true ONLY because of this ordering, so the copy
+    # is the readable statement of the invariant. If this check ever moves below
+    # either line, copy.md §4c's reassurance line must change with it, because
+    # the app would otherwise be lying about the one thing this exists to
+    # guarantee.
+    #
+    # Guarded by test_the_refusal_runs_BEFORE_the_write_and_BEFORE_logout.
+    # overview.md §13.3.
+    #
+    # This is the SAFETY property. The frontend runs the same check before
+    # opening its confirmation, but that check is only for the honesty of the
+    # confirmation flow — this one is what protects a user running a stale
+    # app.js, which this project has shipped before (overview.md §12.1).
+    # ------------------------------------------------------------------ #
+    verdict, reason = validate_client_id(cid)
+    if verdict == "invalid":
+        raise AuthError(
+            "That isn't a Client ID, so Yoto Maker didn't save it. Nothing was changed.",
+            reason=reason,
+        )
+
     get_settings().set("yoto_client_id", cid)
     logout()
     return {"ok": True, "yoto": connection_status()}
