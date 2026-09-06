@@ -429,3 +429,24 @@ def test_the_result_view_carries_everything_the_panel_needs(tmp_path, sample_mp3
                 "card_duration_words", "card_tracks", "over_card_bytes",
                 "over_card_seconds", "over_card_tracks"):
         assert key in v
+
+
+# --------------------------------------------------------------------------- #
+# Task 6 — opening the folder
+# --------------------------------------------------------------------------- #
+import os
+import sys
+
+from yoto_maker.export import reveal as reveal_mod
+
+
+def test_reveal_support_matches_the_platform():
+    assert reveal_mod.reveal_supported() is hasattr(os, "startfile")
+    if not sys.platform.startswith("win"):
+        assert reveal_mod.reveal_supported() is False
+
+
+def test_reveal_refuses_rather_than_raising_something_technical(tmp_path, monkeypatch):
+    monkeypatch.setattr(reveal_mod, "reveal_supported", lambda: False)
+    with pytest.raises(ExportError):
+        reveal_mod.reveal_folder(tmp_path)
