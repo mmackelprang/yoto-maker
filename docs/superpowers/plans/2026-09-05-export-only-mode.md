@@ -1037,8 +1037,8 @@ def render_sheet(d: SheetData) -> str:
     out.append(
         '<div class="card"><h3>2. Give it this name</h3>'
         f'<p class="name">{e(d.card_name)}</p>'
-        "<p>It doesn’t have to match — but it’s what’s on your printed label, so "
-        "it’s easier if it does.</p></div>"
+        "<p>It doesn’t have to match — but it’s easier if your card, your label "
+        "and this folder all say the same thing.</p></div>"
     )
 
     # --- 3 ------------------------------------------------------------------ #

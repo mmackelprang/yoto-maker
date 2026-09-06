@@ -597,8 +597,8 @@ see on the site. It is also already in `INSTALL-FOR-MOM.md:76`.)*
 >
 > **{card name}**
 >
-> It doesn’t have to match — but it’s what’s on your printed label, so it’s
-> easier if it does.
+> It doesn’t have to match — but it’s easier if your card, your label and this
+> folder all say the same thing.
 
 ### 6.4 Step 3
 

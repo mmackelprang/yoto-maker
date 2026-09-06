@@ -43,8 +43,8 @@ named files is not the deliverable — a user who ends up with a working card is
   ║   │                                                            │ ║
   ║   │    Bedtime Stories                        ← her card name, │ ║
   ║   │                                             large, selectable║
-  ║   │ It doesn’t have to match — but it’s what’s on your printed │ ║
-  ║   │ label, so it’s easier if it does.                          │ ║
+  ║   │ It doesn’t have to match — but it’s easier if your card,   │ ║
+  ║   │ your label and this folder all say the same thing.         │ ║
   ║   └────────────────────────────────────────────────────────────┘ ║
   ║                                                                  ║
   ║   ┌────────────────────────────────────────────────────────────┐ ║
