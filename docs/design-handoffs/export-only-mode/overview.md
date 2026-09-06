@@ -203,7 +203,7 @@ Step 3's children, after this feature:
   #connectRow                       unchanged in structure; ONE string edited (§4.6)
   #sendBtn                          unchanged
   #sendProgress                     unchanged
-  #sendError                        unchanged
+  #sendError                        markup unchanged; ONE new message (copy.md §9)
   #sendDone                         unchanged
   #connectWarn                      unchanged
   ── new ───────────────────────────────────────────────
@@ -213,9 +213,19 @@ Step 3's children, after this feature:
   #exportDone         .msg-box ok           hidden
   #exportNote         .msg-box info         hidden
   #exportActions      .done-actions         hidden
+  #exportOpenError    .msg-box err          hidden   ← the REVEAL button's own
+                                                       feedback region
   ── end ───────────────────────────────────────────────
   #advRow                           unchanged, and STILL LAST
 ```
+
+*(Both 2026-09-05 amendments. `#exportOpenError` is the only structural change
+since approval: it adds no CSS, no token and no tab stop, and it exists because
+a reveal failure sharing `#exportError` destroyed the partial-save notice —
+[`interactions.md`](interactions.md) §4.4 carries the ruling, and **point 1
+immediately below is the rule that decided its placement.** `#sendError` gains
+one message and no markup change; [`copy.md`](copy.md) §9.1 carries why the send
+path is in this package at all, and the fallback if it should not be.)*
 
 Three things about that position are load-bearing.
 
@@ -997,6 +1007,27 @@ act is the failure §7.4 already ruled against"*).
 is removed. A folder that exists but is wrong is worse than no folder, because
 she will find it and use it.
 
+### 10.5a The one state where that invariant cannot be honoured *(added 2026-09-05)*
+
+**A cleanup only runs while something is alive to run it.** If Yoto Maker itself
+goes away mid-write — quit from the tray, crashed, the machine slept — the job
+dies with the process that would have removed its folder, and a half-finished
+folder is left on disk with no instruction sheet in it.
+
+The app cannot fix this from inside the failure, and it must not pretend
+otherwise. What it can do is **stop claiming an outcome it does not have**, and
+give her a test that distinguishes the two folders:
+
+> `What to do next.html` is written **last**, after every audio file and every
+> picture (`export/runner.py:247`). **Its presence is the completeness signal.**
+> `copy.md` §5.10 is built on that, and `interactions.md` §4a renders it.
+
+**This makes the write order a contract.** §10.4 point 3 already required the
+sheet to be generated from what landed; this adds that it must also be written
+**after** what landed. If a refactor moves it earlier — for a preview, say —
+§5.10's second paragraph becomes a lie and must change with it, exactly as
+§10.5's reassurance sentence must change if the folder stops being removed.
+
 ### 10.6 Pressed twice
 
 A second run makes `Bedtime Stories (2)` and says so. Nothing is overwritten; see
@@ -1102,6 +1133,17 @@ it call it?" question has no in-repo precedent to lean on.
 `connectYoto()`, `sendToYoto()`, `POST /api/send`, `YotoClient` — none of it is
 touched. This feature appends; it does not fork the existing path.
 
+> **Amended 2026-09-05, and the amendment is narrow.** The send path gains
+> **one message and nothing else**: when a status poll fails after a send job has
+> started, `#sendError` renders `copy.md` §9 instead of the generic transport
+> line, because that line ends *"then try again"* and pressing 🚀 Send to Yoto
+> during a live send puts a second card in her Yoto account. No markup, no
+> control logic, no route and no shipped string is edited —
+> `sendToYoto()` asks the shared `pollJob()` for the retry behaviour
+> `interactions.md` §4a specifies, and renders one new message when it is spent.
+> **`copy.md` §9.1 carries the argument, including the one-line fallback that
+> keeps the send path out of the diff entirely and what that gives up.**
+
 **Step 3's title and hint.** *"Send it to your Yoto"* names the goal, not the
 mechanism, and stays true (§4.2). `INSTALL-FOR-MOM.md`'s step numbering and
 `SETUP-YOTO-CONNECTION.md`'s instructions are unaffected.
@@ -1121,8 +1163,14 @@ header of this file.
 **The everyday-path ledger.** One `.btn` and one `.tiny` paragraph — **two
 elements, rendering as roughly three lines at 720px** — both at the bottom of
 step 3, both below the primary action and below every existing feedback box. The
-five `#export*` regions beneath them are `.hidden` until the button is pressed,
-so a user who never presses it sees exactly two added elements, ever.
+**six** `#export*` regions beneath them are `.hidden` until the button is
+pressed, so a user who never presses it sees exactly two added elements, ever.
+
+*(Five until 2026-09-05, when `#exportOpenError` was added. The ledger this
+section keeps is the **everyday-path** one, and a sixth hidden `.msg-box`
+changes nothing in it: no CSS, no token, no tab stop, and nothing rendered until
+a button is pressed. Counted here rather than left stale, because a number in a
+ledger that quietly stops matching is the drift this section exists to catch.)*
 
 *(Stated as elements and as rendered lines, because saying "one 13px line" was
 ambiguous between the two and the mockups and spec had already resolved it the

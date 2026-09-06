@@ -328,6 +328,64 @@ Three things are true here at once and all three are required.
 A red box beside a green one is the honest rendering of a partial outcome, and it
 is what the multi-file add already produces.
 
+**The box drawn above is `#exportError`, and it survives a press of
+`📂 Open the folder`.** §8a draws what happens when that press fails.
+
+---
+
+## 8a. Partial, and then the folder won’t open — two red boxes, two regions
+
+*(Added 2026-09-05. This state is the deferral that produced
+[`../interactions.md`](../interactions.md) §4.4's ruling: before it, the reveal
+failure overwrote the box above and destroyed the pointer to the instruction
+sheet.)*
+
+```
+   │ ┌─────────────────────────────────────────────────────────┐ │
+   │ │ 4 of your 5 tracks are saved, in a folder called        │ │  #exportDone
+   │ │ “Bedtime Stories” — in your Documents, under Yoto Maker.│ │  .msg-box ok
+   │ └─────────────────────────────────────────────────────────┘ │
+   │ ┌─────────────────────────────────────────────────────────┐ │
+   │ │ One track couldn’t be saved: “Chapter Four”. We couldn’t│ │  #exportError
+   │ │ read that file — it may be open in another program.     │ │  .msg-box err
+   │ │                                                         │ │
+   │ │ Everything else is in the folder. The page in the folder│ │  ← THIS SENTENCE
+   │ │ lists what’s actually there.                            │ │    IS THE POINT
+   │ └─────────────────────────────────────────────────────────┘ │
+   │                                                             │
+   │ ┌────────────────────────┐  ┌────────────────────┐          │  .done-actions
+   │ │ 📄 What to do next     │  │ 📂 Open the folder │← pressed │
+   │ └────────────────────────┘  └────────────────────┘          │
+   │                                                             │
+   │ ┌─────────────────────────────────────────────────────────┐ │
+   │ │ Yoto Maker couldn’t open the folder for you. It’s here: │ │  #exportOpenError
+   │ │ C:\Users\mark\OneDrive\Documents\Yoto Maker\Bedtime      │ │  .msg-box err
+   │ │ Stories                                                 │ │  .mono-value
+   │ └─────────────────────────────────────────────────────────┘ │  focus lands here
+   │                                                             │
+   │ ⚙️ Connect a different Yoto account                          │
+```
+
+**Three boxes, and each one is about a different thing.** Green: what the save
+achieved. First red: what the save could not do. Second red: what the button she
+just pressed could not do. The order on screen is the order the events happened.
+
+**The new region is below `#exportActions`, not above `#exportDone`.** Feedback
+sits beneath the control that raised it — `../overview.md` §4.3 point 1's own
+rule, which refused a placement precisely because it would make one button's
+feedback appear next to a different button.
+
+**Why the middle box may not be overwritten.** *"The page in the folder lists
+what's actually there"* is the only pointer she has to the instruction sheet,
+which is the authority on what actually landed (`../overview.md` §10.4 point 3)
+and which carries the missing-track notice (`../copy.md` §6.8). Destroying it at
+the moment she is trying to open that folder is the specific harm the ruling
+prevents — not a tidiness concern.
+
+**The reveal box, and only the reveal box, clears on a successful open.** The two
+above it are a record of the run and live until the next run
+(`../interactions.md` §4.4.2).
+
 ---
 
 ## 9. Degraded — the folder can’t be opened for her
@@ -387,3 +445,71 @@ The last paragraph is this package's reassurance sentence, built the same way
 configuration-surface `copy.md` §4c's is: **a readable statement of an
 invariant.** If a refactor stops deleting the folder on failure, that string must
 change with it.
+
+> ⚠️ **This is the picture of a failure the app was *told* about.** It is not the
+> picture of every red box after a save press. When the app loses contact with a
+> job instead — a dropped status poll — it does not know the outcome and may not
+> claim one. **§10a is that state, and these words are wrong for it.**
+
+---
+
+## 10a. Lost contact — the app does not know what happened
+
+*(Added 2026-09-05. This state used to render §10 above, asserting "Yoto Maker
+couldn't save the files" and "Nothing was saved" about a job that might have been
+writing files at that moment. `../copy.md` §5.10 replaces it.)*
+
+```
+   │ ┌──────────────────────────────┐                            │
+   │ │ 📁 Save the files to a folder│  ← live again               │
+   │ └──────────────────────────────┘                            │
+   │ …caption…                                                   │
+   │                                                             │
+   │        (the progress bar is GONE — the app has stopped       │
+   │         watching, and a bar on screen would say it hadn’t)   │
+   │                                                             │
+   │ ┌─────────────────────────────────────────────────────────┐ │
+   │ │ Yoto Maker stopped answering while it was saving, so it │ │  #exportError
+   │ │ can’t tell you whether it finished. Nothing on this card │ │  .msg-box err
+   │ │ has changed.                                            │ │  focus lands here
+   │ │                                                         │ │
+   │ │ Look in your Documents, under Yoto Maker, for a folder  │ │
+   │ │ named after this card. If there’s a page in it called   │ │  ← the test she
+   │ │ “What to do next”, the save finished — that page lists  │ │    can actually
+   │ │ what’s actually there.                                  │ │    perform
+   │ │                                                         │ │
+   │ │ If there’s no folder, or no “What to do next” page in   │ │
+   │ │ it, make sure Yoto Maker is still running — look for    │ │
+   │ │ the 🎵 icon near the clock — then press “📁 Save the     │ │
+   │ │ files to a folder” again. Nothing you already have will │ │
+   │ │ be written over.                                        │ │
+   │ └─────────────────────────────────────────────────────────┘ │
+   │                                                             │
+   │ ⚙️ Connect a different Yoto account                          │
+```
+
+**No success box and no buttons — and that is what the copy is written around.**
+No result arrived, so `📄 What to do next` was never drawn. **Naming the page in
+words is her only route to the sheet**, which is why paragraph 2 spells out the
+file's name rather than pointing at a control.
+
+**Three paragraphs, three questions.** What happened · how do I find out · what
+do I do. It is the longest string in this package, and it is the state with the
+most ways to go wrong and the least information available.
+
+**Paragraph 1 keeps half of §10's last sentence and drops the other half.**
+*"Nothing on this card has changed"* is true however the save ended. *"Nothing
+was saved"* is not knowable. That single deletion is the whole correction.
+
+**The folder is not named**, and must not be. The panel has no result, so it does
+not know the folder's name — the card name is not it (sanitized, possibly `(2)`).
+Naming it would be the JS-side reconstruction `../overview.md` §11.3 forbids,
+arriving as a helpful-looking sentence.
+
+**Paragraph 2 leans on a write-order contract.** `What to do next.html` is
+written **last** (`export/runner.py:247`), so its presence is a reliable
+completeness signal. **If that write order ever changes, this string becomes a
+lie** — the same standing condition §10's reassurance sentence carries.
+
+The send path gets the parallel message in `#sendError` — `../copy.md` §9, and
+§9.2 for why the two are near-identical rather than shared.

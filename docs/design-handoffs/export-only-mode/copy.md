@@ -346,7 +346,37 @@ could do nothing* — because a disabled button invites her to keep pressing it.
 §5.5 covers the case the app knows about **in advance** — the button is never
 drawn. These two are failures that happen at the press, and
 `interactions.md` §4.4 said only that they *"render into `#exportError`"* without
-saying what. Both render there, `.msg-box err`, `role="alert"`.
+saying what.
+
+> **They do not render into `#exportError`. They render into `#exportOpenError`,
+> a second `.msg-box err role="alert"` region placed immediately *below*
+> `#exportActions`** *(ruled 2026-09-05 — see `interactions.md` §4.4, which
+> carries the full contract).*
+>
+> **Why a second region and not a composition rule in the shared one.**
+> `#exportError` is the **save button's** feedback region: it holds a refusal
+> (§3), a partial-save notice (§5.6) or a total failure (§5.7), and every one of
+> those is a record of the run that must survive until the next run. A reveal
+> failure is feedback on a *different* button, with a different lifetime — it is
+> transient, and it should clear the moment the folder does open. Two lifetimes
+> in one region is what forced a flag to protect one from the other, and a flag
+> is a thing that can be forgotten.
+>
+> **The sentence it was destroying is the one that matters most.** After a
+> partial save, `#exportError` holds *"Everything else is in the folder. The page
+> in the folder lists what's actually there."* — the sentence §6.8's
+> missing-track notice depends on, and **the only pointer she has to the
+> authority on what is actually in that folder.** A reveal failure overwriting it
+> deletes that pointer at the exact moment she is trying to open the folder. This
+> is not a tidiness argument; it is the specific harm.
+>
+> **And the placement is `overview.md` §4.3 point 1's own rule.** That rule
+> refused to put `#exportRow` between `#sendBtn` and `#sendProgress` because it
+> would *"make feedback appear below a different button"*. A reveal failure
+> rendering into `#exportError` makes feedback appear **above** a different
+> button — the same defect, in the other direction, inside the panel this package
+> built. Putting the message directly beneath the button that raised it is the
+> rule applied rather than a new one invented.
 
 **(a) The folder is gone, or Yoto Maker has forgotten it.**
 
@@ -383,6 +413,18 @@ and the user gets the same information either way.
 the user just pressed is disorienting, and the path is now on screen, so a second
 press costs her nothing. After type (a) the whole panel is stale anyway and her
 next action is the save button above.
+
+**Neither string changes as a result of the region ruling, and both were checked
+against the message they can now sit beneath.** A partial save leaves
+*"4 of your 5 tracks are saved…"* in `#exportDone` and *"One track couldn't be
+saved: …Everything else is in the folder."* in `#exportError`; underneath the two
+buttons, (b) then reads *"Yoto Maker couldn't open the folder for you. It's
+here:"* and (a) reads *"Yoto Maker can't open that folder any more…"*. Both are
+consistent with what is above them — (b) plainly, and (a) because it describes
+something that happened **after** the save, which its own *"may have been moved
+or deleted, or Yoto Maker may have been restarted"* clause already says. No
+combined string is needed, and none is specified: **a combined string would be
+the composition rule this ruling rejected, arriving as copy instead of markup.**
 
 ### 5.6 Partial failure — which track, and why
 
@@ -550,6 +592,89 @@ for the states the app cannot fix.
 **Why the figures are printed and the accepted-format list is not** (§5.4): these
 have a recovery she can perform. `MP3 / M4A / AAC` does not — the app has already
 done that acting on her behalf.
+
+### 5.10 Contact with a running save is lost *(added 2026-09-05)*
+
+`#exportError`, `.msg-box err`, `role="alert"`. **This state replaces §5.7's
+three paragraphs whenever the save job had already started** — see the boundary
+rule below, which is the whole point of the section.
+
+> `Yoto Maker stopped answering while it was saving, so it can’t tell you whether it finished. Nothing on this card has changed.`
+>
+> `Look in your Documents, under Yoto Maker, for a folder named after this card. If there’s a page in it called “What to do next”, the save finished — that page lists what’s actually there.`
+>
+> `If there’s no folder, or no “What to do next” page in it, make sure Yoto Maker is still running — look for the 🎵 icon near the clock — then press “📁 Save the files to a folder” again. Nothing you already have will be written over.`
+
+**The defect this replaces.** When a status poll failed, the panel rendered
+§5.7 — head, the transport error, and *"Nothing was saved, and nothing on this
+card has changed."* **Both the head and the first half of the tail are
+assertions the app is in no position to make**, and they are false in the
+direction that makes her act on them: told nothing happened, she presses save
+again while a folder is being written. §5.7's reassurance sentence carries its
+own warning about exactly this — *"it is true only because a failed run removes
+the folder it created"* — and a failed run only removes it while something is
+alive to do the removing. A save the app has lost contact with may be running,
+may have finished, or may have died mid-write with a half-finished folder still
+on disk. **The app knows which of those it is in none of these cases.**
+
+**The exact boundary, because blurring it re-introduces the defect.** The
+uncertainty begins the moment a job id exists.
+
+| When the failure happens | What renders |
+| --- | --- |
+| `POST /api/export` never returned a job id | **§5.7, unchanged.** No job was started, so *"Nothing was saved"* is true. |
+| A refusal — no tracks, no card name | **§3, unchanged.** |
+| The job reported an error | **§5.7, unchanged.** The app was told the outcome. |
+| **A status poll failed after a job id existed** | **This section.** |
+
+**Paragraph 1 keeps the half of §5.7's tail that is still true and drops the half
+that isn't.** *"Nothing on this card has changed"* is true however the save ended
+— nothing on this path writes to the draft — and it answers the fear she actually
+has, which is whether she must rebuild the card. Dropping *"Nothing was saved"*
+is the entire correction.
+
+**Paragraph 2 gives her a test rather than a judgement.** *"Does it look
+finished?"* is not a question she can answer about a folder of audio files.
+*"Is there a page called 'What to do next' in it?"* is one she can, and the
+answer is reliable:
+
+> **`What to do next.html` is written last, after every audio file and every
+> picture** (`export/runner.py:247` — `say("sheet", 92, …)`, the final phase in
+> §4's list). **Its presence is therefore the completeness signal, and this
+> string is what makes that write order a contract rather than an accident.** If
+> the sheet is ever written earlier, this paragraph becomes a lie and must change
+> with it — the same standing condition §5.7's reassurance sentence carries.
+
+It also does one thing no other string in this package has to: **she has no
+buttons in this state.** No result arrived, so `#exportActions` never rendered
+and `📄 What to do next` was never drawn. Naming the page in words is the only
+way she reaches the sheet at all. That the words match §5.6's *"The page in the
+folder lists what's actually there"* is deliberate — one page, one description of
+what it is for.
+
+**Paragraph 3 checks the app is alive before telling her to press anything.** The
+likeliest reason a poll fails is that Yoto Maker is no longer running — quit from
+the tray, crashed, or the machine slept — and in that state pressing save again
+does nothing at all. The 🎵-near-the-clock wayfinding is lifted verbatim from the
+transport string this message displaces (`app.js:26-27`) and from
+`INSTALL-FOR-MOM.md:30`; she may have met it in both places, and varying it would
+cost more than repeating it.
+
+**Why she is told it is safe to press again**, rather than left to work it out:
+this is the one state where she has been told to check first, so the instruction
+to press anyway needs its own permission. *"Nothing you already have will be
+written over"* is §5.2's invariant in her words. It is not a new promise — it is
+the existing one, said out loud at the only moment she has a reason to doubt it.
+
+**Rejected**
+
+| Rejected | Why |
+| --- | --- |
+| Leave §5.7 in place | It states an outcome the app does not know, in the direction that costs her work. This is the deferral. |
+| `Something went wrong while saving. Please try again.` | *"Went wrong"* is an outcome claim, and *"try again"* is the instruction that is unsafe until she has looked. |
+| A silent retry that eventually shows §5.7 anyway | Retrying is right (`interactions.md` §4a) and changes nothing about what the message may claim once the retries are spent. |
+| Naming the folder — `a folder called “Bedtime Stories”` | **The panel has no result, so it does not know the folder's name.** The card name is not it: the folder is sanitized and may be `(2)`. Naming it would be the JS-side reconstruction `overview.md` §11.3 forbids, arriving as a helpful-looking sentence. *"Named after this card"* is what the app can honestly say. |
+| Showing the progress bar while she reads it | A bar on screen says the app is still watching. It is not — `#exportProgress` is hidden with this message (`interactions.md` §4a). |
 
 ---
 
@@ -766,10 +891,117 @@ reason: the one moment the value matters is the moment a guess would be wrong.
 ## 8. Strings explicitly unchanged
 
 `index.html` steps 1, 2 and 4 in full; step 3's `h2` and `.hint`; `#connectBtn`;
-`#sendBtn`; `#sendError`, `#sendDone` and every message rendered into them;
-`#connectWarn` and all of `copy.md` §4d; `#advRow`/`#advToggle` in both variants;
-the header pill; the footer; the About modal; every string in the settings view
-except the one row in §7.
+`#sendBtn`; `#sendDone`; **every message rendered into `#sendError` except the
+one new state in §9**; `#connectWarn` and all of `copy.md` §4d;
+`#advRow`/`#advToggle` in both variants; the header pill; the footer; the About
+modal; every string in the settings view except the one row in §7.
 
-This feature appends. It edits exactly one shipped string (§1), and that string
-is edited because the feature makes it false.
+This feature appends. It **edits** exactly one shipped string (§1), and that
+string is edited because the feature makes it false. It **adds** exactly one
+string to the send path (§9), in a state that previously had no send-path string
+at all.
+
+*Amended 2026-09-05.* This section previously listed `#sendError` and *"every
+message rendered into it"* as untouched. §9 makes that false and the list is
+corrected rather than quietly outgrown — which is the defect §1 exists to fix,
+applied to this file.
+
+---
+
+## 9. The one send-path string this feature adds *(added 2026-09-05)*
+
+`#sendError`, `.msg-box err`. Rendered when a status poll fails after
+`POST /api/send` has returned a job id — §5.10's boundary table, on the other
+path.
+
+> `Yoto Maker stopped answering while it was sending, so it can’t tell you whether your card went through. Nothing on this card has changed.`
+>
+> `Open the Yoto app on your phone and look for your card. If it’s there, it worked.`
+>
+> `If it isn’t there, make sure Yoto Maker is still running — look for the 🎵 icon near the clock — then press “🚀 Send to Yoto” again. Press it just once, so you don’t end up with two copies of the same card.`
+
+### 9.1 Why the send path is in this package at all
+
+The honest fix for §5.10 is retry logic in `pollJob` (`app.js:81-89`), and
+`pollJob` has **four** call sites — the self-update, the YouTube add, the send
+and the save.
+
+**But sharing the helper does not by itself drag the send path in, and it should
+not be claimed that it does.** The retry has to be **opt-in per call site**
+regardless, because of the self-update: `doUpdate()` (`app.js:167-171`) *catches
+every poll failure and reports success*, since the server exits mid-restart and
+the last poll failing is the expected end of the operation. Retrying there would
+freeze a bar for the length of the retry window before showing a message that was
+already correct. **The same transport event means different things on different
+paths, so the retry belongs to the caller that means *"I don't know"*, not to the
+helper.** Once that is true, `saveToFolder()` could opt in alone.
+
+So including the send path is a **choice**, and it is made for three reasons:
+
+1. **The send path's current instruction is the more dangerous of the two.**
+   Today a dropped send poll shows the generic transport line, which ends
+   *"…then try again."* Pressing 🚀 Send to Yoto again while the first send is
+   still uploading puts **a second card in her Yoto account** — a thing she must
+   then find and delete on a website this app does not control. The save path's
+   equivalent mistake produces `Bedtime Stories (2)` in her Documents, which
+   §5.8 already treats as needing no explanation. Fixing the milder one and
+   leaving the sharper one is backwards.
+2. **The generic line is not wrong, it is silent about the outcome** — and that
+   is what makes it dangerous here. It is the right string for a failed
+   *request*; it becomes the wrong string the moment there is a job behind it.
+3. **A shared helper whose capability one long-running caller declines is a
+   thing someone later "fixes" without knowing why.** If the send path opts out,
+   that opt-out needs a comment nobody will trust as much as they trust a
+   symmetry.
+
+**The fallback, stated so it survives being rejected.** If the maintainer would
+rather keep the send path out of this PR's diff, the cost is one line: the send
+path does not opt in, keeps today's generic transport line, and §8's original
+wording stands. **What is given up is the duplicate-card protection**, and it is
+given up on the path where the duplicate is hardest to undo. That is the trade,
+and it is the maintainer's to take.
+
+### 9.2 Why this is not one string shared with §5.10
+
+§5.5a established *"one string for both, because the recovery is identical"*.
+**That principle does not extend here, and the reason it does not is the test the
+principle itself states: the recoveries are not identical.**
+
+| | Save | Send |
+| --- | --- | --- |
+| Where she looks to find out | Her Documents, under Yoto Maker | The Yoto app on her phone |
+| What acting wrongly costs | A second folder, `(2)`, which §5.8 says needs no explanation | **A second card in her Yoto account** |
+| So the second and third paragraphs | differ | differ |
+
+What governs instead is **§3's rule**, which this package already applies to the
+two refusals: *"Two sentences that differ by two words is not duplication to be
+refactored away — it is how the user learns that the two buttons are peers doing
+the same job by different means."* The two messages here are built to that
+pattern deliberately: the same three-paragraph shape, the same opening clause,
+the same 🎵 wayfinding, the same closing structure — differing only where the
+world differs.
+
+**The first sentence is nearly but not exactly shared, and the difference is
+load-bearing.** *"while it was saving"* / *"while it was sending"* and
+*"whether it finished"* / *"whether your card went through"* are what tell her
+which of the two she is reading — and **both boxes can be on screen at once**: a
+failed send leaves `#sendError` populated, and `#exportRow` sits directly beneath
+it by design (`overview.md` §4.3 point 2). A single shared sentence would put the
+same words in two red boxes fourteen pixels apart.
+
+### 9.3 What is deliberately *not* changed on the send path
+
+- **`#sendError` gains no `role` and no `tabindex`.** It has neither today
+  (`index.html:195`), so this message is announced no worse than every other send
+  failure — but it is announced no *better* either, and that is a pre-existing
+  gap this package is standing next to rather than closing. Making `#sendError` a
+  live region changes announcement behaviour for every shipped send failure and
+  deserves its own pass and its own UAT. Recorded, not fixed.
+- **`#sendDone`, `#sendBtn`, `#sendProgress` and the send flow's control logic.**
+  Unchanged.
+- **The YouTube add path (`app.js:1251`) does not opt in.** Its dropped-poll
+  message is the generic transport line, which asserts nothing false, and the
+  outcome it leaves uncertain is visible on the same screen — the track list she
+  is already looking at. Widening the diff to a third shipped path to replace an
+  honest-but-unhelpful string is not justified here. Worth doing later; not
+  worth doing now.
