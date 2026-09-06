@@ -194,3 +194,88 @@ def test_measured_contrast_figures_are_present(styles_css):
     """
     assert "5.03:1" in styles_css
     assert "5.87:1" in styles_css
+
+
+# --------------------------------------------------------------------------- #
+# Save-to-a-folder mode. docs/design-handoffs/export-only-mode/.
+# --------------------------------------------------------------------------- #
+import re
+
+# "path" is in copy.md's preamble ban list alongside the rest, and it holds
+# against the shipped markup — nothing user-visible in index.html says it.
+_BANNED_IN_COPY = ("export", "directory", "path", "file format", "codec",
+                   "transcode", "metadata")
+
+
+def _visible_text(index_html: str) -> str:
+    """Text nodes only. Comments are stripped FIRST — the new markup's own
+    comments say "export" repeatedly, and they are not user-visible."""
+    without_comments = re.sub(r"<!--.*?-->", " ", index_html, flags=re.S)
+    return " ".join(re.findall(r">([^<>]+)<", without_comments))
+
+
+def test_the_export_block_sits_after_connect_warn_and_before_adv_row(index_html):
+    order = [
+        index_html.index(f'id="{el}"')
+        for el in ("connectWarn", "exportRow", "exportProgress", "exportError",
+                   "exportDone", "exportNote", "exportActions", "advRow")
+    ]
+    assert order == sorted(order)
+
+
+def test_adv_row_is_still_the_last_child_of_step_3(index_html):
+    """configuration-surface interactions.md §1.4, unchanged by this feature."""
+    assert index_html.index('id="advRow"') > index_html.index('id="exportActions"')
+
+
+def test_the_export_row_is_never_hidden(index_html):
+    row = index_html[index_html.index('id="exportRow"'):]
+    row = row[:row.index(">") + 1]
+    assert "hidden" not in row
+
+
+def test_the_export_button_is_never_disabled_by_connection_state(app_js):
+    """overview.md §10.1. Disabling it would delete the feature's reason to exist."""
+    assert "#exportBtn\").disabled = !STATUS" not in app_js
+    assert "#exportBtn\").disabled = !connected" not in app_js
+    assert 'show($("#exportRow")' not in app_js
+
+
+def test_the_word_export_never_reaches_the_user(index_html):
+    """Acceptance criterion 6."""
+    text = _visible_text(index_html).lower()
+    for word in _BANNED_IN_COPY:
+        assert word not in text, f"{word!r} is visible in index.html"
+
+
+def test_the_connect_box_no_longer_claims_connecting_is_required(index_html):
+    assert "To send cards straight to your Yoto, connect your account first." in index_html
+    assert "You'll need to connect your Yoto account first." not in index_html
+
+
+def test_the_feature_adds_no_css(styles_css, index_html):
+    """Acceptance criterion 10. If this fails, something in the spec §2 was
+    reinterpreted and it goes back to Designer — do not add a rule to make it
+    pass.
+
+    The .msg-box.warn check is asserted on the RULE, not on the substring:
+    styles.css:14 already carries a comment saying "Deliberately no
+    .msg-box.warn variant", so a bare `"msg-box.warn" not in styles_css` fails
+    on the shipped file and tests the documentation rather than the stylesheet.
+    What must stay true is that tokens.md §1's refusal of that variant is still
+    a refusal — i.e. no selector declares it.
+    """
+    for token in ("export", "#exportRow", "#exportBtn"):
+        assert token not in styles_css
+    assert not re.search(r"^\s*\.msg-box\.warn\b", styles_css, flags=re.M)
+
+    block = index_html[index_html.index('id="exportRow"'):index_html.index('id="advRow"')]
+    # Compared as CLASS TOKENS, not as whole attribute strings: #exportProgress
+    # is class="progress hidden", which no attribute-level allow list would
+    # contain, and the intent is "every class here is a shipped primitive".
+    used = set()
+    for attr in re.findall(r'class="([^"]+)"', block):
+        used.update(attr.split())
+    allowed = {"btn", "primary", "tiny", "progress", "bar", "msg", "msg-box",
+               "err", "ok", "info", "done-actions", "hidden"}
+    assert used <= allowed, used - allowed
