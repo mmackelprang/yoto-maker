@@ -10,7 +10,12 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from yoto_maker.yoto.client import YotoClient, YotoError, _friendly_http
+from yoto_maker.yoto.client import (
+    YotoClient,
+    YotoError,
+    _friendly_http,
+    _track_too_big,
+)
 
 
 def _mock_client(handler) -> httpx.Client:
@@ -127,3 +132,69 @@ def test_put_audio_streams_the_file_and_never_materialises_it(tmp_path):
     assert captured["is_bytes"] is False
     assert captured["is_readable"] is True
     assert captured["bytes_available"] == 4096
+
+
+# --- 413: which ceiling? ---------------------------------------------------- #
+#
+# Three tests rather than one, because the size assertion and the routing
+# assertion want different fixtures: asserting "118 MB" needs a 118 MB number,
+# and writing a 118 MB file into tmp_path on every suite run to get one would be
+# absurd. So the message is tested directly with a number, and _put_audio is
+# tested only for whether it reaches that message at all.
+
+def test_track_too_big_message_names_the_track_the_limit_and_the_size():
+    msg = _track_too_big("Chapter Nine", 118_400_000)
+    assert "Chapter Nine" in msg     # which track
+    assert "100 MB" in msg           # which ceiling
+    assert "118 MB" in msg           # whole MB, 10^6 — copy.md §5.9's ratified rule
+    assert "118.4" not in msg        # never a decimal place
+    assert "5 hours" not in msg      # NOT the card-level ceiling
+
+
+def test_track_too_big_omits_the_size_when_it_is_unknown():
+    """A missing file probes as 0 bytes; "this one is 0 MB" is nonsense.
+
+    Note the assertion is on the CLAUSE, not on the string "0 MB" — "100 MB"
+    contains "0 MB" as a substring, so that check would pass vacuously.
+    """
+    msg = _track_too_big("Chapter Nine", 0)
+    assert "Chapter Nine" in msg
+    assert "100 MB" in msg
+    assert "this one is" not in msg
+
+
+def test_track_too_big_falls_back_when_no_title_is_known():
+    msg = _track_too_big(None, 118_400_000)
+    assert "that track" in msg
+    assert "100 MB" in msg
+
+
+def test_413_on_a_track_upload_uses_the_per_track_message(tmp_path):
+    """The defect in queue item 20's second half.
+
+    A 413 while PUTting one track's audio is a per-track refusal. Naming the
+    card-level 5-hour ceiling there sends the user to a fix that cannot work.
+    """
+    audio = tmp_path / "chapter nine.wav"
+    audio.write_bytes(b"z" * 1024)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(413)
+
+    with pytest.raises(YotoError) as exc:
+        YotoClient(client=_mock_client(handler))._put_audio(
+            "http://upload.example/put", audio, title="Chapter Nine"
+        )
+
+    assert "Chapter Nine" in str(exc.value)
+    assert "5 hours" not in str(exc.value)
+
+
+def test_413_elsewhere_no_longer_claims_a_ceiling_it_cannot_vouch_for():
+    """_friendly_http is shared by six call sites. A 413 from the card-creation
+    POST is a body-size limit, not an audio one; it must not name either ceiling.
+    """
+    msg = _friendly_http(_http_error(413), "building your card")
+    assert "5 hours" not in msg
+    assert "100 MB" not in msg
+    assert "too big" in msg.lower()

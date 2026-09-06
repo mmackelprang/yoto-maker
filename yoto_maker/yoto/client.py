@@ -223,10 +223,10 @@ class YotoClient:
         upload_url = _dig(data, "uploadUrl")
         upload_id = _dig(data, "uploadId")
         if not upload_url or not upload_id:
-            raise YotoError("Yoto didn't give us a place to upload to. Please try again.")
+            raise YotoError("Yoto didn’t give us a place to upload to. Please try again.")
         return upload_url, upload_id
 
-    def _put_audio(self, upload_url: str, audio_path: Path) -> None:
+    def _put_audio(self, upload_url: str, audio_path: Path, *, title: str | None = None) -> None:
         audio_path = Path(audio_path)
         content_type = mimetypes.guess_type(str(audio_path))[0] or "audio/mpeg"
         size = audio_path.stat().st_size if audio_path.exists() else 0
@@ -254,7 +254,11 @@ class YotoClient:
             resp.raise_for_status()
         except Exception as exc:
             log.warning("Yoto audio PUT failed (%s, %d bytes): %r", audio_path.name, size, exc)
-            raise YotoError(_friendly_http(exc, "uploading the audio")) from exc
+            raise YotoError(
+                _friendly_http(
+                    exc, "uploading the audio", too_big=_track_too_big(title, size)
+                )
+            ) from exc
 
     def _poll_transcode(
         self,
@@ -486,13 +490,44 @@ def _safe_probe(path: Path) -> AudioInfo:
         return AudioInfo(duration_s=0.0, channels=2, format="mp3", file_size=size)
 
 
-def _friendly_http(exc: Exception, doing: str) -> str:
+def _track_too_big(title: str | None, size_bytes: int) -> str:
+    """What to say when Yoto has refused ONE track's audio as too large.
+
+    ⚠ PROVENANCE: the 100 MB figure is Yoto's published documentation
+    (support.yotoplay.com, 2026-07-20), not observed behaviour — the same
+    evidence tier as the accepted-format list in export/rules.py. It is used
+    here ONLY to explain a refusal Yoto has already made. Nothing in this module
+    compares a file against it, and nothing should: the send path advises on
+    size, it does not act on it (queue item 20's plan §0.2). That is why this is
+    prose and not a constant.
+    """
+    what = f"“{title}”" if title else "that track"
+    # Whole MB, read as 10^6 — the same conservative reading copy.md §5.9 uses.
+    mb = int(round(size_bytes / 1_000_000))
+    how_big = f", and this one is {mb} MB" if mb > 0 else ""
+    return (
+        f"Yoto wouldn’t take {what} — it’s bigger than Yoto allows for one "
+        f"track. Yoto’s limit is 100 MB{how_big}. If you have a shorter "
+        "recording of it, try that instead — otherwise tell whoever set Yoto "
+        "Maker up for you."
+    )
+
+
+def _friendly_http(exc: Exception, doing: str, *, too_big: str | None = None) -> str:
     if isinstance(exc, httpx.HTTPStatusError):
         code = exc.response.status_code
         if code in (401, 403):
             return "Your Yoto sign-in has expired. Please connect your Yoto account again."
         if code == 413:
-            return "That audio file is too big for Yoto (max 5 hours per card)."
+            # 413 is "too large" — but WHICH limit was hit depends entirely on
+            # what we were sending, and this helper is shared by six call sites.
+            # It used to name the card-level 5-hour ceiling for every one of
+            # them, including the per-track audio PUT: the place a 413 is most
+            # likely, and the place that ceiling is certainly the wrong thing to
+            # say. A caller that knows which limit applies passes `too_big`;
+            # everyone else gets a sentence that names no ceiling, because we
+            # cannot tell which one it was.
+            return too_big or "Yoto wouldn’t take that — it was too big to send."
         if 500 <= code < 600:
             return f"Yoto had a problem while {doing}. Please try again shortly."
     if isinstance(exc, httpx.TimeoutException):
