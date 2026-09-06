@@ -263,11 +263,29 @@ def test_the_pointer_promises_nothing_about_size():
 def test_the_pointer_is_not_conditioned_on_file_type():
     """§10.3's box: conditioning on an extension would put a rule in client.py
     that export/rules.py already owns. The save path's §5.9 advisory fires on
-    the other side for the minority this cannot help."""
-    src = inspect.getsource(client_mod._track_too_big)
-    body = src[src.index('"""', src.index('"""') + 3):]  # past the docstring
-    for ext in (".wav", ".flac", ".mp3", ".ogg", ".opus", ".mp4"):
-        assert ext not in body
+    the other side for the minority this cannot help.
+
+    Both scopes are checked, because the natural place to write the forbidden
+    condition is NOT inside the helper — it is the call site, which is where
+    `audio_path` is actually in scope:
+        too_big=_track_too_big(title) if audio_path.suffix in ... else None
+    """
+    def body_of(fn) -> str:
+        """Source with any docstring removed. `_put_audio` has none, so a bare
+        two-index slice raises rather than checking nothing."""
+        src = inspect.getsource(fn)
+        first = src.find('"""')
+        if first == -1:
+            return src
+        close = src.index('"""', first + 3)
+        return src[:first] + src[close + 3:]
+
+    for scope in (client_mod._track_too_big, client_mod.YotoClient._put_audio):
+        text = body_of(scope)
+        for ext in (".wav", ".flac", ".mp3", ".ogg", ".opus", ".mp4"):
+            assert ext not in text, f"{ext} conditions the pointer in {scope.__name__}"
+        # The call site must hand over the title unconditionally.
+        assert "_track_too_big(title) if" not in text
 
 
 def test_413_on_a_track_upload_uses_the_per_track_message(tmp_path):
@@ -396,13 +414,26 @@ def test_the_save_button_really_is_below_the_send_error(index_html):
              for el in ("sendError", "sendDone", "connectWarn", "exportRow")]
     assert order == sorted(order)
 
-    between = index_html[index_html.index('id="sendError"'):
-                         index_html.index('id="exportRow"')]
-    ids = set(re.findall(r'id="([^"]+)"', between)) - {"sendError"}
+    # Strictly between the two: from the end of #sendError's opening tag to the
+    # start of #exportRow's. Slicing on the id= positions instead would swallow
+    # #exportRow's own "<div " and count it as something sitting in between.
+    start = index_html.index(">", index_html.index('id="sendError"')) + 1
+    end = index_html.rindex("<", 0, index_html.index('id="exportRow"'))
+    between = index_html[start:end]
+    ids = set(re.findall(r'id="([^"]+)"', between))
     # A new box inserted here is precisely what §4b.4 says must change the string.
     assert ids == {"sendDone", "connectWarn"}, (
         f"{ids} now sits between #sendError and #exportRow — copy.md §10.1's "
         "'below' is no longer true and the string must change with it"
+    )
+
+    # ...and an element with no id at all must not slip through the check above.
+    # A bare <p class="tiny"> hint or an <hr> dropped in here would leave the id
+    # set unchanged while "below" quietly stopped meaning "directly below".
+    elements = re.findall(r"<([a-zA-Z][a-zA-Z0-9]*)\b",
+                          re.sub(r"<!--.*?-->", " ", between, flags=re.S))
+    assert elements == ["div", "div"], (
+        f"expected exactly #sendDone and #connectWarn between them, got {elements}"
     )
 
     for el in ("sendDone", "connectWarn"):
@@ -413,11 +444,46 @@ def test_the_save_button_really_is_below_the_send_error(index_html):
     assert "hidden" not in row[:row.index(">") + 1]
 
 
-def test_connect_warn_cannot_be_visible_during_a_send_that_reaches_a_413(app_js):
-    """The second row of §4b.4's table. #connectWarn renders only for an invalid
-    Client ID, which hard-blocks sign-in, which disables #sendBtn — so a send
-    that can reach a 413 cannot coexist with a visible #connectWarn."""
-    assert '$("#sendBtn").disabled = !connected;' in app_js
+def test_send_done_is_hidden_at_runtime_before_the_error_can_render(app_js):
+    """The other half of §4b.4 row 1, which the static `hidden` attribute does
+    not cover. #sendDone's default is only its FIRST state; what keeps it out of
+    the way on a failed send is sendToYoto() hiding it on entry. Without that
+    line, a success followed by a 413 leaves the green "🎉 Your card is ready"
+    box sitting between the red pointer and the button it names.
+
+    Scoped to sendToYoto's own body, not the whole file: the same call also
+    appears in the "Start a new card" handler, so a file-wide `in app_js` check
+    stays green when the one that matters here is deleted (proven by mutation).
+    """
+    body = app_js[app_js.index("async function sendToYoto()"):]
+    body = body[:body.index("\n}")]
+    assert 'show($("#sendDone"), false);' in body
+
+
+# ⚠ §4b.4 row 2 is NOT asserted here, because it is not true — see queue item 27.
+#
+# The table says a send that can reach a 413 "cannot coexist with a visible
+# #connectWarn", via: invalid Client ID → sign-in hard-blocked → #sendBtn
+# disabled. The middle link does not hold. `connected` is token-presence only
+# (auth.py:246, `_load_tokens() is not None`) and is computed independently of
+# `client_id_verdict` (auth.py:264), while renderConnectWarn() triggers on the
+# verdict alone (app.js:325). Sign in, then have YOTO_CLIENT_ID become invalid
+# with the token still live, and both are true at once — confirmed by driving
+# the state in the browser, not by reading.
+#
+# The shipped string is unaffected and must not be changed for this: #exportRow
+# stays visible and still below, so "below" remains true. Only §4b.4's REASONING
+# is falsified, and narrowing it is Designer's call (item 27) — every code fix
+# touches the send path's state machine, which §4b.3 forbids.
+#
+# So this test asserts the two links that DO hold, and nothing more. A test
+# named for a claim that is false is worse than no test at all.
+
+def test_the_two_links_of_4b4_row_2_that_do_hold(app_js):
+    """Sign-in state gates the send button, and the warning is verdict-driven.
+    What is NOT asserted — that those two facts imply each other — is item 27."""
+    assert '$("#sendBtn").disabled = !connected;' in app_js      # link 3
+    assert 'y.client_id_verdict === "invalid"' in app_js         # what renders it
 
 
 def test_the_pointer_quotes_the_button_label_that_ships(index_html):
