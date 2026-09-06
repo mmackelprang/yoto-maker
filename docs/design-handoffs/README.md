@@ -20,7 +20,7 @@ requires explicit direction from Mark plus written rationale.
 | Surface                                             | Status   | Date       |
 | --------------------------------------------------- | -------- | ---------- |
 | [`configuration-surface/`](configuration-surface/)   | Shipped  | 2026-07-20 |
-| [`export-only-mode/`](export-only-mode/)             | Proposed | 2026-09-05 |
+| [`export-only-mode/`](export-only-mode/)             | Shipped  | 2026-09-05 |
 
 `export-only-mode/` has **no `tokens.md`**, deliberately: it introduces no CSS
 and no tokens. Per the configuration surface's own §13, that absence is the
