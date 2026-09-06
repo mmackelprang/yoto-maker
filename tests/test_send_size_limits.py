@@ -97,7 +97,7 @@ def test_put_audio_sends_every_byte_with_an_explicit_content_length(tmp_path):
     assert seen["body"] == payload                       # every byte, unaltered
     assert seen["content_length"] == str(len(payload))   # explicit, not chunked
     assert seen["transfer_encoding"] is None
-    assert seen["content_type"]                          # some audio type is set
+    assert seen["content_type"].startswith("audio/")     # pinned, not just truthy
 
 
 def test_put_audio_turns_a_failed_upload_into_a_yoto_error(tmp_path):
@@ -148,6 +148,18 @@ def test_put_audio_streams_the_file_and_never_materialises_it(tmp_path):
         def put(self, url, content=None, headers=None, **k):
             captured["is_bytes"] = isinstance(content, (bytes, bytearray))
             captured["is_readable"] = hasattr(content, "read")
+            # `is_readable` alone passes against io.BytesIO(fh.read()) — fully
+            # materialised, then streamed. fileno() is the discriminator, and it
+            # is httpx's own: peek_filelike_length (_utils.py, httpx 0.28) opens
+            # with `fd = stream.fileno()` under the comment "Is it an actual
+            # file?". Note it must be CALLED, not hasattr'd — BytesIO inherits a
+            # fileno() from io.IOBase that raises UnsupportedOperation, so the
+            # attribute is present on both and hasattr cannot tell them apart.
+            try:
+                content.fileno()
+                captured["is_real_file"] = True
+            except Exception:
+                captured["is_real_file"] = False
             captured["bytes_available"] = len(content.read()) if hasattr(content, "read") else 0
 
             class _Resp:
@@ -162,6 +174,7 @@ def test_put_audio_streams_the_file_and_never_materialises_it(tmp_path):
 
     assert captured["is_bytes"] is False
     assert captured["is_readable"] is True
+    assert captured["is_real_file"] is True
     assert captured["bytes_available"] == 4096
 
 
@@ -231,13 +244,32 @@ def test_413_elsewhere_no_longer_claims_a_ceiling_it_cannot_vouch_for():
     assert "too big" in msg.lower()
 
 
+@pytest.mark.parametrize("exc", [_http_error(401), _http_error(503),
+                                 httpx.ConnectTimeout("slow"), httpx.ConnectError("x")])
+def test_too_big_never_leaks_out_of_the_413_branch(exc):
+    """_put_audio passes too_big on EVERY failure, not just 413 (client.py:267).
+    Only the 413 branch may use it."""
+    msg = _friendly_http(exc, "uploading the audio",
+                         too_big=_track_too_big("Chapter Nine", 118_400_000))
+    assert "Chapter Nine" not in msg
+    assert "100 MB" not in msg
+
+
 # --- end to end: the right track gets named --------------------------------- #
 
-def test_create_card_names_the_refused_track(sample_mp3, temp_config, _authed):
+def test_create_card_names_the_refused_track(tmp_path, temp_config, _authed):
     """End-to-end: a 413 on the second track's PUT must name the second track.
 
     `TrackInput` is (audio_path, title, icon_path) — client.py's dataclass.
+
+    Deliberately NOT the `sample_mp3` fixture. This is the only test that fails
+    if `title=tr.title` is dropped from create_card's _put_audio call, and
+    sample_mp3 skips when ffmpeg is missing — there is no CI here, so on a
+    machine without ffmpeg the sole guard for that call site would silently
+    vanish. `_safe_probe` swallows probe failures, so bytes are enough.
     """
+    audio = tmp_path / "chapter.mp3"
+    audio.write_bytes(b"x" * 256)
 
     class _RefuseSecondPut:
         def __init__(self):
@@ -261,8 +293,8 @@ def test_create_card_names_the_refused_track(sample_mp3, temp_config, _authed):
         YotoClient(client=_RefuseSecondPut()).create_card(
             "My Card",
             [
-                TrackInput(audio_path=sample_mp3, title="Chapter One"),
-                TrackInput(audio_path=sample_mp3, title="Chapter Two"),
+                TrackInput(audio_path=audio, title="Chapter One"),
+                TrackInput(audio_path=audio, title="Chapter Two"),
             ],
         )
 
