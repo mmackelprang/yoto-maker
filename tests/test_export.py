@@ -94,3 +94,73 @@ def test_spoken_formats():
     assert names.duration_words(0) == "0 minutes"
     assert names.megabytes(118_000_000) == 118
     assert names.date_words(date(2026, 9, 5)) == "5 September 2026"
+
+
+# --------------------------------------------------------------------------- #
+# Task 3 — what Yoto takes, and what the app does about it
+# --------------------------------------------------------------------------- #
+from yoto_maker.export import rules
+
+
+def test_the_copy_as_is_set_is_exactly_the_three_documented_types():
+    assert rules.COPY_AS_IS == {".mp3", ".m4a", ".aac"}
+
+
+def test_bitrate_keeps_a_50_minute_track_under_the_100_mb_cap():
+    """Acceptance criterion 12. 192 kbps * 3000 s = ~72 MB; ~265 kbps breaks it."""
+    kbps = int(rules.EXPORT_BITRATE.rstrip("k"))
+    assert kbps * 1000 / 8 * 3000 < rules.MAX_TRACK_BYTES
+
+
+@pytest.mark.parametrize("ext", [".mp3", ".m4a", ".aac", ".MP3", ".M4A"])
+def test_the_copy_as_is_set_is_never_converted(ext):
+    assert rules.needs_conversion(Path(f"x{ext}")) is False
+    assert rules.output_suffix(Path(f"x{ext}")) == ext.lower()
+
+
+@pytest.mark.parametrize("ext", [".wav", ".flac", ".ogg", ".opus", ".mp4"])
+def test_everything_else_becomes_an_mp3(ext):
+    assert rules.needs_conversion(Path(f"x{ext}")) is True
+    assert rules.output_suffix(Path(f"x{ext}")) == ".mp3"
+
+
+def test_an_oversized_mp3_is_still_never_converted():
+    """overview.md §8.6's asymmetry, stated as a test so nobody 'fixes' it.
+
+    The app acts on format and advises on size. A 320 kbps 50-minute MP3 is
+    ~120 MB and is copied untouched.
+    """
+    assert rules.needs_conversion(Path("huge.mp3")) is False
+
+
+def _f(i, name, size=1, dur=1.0, conv=False, title=None):
+    return rules.SavedFile(index=i, name=name, title=title or name, size_bytes=size,
+                           duration_s=dur, converted=conv)
+
+
+def test_advisories_measure_the_written_files_and_never_block():
+    """oversize is SELECTIVE, the card ceiling is measured over all of them, and
+    neither one blocks anything.
+
+    The sizes matter: only the first file is over the 100 MB per-track cap, and
+    the four under it are what carry the card past 500 MB. A single 400 MB
+    companion would be over the per-track cap itself and would prove nothing
+    about the selection.
+    """
+    files = [_f(1, "01 - A.mp3", size=118_000_000)]
+    files += [_f(i, f"{i:02d} - B.mp3", size=99_000_000) for i in range(2, 6)]
+    a = rules.advise(files)
+    assert [f.name for f in a.oversize] == ["01 - A.mp3"]
+    assert a.card_bytes == 514_000_000
+    assert a.over_card_bytes is True
+    assert a.over_card_tracks is False
+
+
+def test_split_groups_report_only_real_multi_part_tracks():
+    files = [
+        _f(1, "01 - Ch One.mp3", title="Ch One"),
+        _f(2, "02 - Ch Two (part 1).mp3", title="Ch Two (part 1)"),
+        _f(3, "03 - Ch Two (part 2).mp3", title="Ch Two (part 2)"),
+    ]
+    groups = rules.split_groups(files)
+    assert [(g.title, g.parts) for g in groups] == [("Ch Two", 2)]
