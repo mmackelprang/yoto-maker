@@ -79,15 +79,34 @@ function setMsgBoxContent(box, content) {
 
 const POLL_INTERVAL_MS = 500;
 
+// How long ONE poll may take before it counts as a failure rather than a wait.
+// Measured worst /api/jobs/{id} latency on a saturated machine during a 351 MB
+// save was 26 ms (see POLL_RETRY_WINDOW_MS below), so 4s is ~150x the real
+// worst case: a poll that hits it has not answered, it is hanging. Only used
+// when a call site opted into retrying — the three that did not keep fetch's
+// own no-timeout behaviour exactly as it shipped.
+const POLL_TIMEOUT_MS = 4000;
+
 // How long a status poll may keep failing before the caller is told the app has
 // lost contact with the job. interactions.md §4a fixes the two bounds and leaves
 // the number to a measurement, which is recorded in the plan's test notes:
 //
 //   LOWER — long enough to ride out a stall on a machine busy writing hundreds
-//   of megabytes. MEASURED_STALL_PLACEHOLDER
+//   of megabytes. Measured 2026-09-06 on a save of 351 MB across 8 tracks
+//   (including a 103 MB copy-as-is and a 192 kbps re-encode) with the machine
+//   deliberately saturated — 32 CPU hogs and 4 concurrent disk writers:
+//     · worst gap between two ANSWERED polls, as the browser saw it:   599 ms
+//     · worst /api/jobs/{id} latency over 1,705 samples:                26 ms
+//     · outright poll failures:                                          none
+//   The save runs off the event loop, so the server stays responsive even
+//   flat out. 12s is ~20x the worst gap actually observed, and the headroom is
+//   deliberately for the stalls that CANNOT be reproduced on demand — the
+//   machine sleeping, an antivirus scan hooking a large write, swap pressure.
+//   Those are why §4a says a couple of seconds is not enough.
 //
 //   UPPER — short enough that a frozen bar does not read as a hung app. §4a
-//   puts the cure-is-the-disease line at ~30s.
+//   puts the cure-is-the-disease line at ~30s; 12s is well inside it, and it is
+//   24 attempts at 500ms, so a blip has to be genuinely sustained to spend it.
 //
 // This is a window, not a count: the interval is the poll interval, so counting
 // attempts would silently change the window if the interval ever moved.
@@ -108,14 +127,35 @@ const POLL_RETRY_WINDOW_MS = 12000;
 // "reconnecting…" line, no visual change of any kind.
 async function pollJob(jobId, onProgress, opts = {}) {
   const retryWindowMs = opts.retryWindowMs || 0;
+  // performance.now(), not Date.now(): the window is a DURATION, and Date.now()
+  // is not monotonic. An NTP correction backwards mid-window would make the
+  // elapsed time negative and the loop would retry forever; a correction
+  // forwards would spend the whole window on the first failure, which is
+  // exactly the "retry first" §4a rule 1 forbids skipping.
   let firstFailureAt = 0;
   while (true) {
     let job;
+    // A hung socket is the literal case copy.md §5.10 is named for — "Yoto
+    // Maker stopped answering". fetch() has no timeout of its own, so without
+    // this a poll that is accepted and never answered never rejects, the retry
+    // never engages, and the bar sits frozen with the button disabled: the
+    // "frozen bar reads as a hung app" state §4a's upper bound exists to
+    // prevent. The timeout turns not-answering into failing, which is the only
+    // thing the retry can see.
+    const control = retryWindowMs ? new AbortController() : null;
+    const timer = control
+      ? setTimeout(() => { control.timedOut = true; control.abort(); }, POLL_TIMEOUT_MS)
+      : null;
     try {
-      job = await api(`/api/jobs/${jobId}`);
+      job = await api(`/api/jobs/${jobId}`, control ? { signal: control.signal } : {});
     } catch (e) {
       if (!retryWindowMs) throw e;
-      const now = Date.now();
+      // A CALLER's cancel is not a transport failure and must never be retried
+      // — api() re-throws AbortError unchanged precisely so a deliberate cancel
+      // is not dressed up as a network error, and retrying it here would undo
+      // that. Only OUR OWN timeout is retryable.
+      if (e && e.name === "AbortError" && !(control && control.timedOut)) throw e;
+      const now = performance.now();
       if (!firstFailureAt) firstFailureAt = now;
       if (now - firstFailureAt >= retryWindowMs) {
         // The ONLY place this flag is set, and that is the boundary copy.md
@@ -127,6 +167,8 @@ async function pollJob(jobId, onProgress, opts = {}) {
       }
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
       continue;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
     // An answered poll resets the window. The contract is "this many seconds of
     // uninterrupted silence", not "this many seconds since the first ever blip"
@@ -2130,6 +2172,21 @@ const EXPORT_LOST_CONTACT = [
 // whichever save finished last — two tabs, or a reload mid-save, produce two.
 let exportSaveId = "";
 
+// Bumped by everything that clears #exportOpenError — interactions.md §4.4.2's
+// three "cleared by" rows, and nothing else. openSavedFolder captures it before
+// its request and drops a result whose clear has already happened.
+//
+// Without this, a clear is undoable by a request that was already in flight.
+// The open route does a filesystem check and then os.startfile, which on a
+// OneDrive-redirected or offline folder is seconds rather than milliseconds —
+// long enough for her to press "📁 Save the files to a folder" because nothing
+// visibly happened. The reveal failure would then land AFTER the new run
+// cleared the region and render the PREVIOUS folder's path under the NEW
+// folder's buttons, which is the exact case §3.1 step 1 exists to prevent. The
+// same in-flight press survives "Start a new card" and re-shows a message about
+// a discarded card's folder on a blank draft, which is §9.3's case.
+let exportRevealGeneration = 0;
+
 // Bumped by "Start over". saveToFolder captures it and drops a result whose
 // generation has moved on, so an in-flight save cannot re-show a panel for the
 // card the user has just discarded (interactions.md §9.3). #startOver is not
@@ -2294,6 +2351,8 @@ async function saveToFolder() {
   clearError($("#exportError"));
   // A reveal failure about the PREVIOUS folder must never sit under the NEW
   // one's buttons (interactions.md §3.1 step 1, §4.4.2's "cleared by" row ii).
+  // The bump is what makes that hold against a reveal request still in flight.
+  exportRevealGeneration += 1;
   clearError($("#exportOpenError"));
   $("#exportNote").textContent = "";
   show($("#exportNote"), false);
@@ -2305,10 +2364,22 @@ async function saveToFolder() {
   $("#exportBtn").disabled = true;
   try {
     const { job_id } = await api("/api/export", { method: "POST" });
+    // No job id means no job started, and §5.10 must not be reachable from
+    // here: polling /api/jobs/undefined would 404 for the whole retry window
+    // and then claim the app had lost contact with a job that never existed.
+    // Reachable with a stale cached app.js against a restarted server, which
+    // the in-app updater does routinely. The message is api()'s own shipped
+    // fallback, so this invents no copy — it renders as §5.7's middle
+    // paragraph, which is correct: nothing was saved.
+    if (!job_id) throw new Error("Something went wrong. Please try again.");
     // This call site asks for the retry (interactions.md §3.1 step 5, §4a.1).
     // It is the caller that means "I don't know the outcome", so it is the
     // caller that opts in.
     const result = await pollJob(job_id, (p, m) => {
+      // A save the user has discarded must stop painting the panel, not merely
+      // stop rendering its result. Invisible today only because #exportProgress
+      // is display:none by then.
+      if (generation !== exportSaveGeneration) return;
       $("#exportBar").style.width = Math.max(2, p) + "%";
       $("#exportMsg").textContent = m;
     }, { retryWindowMs: POLL_RETRY_WINDOW_MS });
@@ -2356,6 +2427,11 @@ async function saveToFolder() {
 async function openSavedFolder() {
   // No spinner, no transient "Opened!" state — configuration-surface tokens.md
   // §3a rejected exactly that shape.
+  //
+  // Captured, not read again after the await: a new save run or "Start a new
+  // card" may clear this region while the request is in flight, and neither
+  // clear may be undone by the answer to a press that predates it.
+  const revealGeneration = exportRevealGeneration;
   try {
     // The id, never a path — the server refuses one and has no use for it
     // (overview.md §7.3). It is the id this panel was handed, so the button
@@ -2364,12 +2440,16 @@ async function openSavedFolder() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: exportSaveId }),
     });
+    if (revealGeneration !== exportRevealGeneration) return;
     // Unconditional, and that is the point of the second region: #exportOpenError
     // holds nothing but this button's own failures, so there is no other message
     // to protect and no flag to remember (interactions.md §4.4.2, "cleared by"
     // row i). #exportError is not touched here in either direction.
+    exportRevealGeneration += 1;
     clearError($("#exportOpenError"));
   } catch (e) {
+    // The panel this failure describes is gone — render nothing at all.
+    if (revealGeneration !== exportRevealGeneration) return;
     // copy.md §5.5a(b) carries the path beneath the sentence, in .mono-value —
     // a bare "couldn't open" is a dead end and the server is holding the one
     // thing that resolves it. Case (a) has no path and renders one paragraph.
@@ -2593,6 +2673,10 @@ function wire() {
       // Before the await: a save already in flight must be disowned now, not
       // after the reset round-trip, or its result can land in between.
       exportSaveGeneration += 1;
+      // Same reason as the save generation, for the other button: a reveal
+      // request already in flight must not re-show a message about the
+      // discarded card's folder on the blank draft (interactions.md §9.3).
+      exportRevealGeneration += 1;
       exportSaveId = "";
       await api("/api/draft/reset", { method: "POST" });
       await refreshDraft();
@@ -2608,7 +2692,10 @@ function wire() {
       show($("#exportActions"), false);
       // The sixth region. Without this a reveal failure about the discarded
       // card's folder survives onto a blank draft (interactions.md §9.3).
-      show($("#exportOpenError"), false);
+      // clearError, not show(): §9.3 and §4.4.2 both say CLEARED, and a
+      // case-(b) failure leaves a .mono-value child holding the old folder's
+      // full path. Hiding it would keep that path in the DOM of a blank draft.
+      clearError($("#exportOpenError"));
       $("#exportReadme").removeAttribute("href");
     }
   });

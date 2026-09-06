@@ -378,6 +378,106 @@ def test_a_successful_open_clears_its_own_region_and_nothing_else(app_js):
     assert '"#exportError"' not in body, "the reveal button still touches #exportError"
 
 
+def test_a_reveal_still_in_flight_cannot_undo_a_clear(app_js):
+    """Pre-merge review M1. Both clears of #exportOpenError were undoable by a
+    request that was already in flight.
+
+    The open route does a filesystem check and then os.startfile, which on a
+    OneDrive-redirected or offline folder takes seconds — long enough for her to
+    press "📁 Save the files to a folder" because nothing visibly happened. The
+    reveal failure then landed AFTER the new run cleared the region and put the
+    PREVIOUS folder's path under the NEW folder's buttons, which is exactly what
+    interactions.md §3.1 step 1 exists to prevent. The same in-flight press
+    survived "Start a new card" and re-showed a discarded card's folder on a
+    blank draft — §9.3's case, and the one the commit claims to close.
+
+    The fix is the generation pattern saveToFolder already uses, for the other
+    button: bump wherever the region is cleared, capture before the request,
+    drop the answer if the clear has already happened.
+    """
+    assert "let exportRevealGeneration = 0;" in app_js
+    # Bumped by all three of §4.4.2's "cleared by" rows, and nothing else.
+    assert app_js.count("exportRevealGeneration += 1;") == 3
+
+    body = app_js[app_js.index("async function openSavedFolder"):]
+    body = body[:body.index("// ---- wire up")]
+    assert "const revealGeneration = exportRevealGeneration;" in body
+    # Checked on BOTH arms — the success arm clears, the failure arm renders,
+    # and neither may act on a panel that has moved on.
+    assert body.count("if (revealGeneration !== exportRevealGeneration) return;") == 2
+
+    for clearer, label in (
+        (app_js[app_js.index("async function saveToFolder"):
+                app_js.index("async function openSavedFolder")], "a new save run"),
+        (app_js[app_js.index('$("#startOver")'):], "start over"),
+    ):
+        assert "exportRevealGeneration += 1;" in clearer, label
+
+
+def test_start_over_clears_rather_than_hides_the_reveal_region(app_js):
+    """interactions.md §9.3 and §4.4.2 row (iii) both say CLEARED. A case-(b)
+    failure leaves a .mono-value child holding the old folder's full path, and
+    hiding the box would keep that path in the DOM of a blank draft."""
+    handler = app_js[app_js.index('$("#startOver")'):]
+    assert 'clearError($("#exportOpenError"))' in handler
+    assert 'show($("#exportOpenError"), false)' not in handler
+
+
+def test_a_hung_poll_becomes_a_failed_poll(app_js):
+    """Pre-merge review M2. The retry could only see a poll that FAILED, never
+    one that was never answered — and "Yoto Maker stopped answering" is the
+    literal case copy.md §5.10 is named for.
+
+    fetch() has no timeout of its own, so a socket that is accepted and never
+    answered never rejects: firstFailureAt was never set, §5.10 never rendered,
+    and the bar sat frozen with the button disabled and no Cancel — the exact
+    "a frozen bar reads as a hung app" state interactions.md §4a's upper bound
+    exists to prevent.
+    """
+    block = app_js[app_js.index("async function pollJob"):app_js.index("// ---- state")]
+    assert "new AbortController()" in block
+    assert "control.abort()" in block
+    assert "signal: control.signal" in block
+    timeout = int(re.search(r"const POLL_TIMEOUT_MS = (\d+);", app_js).group(1))
+    window = int(re.search(r"const POLL_RETRY_WINDOW_MS = (\d+);", app_js).group(1))
+    # One timeout must fit inside the window several times over, or the window
+    # is really "one hung request" and the retry never gets a second attempt.
+    assert timeout * 2 <= window, (timeout, window)
+    # Worst case start-to-message is the window plus one final timeout, and it
+    # must stay under §4a's ~30s line.
+    assert window + timeout < 30000, (window, timeout)
+
+
+def test_the_retry_never_swallows_a_deliberate_cancel(app_js):
+    """Pre-merge review L3. api() re-throws AbortError unchanged precisely so a
+    user's own cancel is never dressed up as a network failure (app.js:12-22).
+    The retry must not undo that: only pollJob's OWN timeout is retryable."""
+    block = app_js[app_js.index("async function pollJob"):app_js.index("// ---- state")]
+    assert 'e.name === "AbortError"' in block
+    assert "control.timedOut" in block
+
+
+def test_the_retry_window_is_measured_on_a_monotonic_clock(app_js):
+    """Pre-merge review L2. Date.now() is not monotonic: an NTP correction
+    backwards mid-window makes the elapsed time negative and the loop retries
+    forever; forwards spends the whole window on the first failure, skipping
+    the "retry first" §4a rule 1 requires."""
+    code = _code_only(app_js[app_js.index("async function pollJob"):
+                             app_js.index("// ---- state")])
+    assert "performance.now()" in code
+    assert "Date.now()" not in code
+
+
+def test_a_disowned_save_stops_painting_the_panel(app_js):
+    """Pre-merge review L5. Both generation checks were outside the onProgress
+    callback, so a save the user had discarded kept writing #exportBar and
+    #exportMsg for the rest of the job."""
+    save = app_js[app_js.index("async function saveToFolder"):
+                  app_js.index("async function openSavedFolder")]
+    callback = save[save.index("const result = await pollJob("):save.index("retryWindowMs")]
+    assert "if (generation !== exportSaveGeneration) return;" in callback
+
+
 def test_the_reveal_failure_flag_is_gone_from_the_whole_script(app_js):
     """interactions.md §4.4.2: "it must go rather than be left as dead state that
     implies a rule that no longer holds"."""
@@ -388,7 +488,10 @@ def test_start_over_disowns_a_save_that_is_still_running(app_js):
     """#startOver is not disabled during a save — only #exportBtn is — so an
     in-flight poll could resolve and re-show a panel for the discarded card."""
     assert "exportSaveGeneration += 1;" in app_js
-    assert app_js.count("if (generation !== exportSaveGeneration) return;") == 2
+    # Three, not two, since pre-merge review L5: the two that gate rendering a
+    # result, plus one inside the onProgress callback so a discarded save also
+    # stops PAINTING the panel while it finishes.
+    assert app_js.count("if (generation !== exportSaveGeneration) return;") == 3
 
 
 def test_the_connect_box_no_longer_claims_connecting_is_required(index_html):
@@ -460,8 +563,10 @@ def test_start_over_clears_all_six_regions(app_js):
     survive onto a blank draft."""
     handler = app_js[app_js.index('$("#startOver")'):]
     for region in ("exportProgress", "exportError", "exportDone", "exportNote",
-                   "exportActions", "exportOpenError"):
+                   "exportActions"):
         assert f'show($("#{region}"), false)' in handler, region
+    # The sixth is CLEARED rather than hidden — see the test below for why.
+    assert 'clearError($("#exportOpenError"))' in handler
 
 
 def test_the_recovery_sentence_appears_once_however_many_ceilings_fired(app_js):
@@ -526,20 +631,43 @@ def test_the_reveal_button_has_its_own_region_below_the_button(index_html):
 def test_the_new_region_adds_no_tab_stop(index_html):
     """interactions.md §6.1. A tabindex="-1" div is reachable by the focus move
     and by the virtual cursor, never by Tab — which is what lets §1 append it
-    after #exportActions without touching the order §6.1's table fixes."""
-    div = index_html[index_html.index('id="exportOpenError"'):]
-    div = div[:div.index(">") + 1]
-    assert 'tabindex="0"' not in div
-    assert div.startswith('id="exportOpenError"')
-    assert "<button" not in div and "<a " not in div
+    after #exportActions without touching the order §6.1's table fixes.
+
+    Asserted on the WHOLE element, not on its opening tag: slicing to the tag
+    made the "no focusable child" checks unfalsifiable, since a tag cannot
+    contain another tag.
+    """
+    start = index_html.rindex("<div", 0, index_html.index('id="exportOpenError"'))
+    element = index_html[start:index_html.index("</div>", start) + len("</div>")]
+    assert 'tabindex="-1"' in element
+    assert 'tabindex="0"' not in element
+    # It must be EMPTY — a focusable child would add the tab stop the div itself
+    # avoids, which is the whole claim §6.1 makes about this element.
+    assert re.search(r'id="exportOpenError"[^>]*></div>$', element), element
 
 
-def test_the_ledger_says_six_regions_not_five(index_html):
-    """overview.md §13's everyday-path ledger. A number in a ledger that quietly
-    stops matching is exactly the drift that section exists to catch."""
-    regions = re.findall(r'id="(export(?:Progress|Error|Done|Note|Actions|OpenError))"',
-                         index_html)
-    assert len(set(regions)) == 6, sorted(set(regions))
+def test_the_export_block_has_exactly_six_regions(index_html):
+    """overview.md §13's everyday-path ledger, which now says SIX. A number in a
+    ledger that quietly stops matching is exactly the drift that section exists
+    to catch — so this enumerates what is actually in the markup and compares,
+    rather than asserting that six ids it already named are present. That way a
+    SEVENTH region fails it, which is the drift that matters.
+    """
+    block = index_html[index_html.index('id="exportRow"'):index_html.index('id="advRow"')]
+    found = set(re.findall(r'id="(export[A-Za-z]*)"', block))
+    # #exportRow/#exportBtn are the two everyday-path elements; #exportBar,
+    # #exportMsg, #exportReadme and #exportOpen are children of regions.
+    regions = found - {"exportRow", "exportBtn", "exportBar", "exportMsg",
+                       "exportReadme", "exportOpen"}
+    assert regions == {"exportProgress", "exportError", "exportDone",
+                       "exportNote", "exportActions", "exportOpenError"}, sorted(regions)
+
+    # And the everyday-path ledger itself: exactly two elements are visible
+    # before anything is pressed. Every region ships .hidden.
+    for region in regions:
+        div = block[block.index(f'id="{region}"'):]
+        div = div[:div.index(">") + 1]
+        assert "hidden" in div, f"{region} is not hidden at rest"
 
 
 def test_the_retry_is_opt_in_and_only_the_save_path_opts_in(app_js):
@@ -557,14 +685,20 @@ def test_the_retry_is_opt_in_and_only_the_save_path_opts_in(app_js):
     fallback, taken.
     """
     assert "retryWindowMs: POLL_RETRY_WINDOW_MS" in app_js
-    assert app_js.count("retryWindowMs: POLL_RETRY_WINDOW_MS") == 1
+    # Every opt-in in the file, however it is spelled — a literal
+    # `retryWindowMs: 8000` at a fourth call site would slip past a check that
+    # only counted the named constant.
+    opt_ins = re.findall(r"retryWindowMs:\s*[^,}\s]+", app_js)
+    assert opt_ins == ["retryWindowMs: POLL_RETRY_WINDOW_MS"], opt_ins
 
     save = app_js[app_js.index("async function saveToFolder"):
                   app_js.index("async function openSavedFolder")]
     assert "retryWindowMs" in save
 
+    # All THREE other call sites in interactions.md §4a.1's table, not just two.
     for fn, end in (("async function doUpdate", "const CONNECT_WARN"),
-                    ("async function sendToYoto", "async function makeLabel")):
+                    ("async function sendToYoto", "async function makeLabel"),
+                    ("async function addYouTube", "async function addFiles")):
         block = app_js[app_js.index(fn):app_js.index(end)]
         assert "retryWindowMs" not in block, f"{fn} must not opt in"
 
@@ -582,11 +716,17 @@ def test_the_retry_is_silent(app_js):
     #exportMsg line stay EXACTLY as they were. A blip that resolves must leave
     nothing to read, and onProgress is only ever called with a real job status."""
     block = app_js[app_js.index("async function pollJob"):app_js.index("// ---- state")]
-    for word in ("Reconnecting", "reconnecting", "Retrying", "retrying",
-                 "Still working", "Trying again"):
-        assert word not in block
-    # onProgress is called once, and only after a poll actually came back.
+    # The real pin: onProgress is called exactly once, AFTER a poll came back —
+    # it is the only channel pollJob has to the screen, so if the retry branch
+    # cannot reach it, the retry cannot change anything visible whatever words
+    # someone chooses.
+    assert block.count("onProgress(") == 1
     assert block.count("onProgress(job.percent, job.message)") == 1
+    # And the retry branch touches no element directly. This is what a
+    # `$("#exportMsg").textContent = "Hold on…"` inside the catch would fail —
+    # a vocabulary blocklist would not.
+    catch = block[block.index("} catch (e) {"):block.index("} finally {")]
+    assert "$(" not in catch and "document." not in catch, catch
 
 
 def test_lost_contact_replaces_the_outcome_claim_and_only_then(app_js):
@@ -595,10 +735,15 @@ def test_lost_contact_replaces_the_outcome_claim_and_only_then(app_js):
     about — or, worse, keeping "Nothing was saved" for one it does not."""
     save = app_js[app_js.index("async function saveToFolder"):
                   app_js.index("async function openSavedFolder")]
-    assert "e.lostContact\n      ? EXPORT_LOST_CONTACT" in save
+    # Whitespace-insensitive: this pins the nesting, not the indentation.
+    assert re.search(r"e\.lostContact\s*\?\s*EXPORT_LOST_CONTACT\s*:\s*"
+                     r"e\.status === 400\s*\?\s*\[e\.message\]\s*:", save), save
     # The refusal and the job-reported error keep §5.7 / §3 untouched.
-    assert "e.status === 400" in save
     assert "EXPORT_FAIL_HEAD" in save and "EXPORT_FAIL_TAIL" in save
+    # A POST that answers without a job id must not reach the poll at all, or
+    # it would spend the retry window 404ing and then claim lost contact for a
+    # job that never started.
+    assert "if (!job_id) throw" in save
 
     # lostContact is set in exactly one place: pollJob, after the window is
     # spent. A job that reported its own error throws a bare Error, so it can
@@ -607,6 +752,18 @@ def test_lost_contact_replaces_the_outcome_claim_and_only_then(app_js):
     poll = app_js[app_js.index("async function pollJob"):app_js.index("// ---- state")]
     assert "e.lostContact = true;" in poll
     assert 'if (job.status === "error") throw new Error(' in poll
+
+
+def _code_only(block: str) -> str:
+    """Strip `//` line comments, so an assertion about the CODE cannot be
+    satisfied — or broken — by prose that merely names the thing it forbids.
+
+    This exists because two assertions in this file were caught tripping on
+    their own explanatory comments: the comments correctly name #exportError and
+    Date.now() in order to say those must not be used.
+    """
+    out = re.sub(r"(?m)^[ \t]*//.*$", "", block)
+    return re.sub(r"(?m)(?<=[;,)}\]\s])//[^\n]*$", "", out)
 
 
 def _joined(block: str) -> str:
@@ -680,5 +837,12 @@ def test_lost_contact_leaves_no_bar_and_a_live_button(app_js):
     finally_block = save[save.index("} finally {"):]
     assert 'show($("#exportProgress"), false)' in finally_block
     assert '$("#exportBtn").disabled = false' in finally_block
-    # No success box and no actions: neither is shown anywhere but on a result.
-    assert save.count('show($("#exportActions"), true)') == 0
+    # No success box and no actions. Asserted where they COULD have been shown
+    # — renderExportResult is the only place that reveals them, and the
+    # lost-contact path throws before reaching it.
+    render = app_js[app_js.index("function renderExportResult"):
+                    app_js.index("async function saveToFolder")]
+    assert 'show($("#exportActions"), true)' in render
+    assert 'show($("#exportActions"), true)' not in save
+    assert "renderExportResult(result)" in save
+    assert save.index("renderExportResult(result)") < save.index("} catch (e) {")

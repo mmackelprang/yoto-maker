@@ -597,12 +597,15 @@ def test_the_instruction_sheet_is_written_last(tmp_path, sample_mp3, monkeypatch
     Image.new("RGB", (16, 16), "purple").save(icon)
 
     at_sheet_time: list[list[str]] = []
+    at_sheet_time_icons: list[list[str]] = []
     real_render = runner_mod.render_sheet
 
     def spy(data):
         # Called immediately BEFORE the sheet is written, so whatever is on disk
         # right now is exactly the set of things the sheet is written after.
         at_sheet_time.append(sorted(p.name for p in folder.iterdir()))
+        pics = folder / runner_mod.TRACK_PICTURES_DIR
+        at_sheet_time_icons.append(sorted(p.name for p in pics.iterdir()) if pics.is_dir() else [])
         return real_render(data)
 
     monkeypatch.setattr(runner_mod, "render_sheet", spy)
@@ -614,21 +617,35 @@ def test_the_instruction_sheet_is_written_last(tmp_path, sample_mp3, monkeypatch
     )
     assert res.folder == folder
     assert len(at_sheet_time) == 1, "the sheet is rendered exactly once"
-    landed = at_sheet_time[0]
+    landed = set(at_sheet_time[0])
 
-    # Every audio file, the card picture and the track-pictures folder are all
-    # already on disk when the sheet is rendered…
+    # Sanity: the spy really did observe a populated folder, so the equality
+    # below is not passing on two empty sets.
     assert "01 - Chapter One.mp3" in landed
     assert "02 - Chapter Two.mp3" in landed
     assert runner_mod.CARD_PICTURE_NAME in landed
     assert runner_mod.TRACK_PICTURES_DIR in landed
 
-    # …and the sheet is not, because it goes last.
-    assert runner_mod.SHEET_NAME not in landed, (
-        "the instruction sheet was written before something else — copy.md "
-        "§5.10 paragraph 2 is now a lie and must change with it"
+    # THE ASSERTION THAT MATTERS, and it is an equality rather than a list of
+    # names on purpose: what was on disk when the sheet was rendered must be
+    # EVERYTHING the run produced except the sheet itself. A whitelist of known
+    # names would still pass if a later refactor wrote one more file AFTER the
+    # sheet — which is precisely the regression that turns copy.md §5.10
+    # paragraph 2 into a lie, because she would find a folder with a
+    # "What to do next" page in it that is nonetheless incomplete.
+    final = {p.name for p in folder.iterdir()}
+    assert landed == final - {runner_mod.SHEET_NAME}, (
+        "something was written AFTER the instruction sheet: "
+        f"{sorted(final - {runner_mod.SHEET_NAME} - landed)}. "
+        "copy.md §5.10 paragraph 2 tells the user that the presence of that "
+        "page means the save finished — overview.md §10.5a makes the write "
+        "order a contract, and this breaks it."
     )
-    assert (folder / runner_mod.SHEET_NAME).exists()
+    assert runner_mod.SHEET_NAME in final
+
+    # The track-pictures subfolder must be POPULATED before the sheet, not just
+    # created — iterdir() above is not recursive, so it alone would not notice.
+    assert at_sheet_time_icons[0], "track pictures were written after the sheet"
 
 
 def test_the_progress_phases_put_the_sheet_after_the_pictures(tmp_path, sample_mp3):
