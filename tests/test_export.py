@@ -569,6 +569,87 @@ def test_the_sheet_never_claims_a_pictures_folder_that_was_not_written(tmp_path,
     assert "Track pictures" not in page
 
 
+def test_the_instruction_sheet_is_written_last(tmp_path, sample_mp3, monkeypatch):
+    """overview.md §10.5a — this write order is a CONTRACT, not an accident.
+
+    copy.md §5.10 is the string that makes it one. When the app loses contact
+    with a running save it cannot say whether the save finished, so it gives her
+    a test she can actually perform instead: *"If there's a page in it called
+    'What to do next', the save finished — that page lists what's actually
+    there."* That is only true because the sheet is written **after** every audio
+    file and every picture.
+
+    If a refactor ever moves the sheet earlier — for a preview, say — that
+    paragraph becomes a lie in the worst direction: she finds a half-written
+    folder with a sheet in it and concludes the save completed. Nothing else in
+    the suite would notice, which is why this test exists.
+
+    Asserted at the moment of the write rather than on mtimes, which are too
+    coarse on Windows to order two writes a few milliseconds apart.
+    """
+    from PIL import Image
+
+    root = tmp_path / "saved"
+    folder = root / "Bedtime Stories"
+    picture = tmp_path / "cover.png"
+    Image.new("RGB", (64, 64), "teal").save(picture)
+    icon = tmp_path / "icon.png"
+    Image.new("RGB", (16, 16), "purple").save(icon)
+
+    at_sheet_time: list[list[str]] = []
+    real_render = runner_mod.render_sheet
+
+    def spy(data):
+        # Called immediately BEFORE the sheet is written, so whatever is on disk
+        # right now is exactly the set of things the sheet is written after.
+        at_sheet_time.append(sorted(p.name for p in folder.iterdir()))
+        return real_render(data)
+
+    monkeypatch.setattr(runner_mod, "render_sheet", spy)
+    res = runner_mod.export_card(
+        tracks=[_track(sample_mp3, "Chapter One", icon=icon),
+                _track(sample_mp3, "Chapter Two")],
+        card_name="Bedtime Stories", picture_path=picture, root=root,
+        scratch_dir=tmp_path / "scratch", version="0.1.13",
+    )
+    assert res.folder == folder
+    assert len(at_sheet_time) == 1, "the sheet is rendered exactly once"
+    landed = at_sheet_time[0]
+
+    # Every audio file, the card picture and the track-pictures folder are all
+    # already on disk when the sheet is rendered…
+    assert "01 - Chapter One.mp3" in landed
+    assert "02 - Chapter Two.mp3" in landed
+    assert runner_mod.CARD_PICTURE_NAME in landed
+    assert runner_mod.TRACK_PICTURES_DIR in landed
+
+    # …and the sheet is not, because it goes last.
+    assert runner_mod.SHEET_NAME not in landed, (
+        "the instruction sheet was written before something else — copy.md "
+        "§5.10 paragraph 2 is now a lie and must change with it"
+    )
+    assert (folder / runner_mod.SHEET_NAME).exists()
+
+
+def test_the_progress_phases_put_the_sheet_after_the_pictures(tmp_path, sample_mp3):
+    """The same contract from the other side: the phase order the user watches.
+
+    The write order above is what makes copy.md §5.10 true; this pins that the
+    reported order agrees with it, so a reordering cannot pass by moving the
+    write and the phase together.
+    """
+    stages: list[str] = []
+    runner_mod.export_card(
+        tracks=[_track(sample_mp3, "A")], card_name="Bedtime Stories",
+        picture_path=None, root=tmp_path / "saved", scratch_dir=tmp_path / "s",
+        version="0.1.13",
+        update=lambda stage, percent, message: stages.append(stage),
+    )
+    assert stages.index("sheet") > stages.index("pictures")
+    assert stages.index("pictures") > stages.index("save")
+    assert stages[-1] == "done"
+
+
 def test_the_result_view_carries_everything_the_panel_needs(tmp_path, sample_mp3):
     res = runner_mod.export_card(
         tracks=[_track(sample_mp3, "A")], card_name="Bedtime Stories",

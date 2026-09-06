@@ -77,14 +77,66 @@ function setMsgBoxContent(box, content) {
   }));
 }
 
+const POLL_INTERVAL_MS = 500;
+
+// How long a status poll may keep failing before the caller is told the app has
+// lost contact with the job. interactions.md §4a fixes the two bounds and leaves
+// the number to a measurement, which is recorded in the plan's test notes:
+//
+//   LOWER — long enough to ride out a stall on a machine busy writing hundreds
+//   of megabytes. MEASURED_STALL_PLACEHOLDER
+//
+//   UPPER — short enough that a frozen bar does not read as a hung app. §4a
+//   puts the cure-is-the-disease line at ~30s.
+//
+// This is a window, not a count: the interval is the poll interval, so counting
+// attempts would silently change the window if the interval ever moved.
+const POLL_RETRY_WINDOW_MS = 12000;
+
 // Poll a background job until it finishes. Calls onProgress(percent, message).
-async function pollJob(jobId, onProgress) {
+//
+// opts.retryWindowMs opts THIS CALL SITE into riding out a dropped status poll
+// instead of failing on the first one. It is opt-in per call site, not a
+// property of the helper, because the same transport event does not mean the
+// same thing at all four call sites (interactions.md §4a.1) — doUpdate() expects
+// its last poll to fail, since the server exits mid-restart, and already reports
+// success from it. Retrying there would freeze a bar for the whole window before
+// showing a message that was already right.
+//
+// Retrying is SILENT: onProgress is only ever called with a real job status, so
+// a blip that resolves leaves nothing on screen to read (§4a rule 1). No
+// "reconnecting…" line, no visual change of any kind.
+async function pollJob(jobId, onProgress, opts = {}) {
+  const retryWindowMs = opts.retryWindowMs || 0;
+  let firstFailureAt = 0;
   while (true) {
-    const job = await api(`/api/jobs/${jobId}`);
+    let job;
+    try {
+      job = await api(`/api/jobs/${jobId}`);
+    } catch (e) {
+      if (!retryWindowMs) throw e;
+      const now = Date.now();
+      if (!firstFailureAt) firstFailureAt = now;
+      if (now - firstFailureAt >= retryWindowMs) {
+        // The ONLY place this flag is set, and that is the boundary copy.md
+        // §5.10's table draws. A job that reported its own error below is a
+        // failure the app was TOLD about and must keep saying so; this is the
+        // one case where the app genuinely does not know the outcome.
+        e.lostContact = true;
+        throw e;
+      }
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      continue;
+    }
+    // An answered poll resets the window. The contract is "this many seconds of
+    // uninterrupted silence", not "this many seconds since the first ever blip"
+    // — otherwise a long save with two unrelated hiccups in it would report lost
+    // contact while the job was visibly still making progress.
+    firstFailureAt = 0;
     if (onProgress) onProgress(job.percent, job.message);
     if (job.status === "done") return job.result;
     if (job.status === "error") throw new Error(job.error || "Something went wrong.");
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
 }
 
@@ -2041,16 +2093,42 @@ const EXPORT_PARTIAL_TAIL =
 const EXPORT_CEILING_FIX =
   "Yoto’s website may refuse some of it. If it does, make two shorter cards instead of one.";
 
+// copy.md §5.10. This REPLACES the three paragraphs above whenever a status poll
+// failed after a job id existed — and only then. The boundary is the whole
+// point: EXPORT_FAIL_HEAD opens "Yoto Maker couldn’t save the files" and
+// EXPORT_FAIL_TAIL closes "Nothing was saved", and neither is knowable once a
+// job is running. Told nothing happened, she presses save again while a folder
+// is being written.
+//
+// Paragraph 2 is the only route she has to the instruction sheet in this state:
+// no result arrived, so #exportActions never rendered and "📄 What to do next"
+// was never drawn. It names the page in words instead, and it leans on
+// runner.py writing that page LAST — pinned by
+// tests/test_export.py::test_the_instruction_sheet_is_written_last, because if
+// that order ever moves this paragraph becomes a lie.
+//
+// The folder is NOT named, and must not be: the panel has no result, so it does
+// not know the folder's name. The card name is not it — the folder is sanitized
+// and may be " (2)". Naming it would be the JS-side reconstruction overview.md
+// §11.3 forbids, arriving as a helpful-looking sentence.
+const EXPORT_LOST_CONTACT = [
+  "Yoto Maker stopped answering while it was saving, so it can’t tell you " +
+  "whether it finished. Nothing on this card has changed.",
+
+  "Look in your Documents, under Yoto Maker, for a folder named after this " +
+  "card. If there’s a page in it called “What to do next”, the save finished — " +
+  "that page lists what’s actually there.",
+
+  "If there’s no folder, or no “What to do next” page in it, make sure Yoto " +
+  "Maker is still running — look for the 🎵 icon near the clock — then press " +
+  "“📁 Save the files to a folder” again. Nothing you already have will be " +
+  "written over.",
+];
+
 // The opaque id of the save this panel is showing, straight from the job result.
 // It is what makes "📁 Open the folder" open THIS card's folder rather than
 // whichever save finished last — two tabs, or a reload mid-save, produce two.
 let exportSaveId = "";
-
-// Whether #exportError is currently holding a REVEAL failure rather than a save
-// failure. A successful open clears the box only when this is set: after a
-// partial save that box holds the list of tracks that could not be saved
-// (copy.md §5.6), and clearing that would destroy the one record of it.
-let exportErrorIsRevealFailure = false;
 
 // Bumped by "Start over". saveToFolder captures it and drops a result whose
 // generation has moved on, so an in-flight save cannot re-show a panel for the
@@ -2168,9 +2246,6 @@ function exportFailureParagraphs(r) {
 function renderExportResult(r) {
   const done = $("#exportDone");
   exportSaveId = r.save_id || "";
-  // A save result replaces whatever was in #exportError, so any reveal failure
-  // it was holding is gone with it.
-  exportErrorIsRevealFailure = false;
   const lines = [exportSuccessLine(r)];
   // The full path appears ONLY when the folder cannot be opened for her, where
   // it stops being clutter and becomes the answer (copy.md §5.5).
@@ -2217,7 +2292,9 @@ async function saveToFolder() {
   // runs, and this is how the result knows it belongs to a discarded card.
   const generation = exportSaveGeneration;
   clearError($("#exportError"));
-  exportErrorIsRevealFailure = false;
+  // A reveal failure about the PREVIOUS folder must never sit under the NEW
+  // one's buttons (interactions.md §3.1 step 1, §4.4.2's "cleared by" row ii).
+  clearError($("#exportOpenError"));
   $("#exportNote").textContent = "";
   show($("#exportNote"), false);
   show($("#exportDone"), false);
@@ -2228,26 +2305,44 @@ async function saveToFolder() {
   $("#exportBtn").disabled = true;
   try {
     const { job_id } = await api("/api/export", { method: "POST" });
+    // This call site asks for the retry (interactions.md §3.1 step 5, §4a.1).
+    // It is the caller that means "I don't know the outcome", so it is the
+    // caller that opts in.
     const result = await pollJob(job_id, (p, m) => {
       $("#exportBar").style.width = Math.max(2, p) + "%";
       $("#exportMsg").textContent = m;
-    });
+    }, { retryWindowMs: POLL_RETRY_WINDOW_MS });
     // The card this describes has been discarded — render nothing at all.
     if (generation !== exportSaveGeneration) return;
     renderExportResult(result);
   } catch (e) {
     if (generation !== exportSaveGeneration) return;
-    // A refusal (no tracks / no card name) is one sentence on its own. A job
-    // failure is copy.md §5.7's three paragraphs, and only the middle one is
-    // cause-specific — jobs.py carries no reason code, so the server composes
-    // that line and these two frame it. It may itself be several paragraphs
-    // (copy.md §5.7's every-track-failed row), which travel as newlines.
+    // copy.md §5.10's boundary table, and this is the whole of it:
     //
-    // e.status alone is enough to tell the two apart: pollJob builds a bare
-    // Error with no .status, so a job failure can never be 400.
-    const paragraphs = e.status === 400
-      ? [e.message]
-      : [EXPORT_FAIL_HEAD, ...String(e.message).split("\n"), EXPORT_FAIL_TAIL];
+    //   POST never returned a job id  → §5.7. No job started, so "Nothing was
+    //                                   saved" is TRUE. e.lostContact unset,
+    //                                   because pollJob was never reached.
+    //   A refusal (400)               → §3, one sentence on its own.
+    //   The job reported an error     → §5.7. The app was TOLD the outcome;
+    //                                   pollJob throws a bare Error for this,
+    //                                   so e.lostContact is unset.
+    //   A poll failed after a job id  → §5.10. The one case where the app does
+    //                                   not know what happened.
+    //
+    // Blurring that line re-introduces the defect from the other side: §5.7
+    // stops being true, or §5.10 starts hedging about a failure the app
+    // actually observed.
+    //
+    // §5.7's middle paragraph is the only cause-specific one — jobs.py carries
+    // no reason code, so the server composes that line and these two frame it.
+    // It may itself be several paragraphs (copy.md §5.7's every-track-failed
+    // row), which travel as newlines. e.status tells a refusal apart: pollJob
+    // builds a bare Error with no .status, so a job failure can never be 400.
+    const paragraphs = e.lostContact
+      ? EXPORT_LOST_CONTACT
+      : e.status === 400
+        ? [e.message]
+        : [EXPORT_FAIL_HEAD, ...String(e.message).split("\n"), EXPORT_FAIL_TAIL];
     setMsgBoxContent($("#exportError"), paragraphs);
     show($("#exportError"), true);
     $("#exportError").focus();
@@ -2269,22 +2364,27 @@ async function openSavedFolder() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: exportSaveId }),
     });
-    // Clear the box ONLY when it is a reveal failure of ours. After a partial
-    // save it holds the list of tracks that could not be saved (copy.md §5.6),
-    // and that must survive.
-    if (exportErrorIsRevealFailure) {
-      clearError($("#exportError"));
-      exportErrorIsRevealFailure = false;
-    }
+    // Unconditional, and that is the point of the second region: #exportOpenError
+    // holds nothing but this button's own failures, so there is no other message
+    // to protect and no flag to remember (interactions.md §4.4.2, "cleared by"
+    // row i). #exportError is not touched here in either direction.
+    clearError($("#exportOpenError"));
   } catch (e) {
     // copy.md §5.5a(b) carries the path beneath the sentence, in .mono-value —
     // a bare "couldn't open" is a dead end and the server is holding the one
     // thing that resolves it. Case (a) has no path and renders one paragraph.
     //
+    // #exportOpenError, NEVER #exportError. That box is the SAVE button's
+    // region and holds a record of the run: after a partial save it carries
+    // "The page in the folder lists what’s actually there" — the only pointer
+    // she has to the instruction sheet, which is the authority on what actually
+    // landed. Overwriting it here deleted that pointer at the exact moment she
+    // was trying to open the folder it points into. interactions.md §4.4.
+    //
     // setMsgBoxContent, not showError: showError sets textContent, which would
     // delete the .mono-value child appended below.
     const path = e.data && e.data.path;
-    const box = $("#exportError");
+    const box = $("#exportOpenError");
     setMsgBoxContent(box, [e.message]);
     if (path) {
       const p = document.createElement("div");
@@ -2293,10 +2393,10 @@ async function openSavedFolder() {
       box.appendChild(p);
     }
     show(box, true);
-    exportErrorIsRevealFailure = true;
-    // #exportError sits ABOVE #exportActions in the DOM, so a message raised by
-    // this button renders behind her scroll position. Moving focus is what takes
-    // her to it — interactions.md §4.4, and it is why that rule exists.
+    // The region sits directly beneath the button she just pressed, so focus is
+    // no longer compensating for a message rendered behind her scroll position
+    // — it is what ANNOUNCES the message to a screen reader, and it keeps one
+    // focus rule for every failure on this surface (interactions.md §4.4.2).
     box.focus();
   }
 }
@@ -2494,7 +2594,6 @@ function wire() {
       // after the reset round-trip, or its result can land in between.
       exportSaveGeneration += 1;
       exportSaveId = "";
-      exportErrorIsRevealFailure = false;
       await api("/api/draft/reset", { method: "POST" });
       await refreshDraft();
       $("#cardName").value = "";
@@ -2507,6 +2606,9 @@ function wire() {
       show($("#exportDone"), false);
       show($("#exportNote"), false);
       show($("#exportActions"), false);
+      // The sixth region. Without this a reveal failure about the discarded
+      // card's folder survives onto a blank draft (interactions.md §9.3).
+      show($("#exportOpenError"), false);
       $("#exportReadme").removeAttribute("href");
     }
   });

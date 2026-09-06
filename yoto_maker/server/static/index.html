@@ -255,6 +255,21 @@
         <button id="exportOpen" class="btn">📂 Open the folder</button>
       </div>
 
+      <!-- The REVEAL button's own feedback region, and it must stay BELOW the
+           button that raises it. It is deliberately NOT #exportError: that box
+           is the SAVE button's region and holds a record of the run — a refusal,
+           a partial-save notice, a total failure — that must survive a press of
+           "📂 Open the folder". After a partial save it carries the one pointer
+           the user has to the instruction sheet ("The page in the folder lists
+           what's actually there"), and a reveal failure used to overwrite that
+           at the exact moment she was trying to open the folder it points into.
+           Two regions delete the flag that guarded it rather than maintaining
+           one. interactions.md §4.4 is the whole contract; the two strings are
+           copy.md §5.5a. Appended here, so #advRow is still the last child of
+           step 3 and no tab stop moves — a tabindex="-1" div is not a tab stop.
+           Still zero new CSS: .msg-box, .err and .hidden are all shipped. -->
+      <div id="exportOpenError" class="msg-box err hidden" role="alert" tabindex="-1"></div>
+
       <!-- Last child, deliberately. Ahead of #sendBtn this would push the
            primary action down and take a tab stop before it — a cost paid on
            every card-making visit for a control used twice ever. Last child
