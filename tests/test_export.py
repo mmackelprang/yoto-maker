@@ -450,3 +450,145 @@ def test_reveal_refuses_rather_than_raising_something_technical(tmp_path, monkey
     monkeypatch.setattr(reveal_mod, "reveal_supported", lambda: False)
     with pytest.raises(ExportError):
         reveal_mod.reveal_folder(tmp_path)
+
+
+# --------------------------------------------------------------------------- #
+# Task 7 — the three routes, and the shared card construction
+# --------------------------------------------------------------------------- #
+import time
+
+from fastapi.testclient import TestClient
+
+from yoto_maker.server.app import app as fastapi_app
+
+
+@pytest.fixture
+def client(temp_config):
+    with TestClient(fastapi_app) as c:
+        yield c
+
+
+def _drain(client, job_id):
+    """Poll to completion. The sleep is not decoration: the job runs on another
+    thread, and a tight loop starves it on a single-core runner."""
+    for _ in range(400):
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] != "running":
+            return job
+        time.sleep(0.01)
+    raise AssertionError("job never finished")
+
+
+def test_refusals_are_the_parallel_wording_and_come_before_anything_is_written(client):
+    client.post("/api/draft/reset")
+    r = client.post("/api/export")
+    assert r.status_code == 400
+    assert r.json()["error"] == "Add some audio before saving it."
+
+
+def test_saving_needs_no_sign_in(client, sample_mp3, monkeypatch):
+    """The headline property. If this test ever needs a connection, the feature
+    has been deleted."""
+    import yoto_maker.server.app as app_mod
+
+    monkeypatch.setattr(app_mod, "connection_status",
+                        lambda: {"connected": False, "client_id_verdict": "ok"})
+    # The draft is a module-level global that survives across tests in a file,
+    # so every route test that adds tracks starts from a known-empty one.
+    client.post("/api/draft/reset")
+    with sample_mp3.open("rb") as fh:
+        client.post("/api/tracks/file", files={"file": ("sample.mp3", fh, "audio/mpeg")})
+    client.post("/api/card/name", json={"name": "Bedtime Stories"})
+    job = _drain(client, client.post("/api/export").json()["job_id"])
+    assert job["status"] == "done", job
+    assert job["result"]["saved_count"] == 1
+
+
+def test_the_status_route_reports_where_saved_files_go(client):
+    cfg = client.get("/api/status").json()["config"]
+    assert cfg["saved_dir"].endswith("Yoto Maker")
+    assert cfg["saved_dir"] != cfg["data_dir"]
+
+
+def test_the_sheet_route_serves_what_is_in_the_folder(client, sample_mp3):
+    client.post("/api/draft/reset")
+    with sample_mp3.open("rb") as fh:
+        client.post("/api/tracks/file", files={"file": ("sample.mp3", fh, "audio/mpeg")})
+    client.post("/api/card/name", json={"name": "Bedtime Stories"})
+    job = _drain(client, client.post("/api/export").json()["job_id"])
+    folder = Path(job["result"]["folder_path"])
+    served = client.get(job["result"]["sheet_url"])
+    assert served.status_code == 200
+    assert served.text == (folder / "What to do next.html").read_text(encoding="utf-8")
+
+
+def test_the_open_route_accepts_no_path(client):
+    """The safety property. The route's signature takes nothing at all."""
+    import inspect
+    from yoto_maker.server.app import open_saved_folder
+
+    client.post("/api/draft/reset")
+    assert list(inspect.signature(open_saved_folder).parameters) == []
+    assert client.post("/api/export/open").status_code == 400   # nothing saved yet
+
+
+def test_a_failed_open_carries_the_path_so_the_message_is_not_a_dead_end(
+    client, sample_mp3, monkeypatch
+):
+    """copy.md §5.5a's two cases, distinguished by the route.
+
+    (a) nothing recorded -> the {error} envelope, no path.
+    (b) the folder is there and the OS refused -> the same envelope PLUS the
+        path, which app.js renders beneath the sentence in .mono-value.
+    """
+    import yoto_maker.server.app as app_mod
+    from yoto_maker.export.errors import REASON_CANNOT_OPEN, REASON_FOLDER_GONE
+
+    client.post("/api/draft/reset")
+    gone = client.post("/api/export/open")
+    assert gone.status_code == 400
+    assert gone.json()["error"] == REASON_FOLDER_GONE
+    assert "path" not in gone.json()
+
+    with sample_mp3.open("rb") as fh:
+        client.post("/api/tracks/file", files={"file": ("sample.mp3", fh, "audio/mpeg")})
+    client.post("/api/card/name", json={"name": "Bedtime Stories"})
+    job = _drain(client, client.post("/api/export").json()["job_id"])
+    assert job["status"] == "done", job
+
+    def boom(_folder):
+        raise ExportError(REASON_CANNOT_OPEN)
+
+    monkeypatch.setattr(app_mod, "reveal_folder", boom)
+    refused = client.post("/api/export/open")
+    assert refused.status_code == 400
+    assert refused.json()["error"] == REASON_CANNOT_OPEN
+    assert refused.json()["path"] == job["result"]["folder_path"]
+
+
+def test_starting_a_new_card_forgets_the_folder(client, sample_mp3):
+    client.post("/api/draft/reset")
+    with sample_mp3.open("rb") as fh:
+        client.post("/api/tracks/file", files={"file": ("sample.mp3", fh, "audio/mpeg")})
+    client.post("/api/card/name", json={"name": "Bedtime Stories"})
+    _drain(client, client.post("/api/export").json()["job_id"])
+    assert client.get("/api/export/sheet.html").status_code == 200
+    client.post("/api/draft/reset")
+    assert client.get("/api/export/sheet.html").status_code == 404
+
+
+def test_both_paths_build_the_same_card(client, sample_mp3):
+    """Acceptance criterion 8, at the seam where the two could drift."""
+    import yoto_maker.server.app as app_mod
+
+    client.post("/api/draft/reset")
+    with sample_mp3.open("rb") as fh:
+        client.post("/api/tracks/file", files={"file": ("sample.mp3", fh, "audio/mpeg")})
+    client.post("/api/card/name", json={"name": "Bedtime Stories"})
+    draft = app_mod.get_draft()
+    a, name_a = app_mod._build_card_inputs(draft)
+    b, name_b = app_mod._build_card_inputs(draft)
+    assert name_a == name_b == "Bedtime Stories"
+    assert [(x.title, x.audio_path, x.icon_path) for x in a] == \
+           [(x.title, x.audio_path, x.icon_path) for x in b]
+    assert all(x.icon_path is not None for x in a), "_resolve_icon must have run"

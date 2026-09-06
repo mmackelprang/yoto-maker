@@ -225,7 +225,12 @@ def _write_all(*, tracks, folder: Path, picture_path, scratch_dir: Path,
         date_label=date_words(today),
     )
     try:
-        (folder / SHEET_NAME).write_text(render_sheet(data), encoding="utf-8")
+        # write_bytes, not write_text: text mode translates "\n" to "\r\n" on
+        # Windows, so the file on disk would no longer be byte-identical to what
+        # GET /api/export/sheet.html serves. overview.md §6.3's "one file, one
+        # rendering, both routes" is a byte-identity claim, and this is what
+        # keeps it literally true.
+        (folder / SHEET_NAME).write_bytes(render_sheet(data).encode("utf-8"))
     except OSError as exc:
         raise ExportError(_os_reason(exc)) from exc
 

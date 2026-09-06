@@ -20,6 +20,15 @@ from .. import APP_NAME, __version__
 from .. import updater
 from ..audio.normalize import MAX_TRACK_SECONDS, AudioError, probe_audio, split_audio
 from ..config import get_config, validate_client_id
+from ..export import (
+    REASON_FOLDER_GONE,
+    SHEET_NAME,
+    ExportError,
+    ExportTrack,
+    export_card,
+    reveal_folder,
+    reveal_supported,
+)
 from ..images import crop_image, make_device_icon, prepare_label_image, save_source_image, save_upload
 from ..images.ai import AIUnavailableError, ai_available, generate_image
 from ..images.library import ensure_library, icon_path, list_icons
@@ -97,9 +106,10 @@ async def _static_cache_policy(request, call_next):
 # --------------------------------------------------------------------------- #
 # Error handling: turn our friendly exceptions into clean JSON the UI shows.
 # --------------------------------------------------------------------------- #
-FRIENDLY_ERRORS = (SourceError, YotoError, AudioError, ImageError, AIUnavailableError)
+FRIENDLY_ERRORS = (SourceError, YotoError, AudioError, ImageError, AIUnavailableError, ExportError)
 
 
+@app.exception_handler(ExportError)
 @app.exception_handler(SourceError)
 @app.exception_handler(YotoError)
 @app.exception_handler(AudioError)
@@ -152,6 +162,12 @@ async def status() -> dict:
             "version": __version__,
             "redirect_uri": redirect_uri(),
             "data_dir": str(get_config().data_dir),
+            # Where HER files go, as distinct from where the app keeps ITS files
+            # on the line above. Resolved on the server and never constructed in
+            # JS — configuration-surface §13.4's rule for the redirect URL, for
+            # the same reason: OneDrive redirects Documents and a guess would be
+            # wrong in exactly the case where the value matters (copy.md §7).
+            "saved_dir": str(get_config().saved_dir),
         },
         "ai_available": ai_available(),
         "remove_sponsors": bool(get_settings().get("remove_sponsors", True)),
@@ -201,7 +217,12 @@ async def get_draft_view() -> dict:
 
 @app.post("/api/draft/reset")
 async def reset_draft() -> dict:
+    global _last_saved_folder
     get_draft().reset()
+    # The card that folder described is gone. Serving its instruction page from
+    # a blank draft would point at a card the user has just discarded
+    # (interactions.md §9.3). The folder itself is hers and stays on disk.
+    _last_saved_folder = None
     return {"ok": True}
 
 
@@ -628,6 +649,24 @@ def _resolve_icon(track, draft) -> Path | None:
     return icon_path("music")
 
 
+def _build_card_inputs(draft) -> tuple[list[TrackInput], str]:
+    """The complete, network-free description of the card: tracks and name.
+
+    SHARED by POST /api/send and POST /api/export, and that sharing is a design
+    requirement rather than a tidiness one (spec §3.1, acceptance criterion 8):
+    a card saved to a folder and the same card sent to Yoto must be the same
+    card. In particular _resolve_icon is CALLED here, not reimplemented — it is
+    lazy and has a filesystem side effect (make_device_icon writes
+    work/icon_<id>.png), and it is the reason both paths carry identical
+    pictures.
+    """
+    inputs = [
+        TrackInput(audio_path=t.audio_path, title=t.title, icon_path=_resolve_icon(t, draft))
+        for t in draft.tracks
+    ]
+    return inputs, draft.card_name.strip()
+
+
 @app.post("/api/send")
 async def send_to_yoto() -> dict:
     draft = get_draft()
@@ -640,11 +679,7 @@ async def send_to_yoto() -> dict:
     if not connection_status()["connected"]:
         raise NotConnectedError("Please connect your Yoto account first.")
 
-    inputs = [
-        TrackInput(audio_path=t.audio_path, title=t.title, icon_path=_resolve_icon(t, draft))
-        for t in draft.tracks
-    ]
-    card_name = draft.card_name.strip()
+    inputs, card_name = _build_card_inputs(draft)
 
     def work(update):
         def prog(stage, cur, total, msg):
@@ -659,6 +694,119 @@ async def send_to_yoto() -> dict:
 
     job_id = get_jobs().start(work)
     return {"job_id": job_id}
+
+
+# --------------------------------------------------------------------------- #
+# Save the files to a folder (background job with progress)
+#
+# The alternative delivery path. See docs/design-handoffs/export-only-mode/.
+# --------------------------------------------------------------------------- #
+
+# The folder the server last wrote. The reveal route reads THIS and never a path
+# from the browser (overview.md §7.3) — even on loopback, handing a
+# caller-supplied string to the shell is a foot-gun with no upside, and the UI
+# never needs it: there is exactly one folder the button can mean.
+_last_saved_folder: Path | None = None
+
+
+@app.post("/api/export")
+async def export_to_folder() -> dict:
+    draft = get_draft()
+    # The same two guards as the send path, worded in parallel (copy.md §3).
+    # Two sentences that differ by two words is how the user learns the buttons
+    # are peers — do NOT refactor them into one string.
+    if not draft.tracks:
+        raise SourceError("Add some audio before saving it.")
+    if not draft.card_name.strip():
+        raise SourceError("Give your card a name before saving it.")
+    # ------------------------------------------------------------------ #
+    # THERE IS NO CONNECTION CHECK HERE, AND THAT IS THE FEATURE.
+    #
+    # send_to_yoto() checks connection_status() at app.py:640. This path takes
+    # the two guards above it and not that one: saving needs no sign-in at all,
+    # which is the headline property (spec §1.2) and the reason a user whose
+    # Client ID has hard-blocked sign-in still has a way to finish a card.
+    # Guarded by test_saving_needs_no_sign_in.
+    # ------------------------------------------------------------------ #
+
+    inputs, card_name = _build_card_inputs(draft)
+    tracks = [
+        ExportTrack(
+            title=ti.title,
+            audio_path=Path(ti.audio_path),
+            icon_path=ti.icon_path,
+            duration_s=t.duration_s,
+        )
+        for ti, t in zip(inputs, draft.tracks)
+    ]
+    picture = Path(draft.picture_path) if draft.picture_path else None
+    cfg = get_config()
+    root = cfg.saved_dir
+    scratch = cfg.work_dir / "export"
+
+    def work(update):
+        global _last_saved_folder
+        result = export_card(
+            tracks=tracks,
+            card_name=card_name,
+            picture_path=picture,
+            root=root,
+            scratch_dir=scratch,
+            version=__version__,
+            update=update,
+        )
+        _last_saved_folder = result.folder
+        return {
+            **result.view(),
+            "sheet_url": "/api/export/sheet.html",
+            "can_open": reveal_supported(),
+        }
+
+    job_id = get_jobs().start(work)
+    return {"job_id": job_id}
+
+
+@app.get("/api/export/sheet.html")
+async def get_export_sheet():
+    """Serve the page that is already in the folder. Same shape as /api/label.pdf.
+
+    One file, one rendering, both routes: this returns the exact bytes written
+    into the folder, so the two can never drift (overview.md §6.3).
+    """
+    if _last_saved_folder is None:
+        raise HTTPException(404, "Nothing has been saved yet")
+    page = _last_saved_folder / SHEET_NAME
+    if not page.exists():
+        raise HTTPException(404, "Nothing has been saved yet")
+    return FileResponse(page, media_type="text/html")
+
+
+@app.post("/api/export/open")
+async def open_saved_folder():
+    """Show the folder the server last wrote. TAKES NO PATH FROM THE BROWSER.
+
+    POST rather than GET: it has an effect, and the origin guard only vets
+    non-GET requests (app.py:66).
+
+    Two failures, two strings (copy.md §5.5a, interactions.md §4.4):
+    (a) nothing recorded or the folder is gone -> ExportError, the friendly
+        handler's {error} envelope, no path;
+    (b) the folder is there and the OS refused -> the same envelope PLUS the
+        path, which app.js renders beneath the sentence in .mono-value so the
+        message is not a dead end. Returned directly rather than raised because
+        the shared friendly handler carries no second field.
+
+    No return annotation, deliberately: a `-> dict` would make FastAPI validate
+    the JSONResponse below against a dict response model.
+    """
+    folder = _last_saved_folder
+    if folder is None or not folder.exists():
+        raise ExportError(REASON_FOLDER_GONE)
+    try:
+        await run_in_threadpool(reveal_folder, folder)
+    except ExportError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc), "path": str(folder)})
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------- #
