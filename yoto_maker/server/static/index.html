@@ -170,7 +170,19 @@
       <p class="hint">This uploads your card to your Yoto account. You only sign in the first time.</p>
 
       <div id="connectRow" class="hidden">
-        <div class="msg-box info">You'll need to connect your Yoto account first.</div>
+        <!-- Rewritten in v0.1.13. The shipped sentence said connecting was
+             something you would NEED to do first, and once saving exists that
+             is false: connecting is a prerequisite for sending FROM THE APP,
+             not for finishing a card. (The old wording is not quoted here —
+             test_the_connect_box_no_longer_claims_connecting_is_required
+             asserts it appears nowhere in this file, and a comment counts.)
+             The new sentence deliberately
+             does not mention saving — advertising the alternative inside the
+             connect box would bury the connect intent, which is still the right
+             first answer for most people, and #exportRow's own caption twelve
+             pixels below already says "You don't need to be signed in for
+             this." copy.md §1. -->
+        <div class="msg-box info">To send cards straight to your Yoto, connect your account first.</div>
         <button id="connectBtn" class="btn primary big" style="margin-top:12px">🔗 Connect my Yoto account</button>
       </div>
 
@@ -196,6 +208,67 @@
            In the "ok" state it renders nothing at all and step 3 is
            byte-for-byte what it was. -->
       <div id="connectWarn" class="msg-box err hidden" role="alert"></div>
+
+      <!-- The alternative delivery path. ALWAYS RENDERED, in both connection
+           states — saving needs no sign-in at all, and configuration-surface
+           §12.4's lesson is that a control which vanishes in the state where you
+           want it IS the bug. Never disabled by STATUS.yoto.connected.
+
+           Appended after #connectWarn and before #advRow, never inserted next to
+           #sendBtn: inserting there would make the SEND button's own feedback
+           appear below a different button. Appending also lands it directly
+           beneath #sendError on a failed send, and directly beneath #connectWarn
+           when a bad Client ID has hard-blocked sign-in — which is the first
+           time that state has had a live way forward.
+
+           .tiny is on the <p>, NOT on the <button>: .tiny's color: var(--muted)
+           (0-1-0) would beat .btn's own colour rules and grey the control out.
+           Same specificity trap configuration-surface §12.4 fixed on #advToggle.
+
+           Zero new CSS. overview.md §4.3, interactions.md §1. -->
+      <div id="exportRow" style="margin-top:14px">
+        <button id="exportBtn" class="btn">📁 Save the files to a folder</button>
+        <p class="tiny" style="margin-top:8px">
+          You’ll put them on Yoto’s website yourself. You don’t need to be signed in for this.
+        </p>
+      </div>
+
+      <div id="exportProgress" class="progress hidden">
+        <div class="bar"><div id="exportBar"></div></div>
+        <div class="msg" id="exportMsg" role="status"></div>
+      </div>
+
+      <!-- #exportError and #exportDone are programmatic focus targets, hence
+           tabindex="-1" — the same construction #addError uses. #exportDone gets
+           NO role: focus is moved to it, and adding role="status" as well would
+           announce the same sentence twice. #exportNote likewise. -->
+      <div id="exportError" class="msg-box err hidden" role="alert" tabindex="-1"></div>
+      <div id="exportDone" class="msg-box ok hidden" tabindex="-1"></div>
+      <div id="exportNote" class="msg-box info hidden"></div>
+
+      <!-- .done-actions, not .setting-actions: this is the card view, and
+           .done-actions (styles.css:260) is what step 4 already uses for a
+           result's follow-on controls. The instructions are the PRIMARY action
+           and the folder is secondary — deliberately inverted (overview.md §7.1). -->
+      <div id="exportActions" class="done-actions hidden">
+        <a id="exportReadme" class="btn primary" target="_blank" rel="noopener">📄 What to do next</a>
+        <button id="exportOpen" class="btn">📂 Open the folder</button>
+      </div>
+
+      <!-- The REVEAL button's own feedback region, and it must stay BELOW the
+           button that raises it. It is deliberately NOT #exportError: that box
+           is the SAVE button's region and holds a record of the run — a refusal,
+           a partial-save notice, a total failure — that must survive a press of
+           "📂 Open the folder". After a partial save it carries the one pointer
+           the user has to the instruction sheet ("The page in the folder lists
+           what's actually there"), and a reveal failure used to overwrite that
+           at the exact moment she was trying to open the folder it points into.
+           Two regions delete the flag that guarded it rather than maintaining
+           one. interactions.md §4.4 is the whole contract; the two strings are
+           copy.md §5.5a. Appended here, so #advRow is still the last child of
+           step 3 and no tab stop moves — a tabindex="-1" div is not a tab stop.
+           Still zero new CSS: .msg-box, .err and .hidden are all shipped. -->
+      <div id="exportOpenError" class="msg-box err hidden" role="alert" tabindex="-1"></div>
 
       <!-- Last child, deliberately. Ahead of #sendBtn this would push the
            primary action down and take a tab stop before it — a cost paid on
@@ -435,6 +508,15 @@
 
           <p class="tiny" style="margin-top:14px">Where Yoto Maker keeps its files</p>
           <div class="mono-value" id="helpDataDir" style="margin-top:6px"></div>
+
+          <!-- Two rows that both look like folders, and they ARE different
+               folders: the row above is where the app keeps ITS files, this one
+               is where it puts HERS. The labels already say which is which, and
+               lengthening either to disambiguate would make both worse to read
+               aloud on the phone — which is the only thing this section is for.
+               Rendered from the server, never constructed in JS. copy.md §7. -->
+          <p class="tiny" style="margin-top:14px">Where saved files go</p>
+          <div class="mono-value" id="helpSavedDir" style="margin-top:6px"></div>
         </div>
 
         <div class="msg-box err hidden" id="helpMsg" role="alert" tabindex="-1"></div>

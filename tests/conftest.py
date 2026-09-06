@@ -29,6 +29,10 @@ def temp_config(tmp_path, monkeypatch):
     cfg = Config(
         data_dir=tmp_path / "data",
         bundle_root=REPO_ROOT,
+        # Never the real one. Save-to-a-folder writes into <documents_dir>/Yoto
+        # Maker, so without this override the suite scribbles real folders into
+        # the maintainer's Documents on every run.
+        documents_dir=tmp_path / "Documents",
         yoto_client_id="test_client_id",
         host="127.0.0.1",
         port=8799,

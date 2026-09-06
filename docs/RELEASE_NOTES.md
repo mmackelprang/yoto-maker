@@ -1,7 +1,26 @@
-# Yoto Maker v0.1.12
+# Yoto Maker v0.1.13
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
+
+### 🆕 New in v0.1.13
+
+- **There’s a second way to finish a card, and it doesn’t need you to be signed
+  in.** Under **🚀 Send to Yoto** in step 3 there is now
+  **📁 Save the files to a folder**. Press it and Yoto Maker puts everything for
+  your card — the audio, the pictures, and a page of instructions — into a folder
+  in your **Documents**, under **Yoto Maker**. You then put them on Yoto’s
+  website yourself. Nothing about sending straight to your Yoto has changed.
+- **The folder comes with instructions written for your card.** A page called
+  **What to do next** opens in your browser and names your card, lists your
+  actual files in order, links to Yoto’s website, and ends where it should — at
+  tapping a blank card in the Yoto app. It stays in the folder, so you can open
+  it a week later, or on a different computer.
+- **Files Yoto’s website is fussy about are saved as MP3 copies.** They’re the
+  same audio, and Yoto Maker tells you which ones it did that to. Your original
+  files are untouched.
+- **Nothing is ever overwritten.** Save the same card twice and you get a second
+  folder ending in **(2)**, exactly like copying a file in Windows.
 
 ### 🆕 New in v0.1.12
 
@@ -217,6 +236,30 @@ Adding audio, pictures, and printing labels all work without it.
   library, per-track icons, and label PDF are all verified end-to-end.
 - The Yoto upload flow is implemented against Yoto's documented API and covered
   by tests with mocked responses; live upload needs your Client ID (above).
+
+## ❓ Not verified in v0.1.13
+
+- **Whether saving to a folder fixes the card that never finishes downloading.**
+  This feature exists to route around a card that sits on the player and never
+  completes its download for offline listening. The saving itself has been
+  tested end to end on this computer: the folder is written correctly, the files
+  are numbered in playing order, the ones Yoto's website is fussy about are
+  saved as MP3 copies, the instructions page opens on its own, and nothing is
+  ever overwritten. **None of that is the same as knowing the original problem
+  is solved.** Answering that needs a physical Yoto player, and there isn't one
+  here — so this ships as a way around the problem, not as a proven fix for it.
+- **⚠️ A card that plays in the Yoto phone app proves nothing about this.**
+  Streaming in the app will very likely work even on a card a player cannot
+  download — which is exactly why this problem went unnoticed for three
+  releases. The questions that matter are whether the **download for offline
+  finishes** on the player itself, and whether the card then plays with the
+  wi-fi turned **off**.
+- **Whether Yoto's website accepts the files.** The folder is built to what Yoto
+  publishes about what its website takes — accepted kinds of audio file, and its
+  size and length limits. Those figures are Yoto's documentation, not something
+  measured here, and nobody has yet uploaded one of these folders by hand. If a
+  real upload ever disagrees with what the instructions page says, the upload is
+  right.
 
 ## ❓ Not verified in v0.1.10
 

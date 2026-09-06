@@ -36,6 +36,83 @@ def _bundle_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+# --------------------------------------------------------------------------- #
+# Where the user's saved card folders go.
+#
+# NOT %LOCALAPPDATA%, and NOT work/. "In your Documents, under Yoto Maker" is a
+# sentence a person can say, and follow, about a computer that is not in front of
+# them — which is the use case that decides this
+# (design-handoffs/export-only-mode/overview.md §5.1).
+# --------------------------------------------------------------------------- #
+SAVED_FOLDER_NAME = "Yoto Maker"
+
+# FOLDERID_Documents. Resolved through the OS, never by joining
+# %USERPROFILE%\Documents: OneDrive redirects that folder and localized installs
+# rename it, and the one moment this value matters is the moment a guess is wrong.
+_FOLDERID_DOCUMENTS = "{FDD39AD0-238F-46AF-ADB4-6C85480369C7}"
+
+
+def _windows_documents_dir() -> Path | None:
+    """Ask Windows where Documents actually is. None if the call fails.
+
+    ctypes + shell32 is stdlib, so a PyInstaller-frozen build needs no hook.
+    Every failure path returns None so the caller can fall back rather than 500.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _GUID(ctypes.Structure):
+            _fields_ = [
+                ("Data1", wintypes.DWORD),
+                ("Data2", wintypes.WORD),
+                ("Data3", wintypes.WORD),
+                ("Data4", ctypes.c_ubyte * 8),
+            ]
+
+        ole32 = ctypes.windll.ole32
+        shell32 = ctypes.windll.shell32
+        ole32.CLSIDFromString.argtypes = [ctypes.c_wchar_p, ctypes.POINTER(_GUID)]
+        shell32.SHGetKnownFolderPath.argtypes = [
+            ctypes.POINTER(_GUID),
+            wintypes.DWORD,
+            wintypes.HANDLE,
+            ctypes.POINTER(ctypes.c_wchar_p),
+        ]
+
+        guid = _GUID()
+        if ole32.CLSIDFromString(_FOLDERID_DOCUMENTS, ctypes.byref(guid)) != 0:
+            return None
+        out = ctypes.c_wchar_p()
+        # KF_FLAG_DEFAULT = 0; NULL token = the calling user.
+        if shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(out)) != 0:
+            return None
+        try:
+            value = out.value
+        finally:
+            ole32.CoTaskMemFree(out)
+        return Path(value) if value else None
+    except Exception:  # noqa: BLE001 - any ctypes failure falls back below
+        return None
+
+
+def resolve_documents_dir() -> Path:
+    """The user's Documents folder.
+
+    ``YOTO_DOCUMENTS_DIR`` wins when set. It exists so UAT can point a run at a
+    scratch folder, and so a redirected-Documents machine can be simulated
+    without owning one.
+    """
+    env = os.environ.get("YOTO_DOCUMENTS_DIR")
+    if env and env.strip():
+        return Path(env.strip())
+    if sys.platform.startswith("win"):
+        found = _windows_documents_dir()
+        if found:
+            return found
+    return Path.home() / "Documents"
+
+
 # The Yoto public client ID, registered at dashboard.yoto.dev. This is a PKCE
 # *public* client id — it is NOT a secret (it's sent in the browser sign-in URL
 # by design), so shipping it in the app and committing it is safe and standard.
@@ -189,6 +266,7 @@ YOTO_REDIRECT_PATH = "/yoto/callback"
 class Config:
     data_dir: Path = field(default_factory=_local_appdata)
     bundle_root: Path = field(default_factory=_bundle_root)
+    documents_dir: Path = field(default_factory=resolve_documents_dir)
     # Snapshot taken when the singleton is built. DO NOT read this at runtime:
     # a Client ID saved after startup would not appear here. Everything in the
     # app calls resolve_client_id() / client_id_source() live. Kept because
@@ -203,6 +281,15 @@ class Config:
     def work_dir(self) -> Path:
         """Scratch space for downloaded/transcoded audio and images."""
         return self.data_dir / "work"
+
+    @property
+    def saved_dir(self) -> Path:
+        """Where the user's saved card folders go: <Documents>\\Yoto Maker.
+
+        Deliberately NOT created by ensure_dirs(). The app does not put a folder
+        in someone's Documents until they actually ask it to save something.
+        """
+        return self.documents_dir / SAVED_FOLDER_NAME
 
     @property
     def token_path(self) -> Path:

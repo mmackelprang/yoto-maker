@@ -194,3 +194,655 @@ def test_measured_contrast_figures_are_present(styles_css):
     """
     assert "5.03:1" in styles_css
     assert "5.87:1" in styles_css
+
+
+# --------------------------------------------------------------------------- #
+# Save-to-a-folder mode. docs/design-handoffs/export-only-mode/.
+# --------------------------------------------------------------------------- #
+import re
+
+# "path" is in copy.md's preamble ban list alongside the rest, and it holds
+# against the shipped markup — nothing user-visible in index.html says it.
+_BANNED_IN_COPY = ("export", "directory", "path", "file format", "codec",
+                   "transcode", "metadata")
+
+
+def _visible_text(index_html: str) -> str:
+    """Text nodes only. Comments are stripped FIRST — the new markup's own
+    comments say "export" repeatedly, and they are not user-visible."""
+    without_comments = re.sub(r"<!--.*?-->", " ", index_html, flags=re.S)
+    return " ".join(re.findall(r">([^<>]+)<", without_comments))
+
+
+def test_the_export_block_sits_after_connect_warn_and_before_adv_row(index_html):
+    order = [
+        index_html.index(f'id="{el}"')
+        for el in ("connectWarn", "exportRow", "exportProgress", "exportError",
+                   "exportDone", "exportNote", "exportActions", "exportOpenError",
+                   "advRow")
+    ]
+    assert order == sorted(order)
+
+
+def test_adv_row_is_still_the_last_child_of_step_3(index_html):
+    """configuration-surface interactions.md §1.4, unchanged by this feature."""
+    assert index_html.index('id="advRow"') > index_html.index('id="exportOpenError"')
+
+
+def test_the_export_row_is_never_hidden(index_html):
+    row = index_html[index_html.index('id="exportRow"'):]
+    row = row[:row.index(">") + 1]
+    assert "hidden" not in row
+
+
+def test_the_export_button_is_never_disabled_by_connection_state(app_js):
+    """overview.md §10.1. Disabling it would delete the feature's reason to exist."""
+    assert "#exportBtn\").disabled = !STATUS" not in app_js
+    assert "#exportBtn\").disabled = !connected" not in app_js
+    assert 'show($("#exportRow")' not in app_js
+
+
+def test_the_word_export_never_reaches_the_user(index_html):
+    """Acceptance criterion 6."""
+    text = _visible_text(index_html).lower()
+    for word in _BANNED_IN_COPY:
+        assert word not in text, f"{word!r} is visible in index.html"
+
+
+# --------------------------------------------------------------------------- #
+# The same ban, everywhere the feature's copy actually lives.
+#
+# index.html carries one changed sentence. app.js renders ~25 of these strings
+# and yoto_maker/export/sheet.py renders the whole instruction page — the largest
+# body of user-visible copy in the app — and neither was guarded.
+#
+# WHAT THIS COVERS: string literals that get rendered.
+# WHAT IT DELIBERATELY DOES NOT: comments, identifiers, DOM ids (`#exportError`
+# is correct and intentional), route paths and URLs, and the `${…}` expressions
+# inside template literals. All of those are code; none of them is copy.
+# --------------------------------------------------------------------------- #
+import ast
+from pathlib import Path
+
+_ID_SELECTOR = re.compile(r"^#[A-Za-z][\w-]*$")
+_ROUTE_OR_URL = re.compile(r"^(/|https?://)")
+
+
+def _js_rendered_strings(js: str) -> list[str]:
+    without_comments = re.sub(r"/\*.*?\*/", " ", js, flags=re.S)
+    without_comments = re.sub(r"(?m)^[ \t]*//.*$", " ", without_comments)
+    without_comments = re.sub(r"(?m)(?<=[;,)}\]\s])//[^\n]*$", " ", without_comments)
+
+    found = re.findall(r'"((?:[^"\\\n]|\\.)*)"', without_comments)
+    found += re.findall(r"'((?:[^'\\\n]|\\.)*)'", without_comments)
+    # A template literal's ${…} holds an expression, not copy: `${exportWhere(r)}`
+    # would trip the guard on a function name the user never sees.
+    found += [
+        re.sub(r"\$\{[^{}]*\}", " ", t)
+        for t in re.findall(r"`((?:[^`\\]|\\.)*)`", without_comments, flags=re.S)
+    ]
+    return [s for s in found
+            if not _ID_SELECTOR.match(s) and not _ROUTE_OR_URL.match(s)]
+
+
+def _py_rendered_strings(path: Path) -> list[str]:
+    """Every string constant in a module except its docstrings.
+
+    ast rather than a regex, for one specific reason: a docstring IS a string
+    literal, and sheet.py's own module docstring names the route it is served
+    from. Comments never reach the tree at all, which is the other half of it.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docstrings = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                 ast.AsyncFunctionDef)):
+            continue
+        body = node.body
+        if (body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            docstrings.add(id(body[0].value))
+    return [n.value for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and id(n) not in docstrings]
+
+
+def _sheet_py() -> Path:
+    from yoto_maker.export import sheet as sheet_mod
+
+    return Path(sheet_mod.__file__)
+
+
+def test_the_banned_words_never_reach_the_user_from_app_js(app_js):
+    for text in _js_rendered_strings(app_js):
+        low = text.lower()
+        for word in _BANNED_IN_COPY:
+            assert word not in low, f"{word!r} is in a rendered app.js string: {text!r}"
+
+
+def test_the_banned_words_never_reach_the_user_from_the_instruction_sheet():
+    for text in _py_rendered_strings(_sheet_py()):
+        low = text.lower()
+        for word in _BANNED_IN_COPY:
+            assert word not in low, f"{word!r} is in a rendered sheet.py string: {text!r}"
+
+
+def test_the_ban_guard_actually_reaches_the_copy_it_guards(app_js):
+    """A guard whose extractor returns nothing passes trivially and proves
+    nothing. Pin that both extractors reach real, known user-visible strings."""
+    js = _js_rendered_strings(app_js)
+    assert any("Yoto Maker couldn’t save the files." in s for s in js)
+    assert any("in a folder called" in s for s in js)
+    assert any("bigger than Yoto allows for a single track" in s for s in js)
+
+    sheet = _py_rendered_strings(_sheet_py())
+    assert any("Open Yoto’s website" in s for s in sheet)
+    assert any("Put it on a card" in s for s in sheet)
+
+
+# --------------------------------------------------------------------------- #
+# The panel's own bookkeeping. Three defects that only show up on the second
+# press of something, which is why they are pinned as assertions on the script.
+# --------------------------------------------------------------------------- #
+def test_the_sheet_link_appends_its_cache_buster_with_the_right_separator(app_js):
+    """sheet_url now carries this save's id, so a bare "?t=" makes a second "?"."""
+    assert 'r.sheet_url + "?t=" + Date.now()' not in app_js
+    assert 'r.sheet_url.indexOf("?") === -1 ? "?" : "&"' in app_js
+
+
+def test_the_open_button_sends_an_id_and_never_a_path(app_js):
+    """overview.md §7.3. The id is opaque and server-minted; a path is refused."""
+    assert "JSON.stringify({ id: exportSaveId })" in app_js
+    assert "JSON.stringify({ path" not in app_js
+    assert "folder_path }" not in app_js
+
+
+def test_a_successful_open_clears_its_own_region_and_nothing_else(app_js):
+    """interactions.md §4.4.2. The reveal button's failures live in
+    #exportOpenError, which holds nothing else — so a successful open clears it
+    UNCONDITIONALLY, and there is no flag to guard anything with.
+
+    #exportError is the SAVE button's region: after a partial save it holds the
+    list of tracks that could not be saved and the pointer to the instruction
+    sheet (copy.md §5.6). The reveal button must not touch it in EITHER
+    direction — not written, not cleared, not re-focused.
+    """
+    body = app_js.split("async function openSavedFolder")[1]
+    body = body[:body.index("// ---- wire up")]
+    assert 'clearError($("#exportOpenError"))' in body
+    assert "exportErrorIsRevealFailure" not in body
+    # The QUOTED id, so this tests the selectors the code actually uses and not
+    # the comments, which name #exportError precisely to say it is off limits.
+    # "#exportOpenError" does not contain "#exportError" as a substring.
+    assert '"#exportError"' not in body, "the reveal button still touches #exportError"
+
+
+def test_a_reveal_still_in_flight_cannot_undo_a_clear(app_js):
+    """Pre-merge review M1. Both clears of #exportOpenError were undoable by a
+    request that was already in flight.
+
+    The open route does a filesystem check and then os.startfile, which on a
+    OneDrive-redirected or offline folder takes seconds — long enough for her to
+    press "📁 Save the files to a folder" because nothing visibly happened. The
+    reveal failure then landed AFTER the new run cleared the region and put the
+    PREVIOUS folder's path under the NEW folder's buttons, which is exactly what
+    interactions.md §3.1 step 1 exists to prevent. The same in-flight press
+    survived "Start a new card" and re-showed a discarded card's folder on a
+    blank draft — §9.3's case, and the one the commit claims to close.
+
+    The fix is the generation pattern saveToFolder already uses, for the other
+    button: bump wherever the region is cleared, capture before the request,
+    drop the answer if the clear has already happened.
+    """
+    assert "let exportRevealGeneration = 0;" in app_js
+    # Bumped by all three of §4.4.2's "cleared by" rows, and nothing else.
+    assert app_js.count("exportRevealGeneration += 1;") == 3
+
+    body = app_js[app_js.index("async function openSavedFolder"):]
+    body = body[:body.index("// ---- wire up")]
+    assert "const revealGeneration = exportRevealGeneration;" in body
+    # Checked on BOTH arms — the success arm clears, the failure arm renders,
+    # and neither may act on a panel that has moved on.
+    assert body.count("if (revealGeneration !== exportRevealGeneration) return;") == 2
+
+    for clearer, label in (
+        (app_js[app_js.index("async function saveToFolder"):
+                app_js.index("async function openSavedFolder")], "a new save run"),
+        (app_js[app_js.index('$("#startOver")'):], "start over"),
+    ):
+        assert "exportRevealGeneration += 1;" in clearer, label
+
+
+def test_start_over_clears_rather_than_hides_the_reveal_region(app_js):
+    """interactions.md §9.3 and §4.4.2 row (iii) both say CLEARED. A case-(b)
+    failure leaves a .mono-value child holding the old folder's full path, and
+    hiding the box would keep that path in the DOM of a blank draft."""
+    handler = app_js[app_js.index('$("#startOver")'):]
+    assert 'clearError($("#exportOpenError"))' in handler
+    assert 'show($("#exportOpenError"), false)' not in handler
+
+
+def test_a_hung_poll_becomes_a_failed_poll(app_js):
+    """Pre-merge review M2. The retry could only see a poll that FAILED, never
+    one that was never answered — and "Yoto Maker stopped answering" is the
+    literal case copy.md §5.10 is named for.
+
+    fetch() has no timeout of its own, so a socket that is accepted and never
+    answered never rejects: firstFailureAt was never set, §5.10 never rendered,
+    and the bar sat frozen with the button disabled and no Cancel — the exact
+    "a frozen bar reads as a hung app" state interactions.md §4a's upper bound
+    exists to prevent.
+    """
+    block = app_js[app_js.index("async function pollJob"):app_js.index("// ---- state")]
+    assert "new AbortController()" in block
+    assert "control.abort()" in block
+    assert "signal: control.signal" in block
+    timeout = int(re.search(r"const POLL_TIMEOUT_MS = (\d+);", app_js).group(1))
+    window = int(re.search(r"const POLL_RETRY_WINDOW_MS = (\d+);", app_js).group(1))
+    # One timeout must fit inside the window several times over, or the window
+    # is really "one hung request" and the retry never gets a second attempt.
+    assert timeout * 2 <= window, (timeout, window)
+    # Worst case start-to-message is the window plus one final timeout, and it
+    # must stay under §4a's ~30s line.
+    assert window + timeout < 30000, (window, timeout)
+
+
+def test_the_retry_never_swallows_a_deliberate_cancel(app_js):
+    """Pre-merge review L3. api() re-throws AbortError unchanged precisely so a
+    user's own cancel is never dressed up as a network failure (app.js:12-22).
+    The retry must not undo that: only pollJob's OWN timeout is retryable."""
+    block = app_js[app_js.index("async function pollJob"):app_js.index("// ---- state")]
+    assert 'e.name === "AbortError"' in block
+    assert "control.timedOut" in block
+
+
+def test_the_retry_window_is_measured_on_a_monotonic_clock(app_js):
+    """Pre-merge review L2. Date.now() is not monotonic: an NTP correction
+    backwards mid-window makes the elapsed time negative and the loop retries
+    forever; forwards spends the whole window on the first failure, skipping
+    the "retry first" §4a rule 1 requires."""
+    code = _code_only(app_js[app_js.index("async function pollJob"):
+                             app_js.index("// ---- state")])
+    assert "performance.now()" in code
+    assert "Date.now()" not in code
+
+
+def test_a_disowned_save_stops_painting_the_panel(app_js):
+    """Pre-merge review L5. Both generation checks were outside the onProgress
+    callback, so a save the user had discarded kept writing #exportBar and
+    #exportMsg for the rest of the job."""
+    save = app_js[app_js.index("async function saveToFolder"):
+                  app_js.index("async function openSavedFolder")]
+    callback = save[save.index("const result = await pollJob("):save.index("retryWindowMs")]
+    assert "if (generation !== exportSaveGeneration) return;" in callback
+
+
+def test_the_reveal_failure_flag_is_gone_from_the_whole_script(app_js):
+    """interactions.md §4.4.2: "it must go rather than be left as dead state that
+    implies a rule that no longer holds"."""
+    assert "exportErrorIsRevealFailure" not in app_js
+
+
+def test_start_over_disowns_a_save_that_is_still_running(app_js):
+    """#startOver is not disabled during a save — only #exportBtn is — so an
+    in-flight poll could resolve and re-show a panel for the discarded card."""
+    assert "exportSaveGeneration += 1;" in app_js
+    # Three, not two, since pre-merge review L5: the two that gate rendering a
+    # result, plus one inside the onProgress callback so a discarded save also
+    # stops PAINTING the panel while it finishes.
+    assert app_js.count("if (generation !== exportSaveGeneration) return;") == 3
+
+
+def test_the_connect_box_no_longer_claims_connecting_is_required(index_html):
+    assert "To send cards straight to your Yoto, connect your account first." in index_html
+    assert "You'll need to connect your Yoto account first." not in index_html
+
+
+def test_the_feature_adds_no_css(styles_css, index_html):
+    """Acceptance criterion 10. If this fails, something in the spec §2 was
+    reinterpreted and it goes back to Designer — do not add a rule to make it
+    pass.
+
+    The .msg-box.warn check is asserted on the RULE, not on the substring:
+    styles.css:14 already carries a comment saying "Deliberately no
+    .msg-box.warn variant", so a bare `"msg-box.warn" not in styles_css` fails
+    on the shipped file and tests the documentation rather than the stylesheet.
+    What must stay true is that tokens.md §1's refusal of that variant is still
+    a refusal — i.e. no selector declares it.
+    """
+    for token in ("export", "#exportRow", "#exportBtn"):
+        assert token not in styles_css
+    assert not re.search(r"^\s*\.msg-box\.warn\b", styles_css, flags=re.M)
+
+    block = index_html[index_html.index('id="exportRow"'):index_html.index('id="advRow"')]
+    # Compared as CLASS TOKENS, not as whole attribute strings: #exportProgress
+    # is class="progress hidden", which no attribute-level allow list would
+    # contain, and the intent is "every class here is a shipped primitive".
+    used = set()
+    for attr in re.findall(r'class="([^"]+)"', block):
+        used.update(attr.split())
+    allowed = {"btn", "primary", "tiny", "progress", "bar", "msg", "msg-box",
+               "err", "ok", "info", "done-actions", "hidden"}
+    assert used <= allowed, used - allowed
+
+
+def test_the_export_panel_renders_only_from_the_job_result(app_js):
+    """It must never rebuild the folder name or path from anything local.
+
+    Sliced across the whole render half, from the folder sentence's own helper
+    down to the start of the request: r.folder_name is read in exportWhere(),
+    which sits above renderExportResult(), so a slice starting at the renderer
+    would miss it.
+    """
+    block = app_js[app_js.index("function exportWhere"):app_js.index("async function saveToFolder")]
+    assert "Documents" not in block.replace("in your Documents, under Yoto Maker", "")
+    assert "r.folder_path" in block and "r.folder_name" in block
+
+
+def test_the_open_button_is_omitted_not_disabled(app_js):
+    assert 'show($("#exportOpen"), !!r.can_open)' in app_js
+    assert '#exportOpen").disabled' not in app_js
+
+
+def test_there_is_no_cancel(app_js, index_html):
+    """jobs.py has no cancellation and this PR does not add one (spec §2.8)."""
+    assert "exportCancel" not in app_js
+    assert "exportCancel" not in index_html
+
+
+def test_start_over_clears_the_saved_panel(app_js):
+    handler = app_js[app_js.index('$("#startOver")'):]
+    assert 'show($("#exportActions"), false)' in handler
+    assert '$("#exportReadme").removeAttribute("href")' in handler
+
+
+def test_start_over_clears_all_six_regions(app_js):
+    """interactions.md §9.3, amended for the sixth. A reveal failure left behind
+    describes a folder belonging to the card she has just discarded, and it would
+    survive onto a blank draft."""
+    handler = app_js[app_js.index('$("#startOver")'):]
+    for region in ("exportProgress", "exportError", "exportDone", "exportNote",
+                   "exportActions"):
+        assert f'show($("#{region}"), false)' in handler, region
+    # The sixth is CLEARED rather than hidden — see the test below for why.
+    assert 'clearError($("#exportOpenError"))' in handler
+
+
+def test_the_recovery_sentence_appears_once_however_many_ceilings_fired(app_js):
+    assert app_js.count("make two shorter cards instead of one") == 1
+
+
+def test_the_split_note_is_one_paragraph_however_many_tracks_were_split(app_js):
+    """copy.md §5.3, which replaces the plan's paragraph-per-group stopgap.
+
+    It is one fact about the card, not N facts, and N paragraphs would blow
+    overview.md §10.3's five-paragraph budget for the note box.
+    """
+    block = app_js[app_js.index("function exportNotes"):app_js.index("function exportFailureParagraphs")]
+    assert "for (const g of r.split_groups)" not in block
+    assert "r.split_groups.length === 1" in block
+    assert "r.split_groups.length > 1" in block
+
+
+def test_the_oversize_note_ends_on_the_list_in_both_variants(app_js):
+    """copy.md §5.9 moved the list to the end so both variants finish on the
+    actionable thing, and rejected the earlier draft's closing advice."""
+    block = app_js[app_js.index("function exportNotes"):app_js.index("function exportFailureParagraphs")]
+    assert "needs making smaller" not in block
+    assert "those tracks need" not in block
+    assert block.count("which one it is: ${list}") == 1
+    assert block.count("which ones they are: ") == 1
+
+
+def test_a_failed_open_moves_focus_and_renders_the_path(app_js):
+    """interactions.md §4.4.2. The failure renders into #exportOpenError and
+    focus moves there — no longer to compensate for a message rendered behind
+    her scroll position (the region is directly beneath the button now), but
+    because it is what announces the message. copy.md §5.5a(b)'s path must be
+    rendered, in .mono-value, or the message is a dead end."""
+    block = app_js[app_js.index("async function openSavedFolder"):]
+    block = block[:block.index("// ---- wire up")]
+    assert 'const box = $("#exportOpenError")' in block
+    assert "box.focus()" in block
+    assert "e.data && e.data.path" in block
+    assert 'p.className = "mono-value"' in block
+    # showError() sets textContent, which would delete the appended child.
+    assert "showError(" not in block
+
+
+# --------------------------------------------------------------------------- #
+# The two 2026-09-05 rulings. interactions.md §4.4 (a second region) and §4a /
+# copy.md §5.10 (stop asserting an outcome the app does not have).
+# --------------------------------------------------------------------------- #
+def test_the_reveal_button_has_its_own_region_below_the_button(index_html):
+    """interactions.md §1 note 5 and §4.4.2's Region row. Feedback sits beneath
+    the control that raised it — overview.md §4.3 point 1's own rule, which
+    refused a placement precisely because it made one button's feedback appear
+    next to a different button."""
+    assert index_html.index('id="exportOpenError"') > index_html.index('id="exportActions"')
+    div = index_html[index_html.index('id="exportOpenError"'):]
+    div = div[:div.index(">") + 1]
+    assert 'class="msg-box err hidden"' in div
+    assert 'role="alert"' in div
+    assert 'tabindex="-1"' in div
+
+
+def test_the_new_region_adds_no_tab_stop(index_html):
+    """interactions.md §6.1. A tabindex="-1" div is reachable by the focus move
+    and by the virtual cursor, never by Tab — which is what lets §1 append it
+    after #exportActions without touching the order §6.1's table fixes.
+
+    Asserted on the WHOLE element, not on its opening tag: slicing to the tag
+    made the "no focusable child" checks unfalsifiable, since a tag cannot
+    contain another tag.
+    """
+    start = index_html.rindex("<div", 0, index_html.index('id="exportOpenError"'))
+    element = index_html[start:index_html.index("</div>", start) + len("</div>")]
+    assert 'tabindex="-1"' in element
+    assert 'tabindex="0"' not in element
+    # It must be EMPTY — a focusable child would add the tab stop the div itself
+    # avoids, which is the whole claim §6.1 makes about this element.
+    assert re.search(r'id="exportOpenError"[^>]*></div>$', element), element
+
+
+def test_the_export_block_has_exactly_six_regions(index_html):
+    """overview.md §13's everyday-path ledger, which now says SIX. A number in a
+    ledger that quietly stops matching is exactly the drift that section exists
+    to catch — so this enumerates what is actually in the markup and compares,
+    rather than asserting that six ids it already named are present. That way a
+    SEVENTH region fails it, which is the drift that matters.
+    """
+    block = index_html[index_html.index('id="exportRow"'):index_html.index('id="advRow"')]
+    found = set(re.findall(r'id="(export[A-Za-z]*)"', block))
+    # #exportRow/#exportBtn are the two everyday-path elements; #exportBar,
+    # #exportMsg, #exportReadme and #exportOpen are children of regions.
+    regions = found - {"exportRow", "exportBtn", "exportBar", "exportMsg",
+                       "exportReadme", "exportOpen"}
+    assert regions == {"exportProgress", "exportError", "exportDone",
+                       "exportNote", "exportActions", "exportOpenError"}, sorted(regions)
+
+    # And the everyday-path ledger itself: exactly two elements are visible
+    # before anything is pressed. Every region ships .hidden.
+    for region in regions:
+        div = block[block.index(f'id="{region}"'):]
+        div = div[:div.index(">") + 1]
+        assert "hidden" in div, f"{region} is not hidden at rest"
+
+
+def test_the_retry_is_opt_in_and_only_the_save_path_opts_in(app_js):
+    """interactions.md §4a.1, as ruled by the maintainer: the retry is requested
+    per call site, and in this PR only saveToFolder() asks for it.
+
+    doUpdate() must never opt in — it EXPECTS its last poll to fail, because the
+    server exits mid-restart, and it already reports success from that. Retrying
+    there would freeze a bar for the whole window before showing a message that
+    was already right.
+
+    The send path is written (copy.md §9) but deliberately unshipped: verifying a
+    send-path retry needs a live authenticated send against a real Yoto account,
+    which is the exact thing this feature exists to avoid needing. §9.1's stated
+    fallback, taken.
+    """
+    assert "retryWindowMs: POLL_RETRY_WINDOW_MS" in app_js
+    # Every opt-in in the file, however it is spelled — a literal
+    # `retryWindowMs: 8000` at a fourth call site would slip past a check that
+    # only counted the named constant.
+    opt_ins = re.findall(r"retryWindowMs:\s*[^,}\s]+", app_js)
+    assert opt_ins == ["retryWindowMs: POLL_RETRY_WINDOW_MS"], opt_ins
+
+    save = app_js[app_js.index("async function saveToFolder"):
+                  app_js.index("async function openSavedFolder")]
+    assert "retryWindowMs" in save
+
+    # All THREE other call sites in interactions.md §4a.1's table, not just two.
+    for fn, end in (("async function doUpdate", "const CONNECT_WARN"),
+                    ("async function sendToYoto", "async function makeLabel"),
+                    ("async function addYouTube", "async function addFiles")):
+        block = app_js[app_js.index(fn):app_js.index(end)]
+        assert "retryWindowMs" not in block, f"{fn} must not opt in"
+
+
+def test_the_retry_window_stays_inside_the_designed_bounds(app_js):
+    """interactions.md §4a rule 1. The number is Builder's measurement, but the
+    two bounds are the design's: long enough to ride out a busy machine, and
+    under ~30s, "past which the cure is the disease"."""
+    window = int(re.search(r"const POLL_RETRY_WINDOW_MS = (\d+);", app_js).group(1))
+    assert 5000 <= window < 30000, window
+
+
+def test_the_retry_is_silent(app_js):
+    """interactions.md §4a rule 1: during the retry window the bar and the last
+    #exportMsg line stay EXACTLY as they were. A blip that resolves must leave
+    nothing to read, and onProgress is only ever called with a real job status."""
+    block = app_js[app_js.index("async function pollJob"):app_js.index("// ---- state")]
+    # The real pin: onProgress is called exactly once, AFTER a poll came back —
+    # it is the only channel pollJob has to the screen, so if the retry branch
+    # cannot reach it, the retry cannot change anything visible whatever words
+    # someone chooses.
+    assert block.count("onProgress(") == 1
+    assert block.count("onProgress(job.percent, job.message)") == 1
+    # And the retry branch touches no element directly. This is what a
+    # `$("#exportMsg").textContent = "Hold on…"` inside the catch would fail —
+    # a vocabulary blocklist would not.
+    catch = block[block.index("} catch (e) {"):block.index("} finally {")]
+    assert "$(" not in catch and "document." not in catch, catch
+
+
+def test_lost_contact_replaces_the_outcome_claim_and_only_then(app_js):
+    """copy.md §5.10's boundary table, which is normative. Getting this wrong
+    means showing an uncertainty message for a failure the app definitely knows
+    about — or, worse, keeping "Nothing was saved" for one it does not."""
+    save = app_js[app_js.index("async function saveToFolder"):
+                  app_js.index("async function openSavedFolder")]
+    # Whitespace-insensitive: this pins the nesting, not the indentation.
+    assert re.search(r"e\.lostContact\s*\?\s*EXPORT_LOST_CONTACT\s*:\s*"
+                     r"e\.status === 400\s*\?\s*\[e\.message\]\s*:", save), save
+    # The refusal and the job-reported error keep §5.7 / §3 untouched.
+    assert "EXPORT_FAIL_HEAD" in save and "EXPORT_FAIL_TAIL" in save
+    # A POST that answers without a job id must not reach the poll at all, or
+    # it would spend the retry window 404ing and then claim lost contact for a
+    # job that never started.
+    assert "if (!job_id) throw" in save
+
+    # lostContact is set in exactly one place: pollJob, after the window is
+    # spent. A job that reported its own error throws a bare Error, so it can
+    # never carry the flag.
+    assert app_js.count("e.lostContact = true;") == 1
+    poll = app_js[app_js.index("async function pollJob"):app_js.index("// ---- state")]
+    assert "e.lostContact = true;" in poll
+    assert 'if (job.status === "error") throw new Error(' in poll
+
+
+def _code_only(block: str) -> str:
+    """Strip `//` line comments, so an assertion about the CODE cannot be
+    satisfied — or broken — by prose that merely names the thing it forbids.
+
+    This exists because two assertions in this file were caught tripping on
+    their own explanatory comments: the comments correctly name #exportError and
+    Date.now() in order to say those must not be used.
+    """
+    out = re.sub(r"(?m)^[ \t]*//.*$", "", block)
+    return re.sub(r"(?m)(?<=[;,)}\]\s])//[^\n]*$", "", out)
+
+
+def _joined(block: str) -> str:
+    """Adjacent string literals, concatenated as the user will read them.
+
+    Copy assertions must not be sensitive to where the source happens to wrap a
+    `"…" + "…"` pair — that is source layout, not copy, and a reflow would
+    otherwise break a test that has nothing to say about it.
+    """
+    return re.sub(r'"\s*\+\s*"', "", block)
+
+
+def test_the_lost_contact_message_claims_no_outcome_and_names_no_folder(app_js):
+    """copy.md §5.10. The head and half the tail of §5.7 are assertions the app
+    is in no position to make; "Nothing on this card has changed" is the half
+    that is true however the save ended, and it is kept."""
+    block = _joined(app_js[app_js.index("const EXPORT_LOST_CONTACT"):
+                           app_js.index("// The opaque id of the save")])
+    # Paragraph 1 — the correction. The claim is dropped, the true half kept.
+    assert ("Yoto Maker stopped answering while it was saving, so it can’t tell "
+            "you whether it finished. Nothing on this card has changed.") in block
+    assert "Nothing was saved" not in block
+    assert "couldn’t save the files" not in block
+    # Paragraph 2 — a test she can perform, and her ONLY route to the sheet in
+    # this state: no result arrived, so "📄 What to do next" was never drawn, and
+    # the page is named in words instead.
+    assert ("Look in your Documents, under Yoto Maker, for a folder named after "
+            "this card. If there’s a page in it called “What to do next”, the "
+            "save finished — that page lists what’s actually there.") in block
+    # The folder is NOT named: the panel has no result, so it does not know the
+    # name — the card name is not it (sanitized, possibly " (2)"). The JS-side
+    # reconstruction overview.md §11.3 forbids.
+    assert "folder_name" not in block and "r.folder" not in block
+    # Paragraph 3 — check the app is alive, then the permission to press again,
+    # which is §5.2's invariant in her words.
+    assert "make sure Yoto Maker is still running — look for the 🎵 icon" in block
+    assert "Nothing you already have will be written over." in block
+
+
+def test_the_lost_contact_paragraphs_are_copy_md_verbatim(app_js):
+    """SESSION_STATE §5 constraint 1: copy.md is the AUTHORITY for every
+    user-visible string, and where anything disagrees with it, copy.md wins.
+
+    This is the only test in the suite that asserts a shipped string against the
+    handoff itself rather than against a copy of it. It earns that coupling: the
+    three paragraphs of §5.10 are the longest string in the package, they exist
+    specifically to stop the app claiming an outcome it does not have, and a
+    well-meaning reword — "Nothing was saved yet", say — would put the claim
+    straight back while every other test still passed.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    doc = (repo_root / "docs" / "design-handoffs" / "export-only-mode"
+           / "copy.md").read_text(encoding="utf-8")
+    section = doc[doc.index("### 5.10"):doc.index("**The defect this replaces.**")]
+    spec = re.findall(r"^> `(.+)`$", section, flags=re.M)
+    assert len(spec) == 3, "copy.md §5.10 no longer has three quoted paragraphs"
+
+    block = _joined(app_js[app_js.index("const EXPORT_LOST_CONTACT"):
+                           app_js.index("// The opaque id of the save")])
+    shipped = re.findall(r'^  "(.*)",$', block, flags=re.M)
+    assert shipped == spec
+
+
+def test_lost_contact_leaves_no_bar_and_a_live_button(app_js):
+    """interactions.md §4a rule 2. A bar on screen says the app is still
+    watching; it is not. And §5.10's third paragraph tells her to press the
+    button, so it must be live. Both come from the existing finally block —
+    pinned because a refactor that moved either would break the copy."""
+    save = app_js[app_js.index("async function saveToFolder"):
+                  app_js.index("async function openSavedFolder")]
+    finally_block = save[save.index("} finally {"):]
+    assert 'show($("#exportProgress"), false)' in finally_block
+    assert '$("#exportBtn").disabled = false' in finally_block
+    # No success box and no actions. Asserted where they COULD have been shown
+    # — renderExportResult is the only place that reveals them, and the
+    # lost-contact path throws before reaching it.
+    render = app_js[app_js.index("function renderExportResult"):
+                    app_js.index("async function saveToFolder")]
+    assert 'show($("#exportActions"), true)' in render
+    assert 'show($("#exportActions"), true)' not in save
+    assert "renderExportResult(result)" in save
+    assert save.index("renderExportResult(result)") < save.index("} catch (e) {")
