@@ -1,8 +1,12 @@
 # Save-to-a-folder mode — design spec
 
-**Status:** **Approved 2026-09-05.** Planned and queued as BUILDER_QUEUE item 19
-(plan: `docs/superpowers/plans/2026-09-05-export-only-mode.md`). Not yet shipped.
-**Date:** 2026-09-05
+**Status:** **Approved 2026-09-05. Shipped 2026-09-06** as BUILDER_QUEUE item 19,
+[PR #24](https://github.com/mmackelprang/yoto-maker/pull/24) (`7574d0d`), in
+v0.1.13 (plan: `docs/superpowers/plans/2026-09-05-export-only-mode.md`).
+*(This line read "Not yet shipped" until 2026-09-06. Corrected when §10 of
+`copy.md` was added, because that section's whole argument is that the button
+this package built is **already on the screen** when a send fails.)*
+**Date:** 2026-09-05, amended 2026-09-06
 **Relationship to prior handoffs:** **extends** [`configuration-surface/`](../configuration-surface/).
 Deviates from nothing.
 
@@ -786,6 +790,23 @@ on the send path is not in scope (§14.2) — but it is worth knowing that the
 export path is where a user will now *find out*, and that is a small argument for
 the send path borrowing these strings later.
 
+> **Resolved 2026-09-06, and in the opposite direction to the guess above.** The
+> send path does **not** borrow §5.9's strings, and it cannot: they say *"Yoto's
+> **website** may refuse it"*, which is false where the app itself is sending,
+> and their `{list}` form is ratified for a file dialog that does not exist
+> there ([item 20's plan
+> §1.4](../../superpowers/plans/2026-09-05-per-track-size-limit.md)). **What the
+> send path borrows is this section's own conclusion, and the button.** When
+> Yoto refuses one track, `copy.md` §10.1 points at `📁 Save the files to a
+> folder` — because for the population that hits it (a local `.wav` or `.flac`)
+> conversion at 192 kbps is exactly the *acting* this section declined to do on
+> the send path, already done, on the other button. **The advise/act split is
+> unchanged: the send path still advises, and the act happens only where the
+> user chose it.**
+>
+> The pre-send advisory this paragraph imagined is queue item 21, still blocked
+> on a live probe and still able to close unshipped.
+
 ### 8.7 The panel and the sheet always name what was converted
 
 By number and title. Not because she needs to act on it, but because a file whose
@@ -1150,6 +1171,21 @@ touched. This feature appends; it does not fork the existing path.
 > of `#sendBtn`, `#sendProgress`, `#sendError`, `#sendDone`, `connectYoto()`,
 > `sendToYoto()`, `POST /api/send` or `YotoClient` is touched. What is given up
 > is the duplicate-card protection. §9 is a written follow-up.
+
+> **Amended again 2026-09-06 — and this change is not this feature's.** Queue
+> item 20 edits two strings rendered into `#sendError`, both inside
+> `YotoClient._friendly_http`'s 413 branch, so the paragraph above is no longer
+> literally true of `#sendError` or `YotoClient`. **This package did not make
+> that change and does not own the send path.** It ratifies the strings —
+> `copy.md` §10, `interactions.md` §4b — for one reason: the per-track refusal
+> **names `📁 Save the files to a folder` and relies on where this package put
+> it.** A string that quotes this package's button label must be findable from
+> this package, or a future relabel silently breaks a recovery on another path.
+>
+> **Everything else in the paragraph stands.** No markup, no control logic, no
+> route, no CSS, no token, no region and no tab stop changes; `#exportRow` is
+> not touched in any way (`copy.md` §10.5). The everyday-path ledger below is
+> unaffected — this is an error path reached only after Yoto has refused.
 
 **Step 3's title and hint.** *"Send it to your Yoto"* names the goal, not the
 mechanism, and stays true (§4.2). `INSTALL-FOR-MOM.md`'s step numbering and

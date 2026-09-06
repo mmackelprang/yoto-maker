@@ -891,11 +891,11 @@ reason: the one moment the value matters is the moment a guess would be wrong.
 ## 8. Strings explicitly unchanged
 
 `index.html` steps 1, 2 and 4 in full; step 3's `h2` and `.hint`; `#connectBtn`;
-`#sendBtn`; `#sendDone`; **every message rendered into `#sendError`** *(§9 is
-specified but not shipped — see §9's banner)*; `#connectWarn` and all of
-`copy.md` §4d; `#advRow`/`#advToggle` in both variants; the header pill; the
-footer; the About modal; every string in the settings view except the one row
-in §7.
+`#sendBtn`; `#sendDone`; **every message rendered into `#sendError` except the
+two in §10** *(§9 is specified but not shipped — see §9's banner)*; `#connectWarn`
+and all of configuration-surface `copy.md` §4d; `#advRow`/`#advToggle` in both
+variants; the header pill; the footer; the About modal; every string in the
+settings view except the one row in §7.
 
 This feature appends. It **edits** exactly one shipped string (§1), and that
 string is edited because the feature makes it false. It **specifies** one string
@@ -908,6 +908,19 @@ corrected rather than quietly outgrown — which is the defect §1 exists to fix
 applied to this file. *Ruling appended 2026-09-05: §9 did not ship, so the
 original wording is restored above — the correction stands as the record of what
 §9 will require when it does.*
+
+*Amended again 2026-09-06, and this time the exception ships.* §10 rules two
+strings rendered into `#sendError` — the per-track 413 and the generic one —
+so the blanket claim is now false for a second and different reason, and the
+carve-out is written into the list rather than left to a reader who finds §10
+later. **The two amendments are not the same event and neither supersedes the
+other:** §9 is a *dropped-poll* message, still written and still unshipped; §10
+is a *size refusal*, ruled and shipping. They touch the same region and nothing
+else in common. **The strings §10 changes do not originate with this feature** —
+they ship from queue item 20 — and they are ratified here because one of them
+quotes this package's button label and depends on this package's placement
+(§10.3). If `📁 Save the files to a folder` is ever relabelled, §10.1's string
+is the thing that must be found, and this is where a relabeller will look.
 
 ---
 
@@ -1022,3 +1035,237 @@ same words in two red boxes fourteen pixels apart.
   is already looking at. Widening the diff to a third shipped path to replace an
   honest-but-unhelpful string is not justified here. Worth doing later; not
   worth doing now.
+
+---
+
+## 10. When Yoto refuses something for being too big *(added 2026-09-06)*
+
+**This section ships.** Unlike §9, which is written and deliberately unshipped,
+§10 rules on two strings that are in flight on
+[queue item 20](../../BUILDER_QUEUE.md) (PR #27) and blocked on that ruling.
+
+`#sendError`, `.msg-box err`. Both strings below are produced server-side, in
+`yoto_maker/yoto/client.py`'s `_friendly_http` 413 branch, and reach the box as
+`e.message` through `showError()` — **one text node, so one paragraph each.**
+That is a rendering fact, not a preference: `showError()` sets `textContent`
+(`app.js:55`), and a multi-paragraph message here would mean changing how the
+send path carries errors, which is not a copy change.
+
+### 10.1 A single track was refused
+
+Raised by the audio PUT — the only caller that knows *which* limit a 413 can
+mean.
+
+**The track has a title** — the shipped case:
+
+> `Yoto wouldn’t take “{title}” — it’s bigger than Yoto allows for a single track. No card was made in your Yoto account. There’s another way to finish this card: press “📁 Save the files to a folder” below.`
+
+**The track has no title** — reachable only through a direct call:
+
+> `Yoto wouldn’t take one of your tracks — it’s bigger than Yoto allows for a single track. No card was made in your Yoto account. There’s another way to finish this card: press “📁 Save the files to a folder” below.`
+
+The three sentences do three jobs, in the order she needs them: **which track**,
+**what it cost her**, **what to do**. §5.9's ordering rule applied — *finish on
+the actionable thing.*
+
+**Where it borrows.** *"bigger than Yoto allows for a single track"* is §5.9's
+ratified clause, **verbatim and unshortened.** The plan that authored the blocked
+string shortened it to *"one track"* to avoid repeating a word; naming the track
+in quotes removes the repetition without touching a ratified phrase, and the two
+paths now say the same words about the same limit — §3's peer-strings principle,
+not duplication to be refactored away.
+
+**`No card was made in your Yoto account.` is the reassurance this package
+owes**, and it is the narrowest true form of it. `create_card()` uploads every
+track first and calls `_create_content()` only after the loop
+(`client.py:166-215`), so a refusal at track 3 of 5 leaves **no card**. It
+deliberately does *not* say *"nothing was added to your Yoto account"*: tracks 1
+and 2 reached Yoto's staging, and a custom icon for them may have been uploaded
+(`client.py:198-200`). A sentence a determined reader could falsify is the kind
+of small dishonesty §5.1 refused the `🎉` for.
+
+> **Standing condition.** This sentence is true only while the card is created
+> after every track uploads. If the send path is ever restructured to create the
+> card first, or incrementally, **this sentence must change with it** — the same
+> obligation §5.7's reassurance carries.
+
+**The rejected first draft is the string that was blocked**, and both of its
+defects are worth keeping written down, because each reads as a detail and
+neither is:
+
+| Rejected | Why |
+| --- | --- |
+| `…Yoto’s limit is 100 MB, and this one is {n} MB.` | §10.2 |
+| `…If you have a shorter recording of it, try that instead…` | §10.3 |
+
+### 10.2 No number is printed, and that is the ruling
+
+**Neither Yoto's ceiling nor the file's size appears.** Three independent
+reasons, any one of which is sufficient:
+
+1. **The sentence refuted itself.** Whole MB at 10⁶ (§5.9's ratified rule) means
+   every size in 100,000,001–100,500,000 renders *"Yoto's limit is 100 MB, and
+   this one is 100 MB"* — immediately after asserting the file is bigger than the
+   limit, and a file just over a ceiling is the **modal** refusal. §5.9's rule is
+   safe there because it prints the size in a **list parenthetical**, several
+   words away from the ceiling. Borrowing it into a single comparative clause is
+   a construction §5.9 never ratified, and the clause is where it breaks.
+2. **§5.9 hedges, and this string cannot.** *"Yoto's website **may** refuse it"*
+   is what makes naming an unverified number honest there. Here Yoto has already
+   refused, so the hedge would be false in the other direction — and naming the
+   number **without** the hedge is weaker evidence-handling than §5.9 itself
+   permits. The blocked string borrowed §5.9's number and left §5.9's hedge
+   behind; the hedge was the load-bearing half.
+3. **She cannot act on it.** §5.4's ratified test is that figures are printed
+   *"because those have a recovery she can perform."* On the advisory path
+   (§5.9) *100 MB* is that recovery — it is the number she reads down the phone.
+   Here the recovery is a button on the same screen, and the number does no work.
+
+**What survives the probe, and this is the point.** The 100 MB figure is Yoto's
+published documentation, not observed behaviour, and `overview.md` §8.6's
+provenance discipline applies. The live probe that would settle it
+([item 20's plan §8](../../superpowers/plans/2026-09-05-per-track-size-limit.md))
+**has not been run.** The refusal itself *is* observed — this string only ever
+renders after Yoto has returned a 413 — so *"Yoto wouldn't take it"* and *"bigger
+than Yoto allows for a single track"* stand whatever the probe finds. **Only the
+number could have been falsified, and it is the one thing not printed.** The
+probe can now change item 21 without touching a shipped string.
+
+**Explicitly rejected fixes**, so none is re-proposed later as an improvement:
+
+| Rejected | Why |
+| --- | --- |
+| Round up rather than to nearest | Buys arithmetic safety by overstating her file by up to 1 MB. A rounding direction chosen to make a sentence work is a number the app no longer means. |
+| One decimal place | Overturns §5.9's whole-MB rule for one sentence, and *"100.3 MB against 100 MB"* is still a comparison she cannot act on. |
+| Compare the bytes, print the number only when it is clear | A byte comparison in `client.py` is what plan §2 forbids and calls the design. The send path advises; it does not measure. |
+| Print her size but not the ceiling | Removes the contradiction and leaves a bare figure with nothing to compare it against. |
+
+### 10.3 The recovery is the save button, and this is the part that needed a ruling
+
+**The blocked string's recovery named the wrong variable.** *"If you have a
+shorter recording of it"* aims at **duration**, and `server/app.py:263` already
+splits every source at 50 minutes unconditionally, so duration cannot be the
+cause of a size refusal. The advice could not work for anybody.
+
+**The remedy that does work is on the same screen.** The population that reaches
+this message is a local `.wav`, `.flac`, `.ogg`, `.opus` or `.mp4` — the send
+path copies those untouched, and CD-quality stereo WAV crosses 100 MB at about
+9½ minutes. `📁 Save the files to a folder` converts every one of them to
+192 kbps MP3, **~72 MB at the same 50-minute bound** (`export/rules.py:26-32`).
+For the modal case, the other button is solved-by-construction.
+
+**Why this is a Designer ruling and not a wording tweak.** §5.7 ratifies the
+cross-path pointer in one direction only — *"You can try again, or send it to
+your Yoto instead."* The mirror image had **no ratified string in either
+package**, and re-framing a send failure as *use the other button* changes what
+the two controls mean to each other.
+
+**Adjacency was already ratified; the words are what was missing.**
+`mockups/step-3.md` §3 has drawn this exact state since 2026-09-05 — a red
+`#sendError` with `📁 Save the files to a folder` directly beneath it — and
+`overview.md` §4.3 point 2 chose `#exportRow`'s position for that property;
+`index.html:219-220` states it in the markup. **But adjacency only puts the
+button in her eyeline; it does not tell her it helps.** Nothing about a button
+labelled *save the files to a folder* suggests it is the answer to *too big*.
+The pointer is what turns a nearby control into a recovery, and without it the
+box is a dead end sitting fourteen pixels above its own answer.
+
+**Why this does not contradict §1.** §1 refused to advertise saving inside
+`#connectRow` — *"two intents in one sentence inside a box whose job is the first
+one… it demotes connecting for the ~200 visits where connecting is correct."*
+That rule is scoped to the **pre-press** box on the everyday path. Here there is
+no competing first answer left: she is connected, the send has already failed,
+and pressing it again cannot succeed, because the file will be the same size.
+**§1's cost does not exist in this state**, so §1's rule does not reach it.
+
+**Why the pointer promises nothing, and why it is not conditional.** A file
+*already* in the copy-as-is set — `overview.md` §8.6's *"50-minute MP3 at
+320 kbps is ~120 MB"* — is copied untouched by the save path
+(`export/rules.py:46-47`: *"it never returns True because a file is large"*), so
+saving would not shrink it. The string therefore says *"There's another way to
+finish this card"* and **never says the files will be smaller.**
+
+> **The pointer needs no file-type condition, because the destination already
+> carries the warning.** A user in that minority presses the button, the save
+> succeeds, and §5.9's advisory fires on the other side — *"Yoto's website may
+> refuse it… tell whoever set Yoto Maker up for you which one it is"* — naming
+> her exact file. The two paths compose: the send path points, and the save path
+> tells the truth about the specific file. Conditioning the pointer on an
+> extension would put a rule in `client.py` that `export/rules.py` already owns,
+> and would guess in the one place the app does not have to.
+
+**Why there is no *"otherwise tell whoever set Yoto Maker up for you"* here.**
+§5.9 needs that fallback because it has no other route to offer. This string has
+one, and the fallback is delivered by the screen that knows whether it is needed
+(the paragraph above). One error box, one action — which is how every other
+`_friendly_http` branch reads.
+
+**Rejected phrasings**
+
+| Rejected | Why |
+| --- | --- |
+| `…press “📁 Save the files to a folder” below, and put the files on Yoto’s website yourself.` | The button's own caption says exactly that, twelve pixels lower (§2). configuration-surface §6.1's split — short label, caption disambiguates — is not re-litigated inside an error box. |
+| `…which saves smaller copies.` | False for the copy-as-is set (`overview.md` §8.6). A promise the app cannot keep on the path it is sending her down. |
+| `…try “📁 Save the files to a folder” instead.` | *instead* was rejected on the button itself (§2) for going stale by state; in a sentence that has just described a failure it also reads as a shrug. |
+| Say nothing, and let the adjacency do the pointing | The finding this section exists for. See above. |
+
+### 10.4 The other arm of the same branch — a 413 from anywhere else
+
+`_friendly_http`'s 413 branch is one `if` with two outcomes, and **ruling one arm
+while orphaning the other is how drift starts.** The default arm — every 413
+that is not the track PUT — is:
+
+> `Yoto wouldn’t take that — it was too big to send. Tell whoever set Yoto Maker up for you.`
+
+**Naming no ceiling is correct and stays.** The helper is shared by six call
+sites; the shipped string named the card-level 5-hour ceiling for all of them,
+including the per-track PUT where that ceiling is certainly the wrong thing to
+say. A sentence that names no limit is the honest reading of *"we cannot tell
+which one it was."*
+
+**The second sentence is added, and closes the app's only dead-end error.** Every
+other branch in this family ends in something she can do — reconnect, try again,
+check the connection. Without it, this is the one red box in Yoto Maker that
+offers nothing at all. configuration-surface `copy.md` §4d's *"no button, and the
+recovery is carried in words instead"* is the ratified pattern for a state the
+app cannot fix, and the phrasing is the one §5.9 already ships (`app.js:2267`).
+
+**No retry hedge**, deliberately. *"If it keeps happening"* invites a press that
+will fail identically — the realistic generic 413 is a card body that is too
+large, and it is the same size next time.
+
+**`{doing}` is deliberately not interpolated**, unlike the 5xx and timeout
+branches. Two of the six call sites are reads (`listing your cards`, `reading the
+card`), and *"Yoto wouldn't take that while listing your cards"* is a sentence
+about nothing. This branch's job is to say *we cannot tell you which limit — here
+is who can.*
+
+> **This string's real home does not exist yet, and that is recorded rather than
+> quietly assumed.** `_friendly_http`'s five sentences — the 401/403, the 413,
+> the 5xx, the timeout and the fallback — are shipped user-facing copy owned by
+> **no** handoff package, and this one is reached from the repair path as well as
+> the send path. It is ruled here because it is the other half of the branch
+> §10.1 changes. Adopting that family into a package of its own is worth a queue
+> row and is **not** done here.
+
+### 10.5 What §10 deliberately does not do
+
+- **No new region and no new markup.** Both strings render into `#sendError`,
+  which is the send button's own feedback region. `interactions.md` §4b carries
+  the contract and the reason.
+- **`#exportRow` is not touched** — not highlighted, not scrolled to, not
+  focused, not moved, and the button gains no state. The string points; the
+  layout already delivers. `interactions.md` §1.1's *"`#exportRow` is never
+  touched by `renderStatus()`"* stands unamended.
+- **`#sendError` still gains no `role` and no `tabindex`.** §9.3 declined it and
+  the decline stands — making it a live region changes announcement behaviour
+  for every shipped send failure. **The cost is higher than when §9.3 wrote it
+  down**: a pointer that is never announced does not point, for a screen-reader
+  user. Recorded against `interactions.md` §11 item 3; not fixed in this pass.
+- **Nothing is said before the send.** Telling her a track is over a limit
+  *before* she presses 🚀 Send to Yoto is queue item 21, which is blocked on the
+  live probe and may close unshipped.
+- **The 100 MB figure keeps its provenance comment in the code.** `_track_too_big`
+  no longer prints the number, but the constant's evidence tier still governs
+  item 21, and deleting the note would lose the reason this string prints no
+  figure at all.

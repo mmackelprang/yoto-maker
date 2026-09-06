@@ -105,16 +105,22 @@ Two things are doing the work here, and neither needed designing.
 
 ---
 
-## 3. After a failed send — the adjacency
+## 3. After a failed send — the adjacency, now named in words
+
+*(Redrawn 2026-09-06. This box held `⚠ …send error…` — a placeholder — from
+2026-09-05 until [`../copy.md`](../copy.md) §10 ruled a real string into it.)*
 
 ```
    │ ┌─────────────────────────────────────────────────────────┐ │
-   │ │ ⚠ …send error…                             .msg-box err │ │
+   │ │ Yoto wouldn’t take “Chapter Nine” — it’s bigger than    │ │  .msg-box err
+   │ │ Yoto allows for a single track. No card was made in     │ │  #sendError
+   │ │ your Yoto account. There’s another way to finish this   │ │  copy.md §10.1
+   │ │ card: press “📁 Save the files to a folder” below.      │ │
    │ └─────────────────────────────────────────────────────────┘ │
    │                                                             │
-   │ ┌──────────────────────────────┐                            │  ← directly
-   │ │ 📁 Save the files to a folder│                            │    beneath the
-   │ └──────────────────────────────┘                            │    symptom
+   │ ┌──────────────────────────────┐                            │  ← the button
+   │ │ 📁 Save the files to a folder│                            │    the sentence
+   │ └──────────────────────────────┘                            │    names
    │ You’ll put them on Yoto’s website yourself. You don’t       │
    │ need to be signed in for this.                              │
    │                                                             │
@@ -129,6 +135,22 @@ user's eyes are on the red box; the recovery is the next thing they meet.
 Note the pairing that results: **one recovery repairs the connection
 (`⚙️ Connect a different Yoto account`), the other goes around it.** Neither
 crowds the other, because they are 13px apart in weight.
+
+> **This drawing is one send failure, not all of them.** The string shown is
+> `../copy.md` §10.1 — the **per-track size refusal**, the only send failure
+> whose recovery is the button below it, because it is the only one a retry
+> cannot fix. Every other message this box can hold — a sign-in that expired, a
+> 5xx, a timeout, a generic 413 — **must not name `📁 Save the files to a
+> folder`**, and `../interactions.md` §4b.1 carries the table. The adjacency
+> drawn here is what makes the pointer findable; it is not a licence to point
+> from every red box.
+>
+> **The word *below* in the string is a contract this drawing is evidence for.**
+> `../interactions.md` §4b.4 states the standing condition: if anything is ever
+> inserted between `#sendError` and `#exportRow`, or `#exportRow` moves, the
+> string changes with it. **If this drawing and that rule ever disagree, the
+> rule wins and the drawing is the bug** — the banner at the top of this file,
+> applied to the one property this section exists to show.
 
 ---
 
@@ -537,5 +559,12 @@ lie** — the same standing condition §10's reassurance sentence carries.
 The send path gets the parallel message in `#sendError` — `../copy.md` §9, and
 §9.2 for why the two are near-identical rather than shared. **It did not ship:**
 the maintainer took §9.1's stated fallback on 2026-09-05, so `#sendError` keeps
-today's generic transport line and §9 is a written follow-up. See §9's banner
-and `../interactions.md` §11 item 5.
+today's generic transport line **for a dropped poll** and §9 is a written
+follow-up. See §9's banner and `../interactions.md` §11 item 5.
+
+*(Clarified 2026-09-06. `#sendError` is no longer untouched in general — it gains
+the two size-refusal strings `../copy.md` §10 rules, drawn in §3 above. That is a
+**different failure** from this one and ships from a different queue item; §9's
+dropped-poll message is still written and still unshipped. Spelled out because
+"`#sendError` keeps today's line" was about to become the kind of stale blanket
+claim this file's banner exists to catch.)*
