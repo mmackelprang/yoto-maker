@@ -7,9 +7,13 @@ and only then changed.
 """
 from __future__ import annotations
 
+import inspect
+import re
+
 import httpx
 import pytest
 
+from yoto_maker.server.app import STATIC_DIR
 from yoto_maker.yoto import client as client_mod
 from yoto_maker.yoto.client import (
     TrackInput,
@@ -18,6 +22,11 @@ from yoto_maker.yoto.client import (
     _friendly_http,
     _track_too_big,
 )
+
+# The cross-path pointer copy.md §10.3 ruled in. Held as one constant because
+# three different assertions need it and a typo in any of them would silently
+# stop guarding anything.
+_POINTER = "press “📁 Save the files to a folder” below"
 
 
 def _mock_client(handler) -> httpx.Client:
@@ -180,37 +189,85 @@ def test_put_audio_streams_the_file_and_never_materialises_it(tmp_path):
 
 # --- 413: which ceiling? ---------------------------------------------------- #
 #
-# Three tests rather than one, because the size assertion and the routing
-# assertion want different fixtures: asserting "118 MB" needs a 118 MB number,
-# and writing a 118 MB file into tmp_path on every suite run to get one would be
-# absurd. So the message is tested directly with a number, and _put_audio is
-# tested only for whether it reaches that message at all.
+# ⚠ These assertions were INVERTED on 2026-09-06 by copy.md §10.2's ruling, and
+# the inversion is the point. The first test used to assert the message named
+# Yoto's 100 MB ceiling and the file's size; it now asserts that NEITHER appears.
+# Deleting it instead would have left the absence unguarded, and the absence is
+# the ruling: the refusal is observed, the 100 MB figure is documentation, and
+# plan §8's live probe has not run. This test is what stops the number coming
+# back as an improvement.
 
-def test_track_too_big_message_names_the_track_the_limit_and_the_size():
-    msg = _track_too_big("Chapter Nine", 118_400_000)
-    assert "Chapter Nine" in msg     # which track
-    assert "100 MB" in msg           # which ceiling
-    assert "118 MB" in msg           # whole MB, 10^6 — copy.md §5.9's ratified rule
-    assert "118.4" not in msg        # never a decimal place
-    assert "5 hours" not in msg      # NOT the card-level ceiling
+def test_track_too_big_names_the_track_and_prints_no_number_at_all():
+    """copy.md §10.2 — the inverse of the assertion this test used to make."""
+    msg = _track_too_big("Chapter Nine")
+
+    assert "Chapter Nine" in msg          # which track — unchanged
+    assert "100" not in msg               # not Yoto's ceiling, in any wording
+    assert "MB" not in msg                # not the file's size either
+    assert "5 hours" not in msg           # and still not the card-level ceiling
+    # Nothing is rounded, so no rounding has to be right. The title carries no
+    # digits, so any digit in the message came from the app.
+    assert not any(ch.isdigit() for ch in msg), msg
 
 
-def test_track_too_big_omits_the_size_when_it_is_unknown():
-    """A missing file probes as 0 bytes; "this one is 0 MB" is nonsense.
+def test_track_too_big_is_not_even_given_a_size():
+    """The structural half of §10.2, and the reason the test above cannot rot.
 
-    Note the assertion is on the CLAUSE, not on the string "0 MB" — "100 MB"
-    contains "0 MB" as a substring, so that check would pass vacuously.
+    Replaces test_track_too_big_omits_the_size_when_it_is_unknown, whose premise
+    (a missing file probes as 0 bytes, and "this one is 0 MB" is nonsense) is now
+    unreachable by construction. A function that never receives a size cannot
+    print one, and a byte comparison cannot creep into client.py behind it —
+    which is plan §2's design, restated as a signature.
     """
-    msg = _track_too_big("Chapter Nine", 0)
-    assert "Chapter Nine" in msg
-    assert "100 MB" in msg
-    assert "this one is" not in msg
+    assert list(inspect.signature(_track_too_big).parameters) == ["title"]
 
 
 def test_track_too_big_falls_back_when_no_title_is_known():
-    msg = _track_too_big(None, 118_400_000)
-    assert "that track" in msg
-    assert "100 MB" in msg
+    msg = _track_too_big(None)
+    assert "one of your tracks" in msg    # copy.md §10.1's no-title arm, verbatim
+    assert "100" not in msg
+    assert _POINTER in msg                # the recovery survives the title fallback
+
+
+def test_track_too_big_is_copy_md_10_1_verbatim():
+    """Both arms, character for character, curly quotes and all.
+
+    The strings are the deliverable of a Designer ruling, not prose this module
+    owns. A paraphrase that reads identically is still a different string, and
+    §10.1's three sentences were ordered deliberately: which track, what it cost
+    her, what to do.
+    """
+    assert _track_too_big("Chapter Nine") == (
+        "Yoto wouldn’t take “Chapter Nine” — it’s bigger than Yoto allows for a "
+        "single track. No card was made in your Yoto account. There’s another "
+        "way to finish this card: press “📁 Save the files to a folder” below."
+    )
+    assert _track_too_big(None) == (
+        "Yoto wouldn’t take one of your tracks — it’s bigger than Yoto allows "
+        "for a single track. No card was made in your Yoto account. There’s "
+        "another way to finish this card: press “📁 Save the files to a folder” "
+        "below."
+    )
+
+
+def test_the_pointer_promises_nothing_about_size():
+    """copy.md §10.3. An oversized file already in the copy-as-is set is copied
+    untouched (export/rules.py:46-47), so saving would not shrink it. The string
+    offers another way to FINISH THE CARD and never claims smaller files."""
+    msg = _track_too_big("Chapter Nine")
+    assert "There’s another way to finish this card" in msg
+    for promise in ("smaller", "shrink", "reduce", "compress"):
+        assert promise not in msg.lower()
+
+
+def test_the_pointer_is_not_conditioned_on_file_type():
+    """§10.3's box: conditioning on an extension would put a rule in client.py
+    that export/rules.py already owns. The save path's §5.9 advisory fires on
+    the other side for the minority this cannot help."""
+    src = inspect.getsource(client_mod._track_too_big)
+    body = src[src.index('"""', src.index('"""') + 3):]  # past the docstring
+    for ext in (".wav", ".flac", ".mp3", ".ogg", ".opus", ".mp4"):
+        assert ext not in body
 
 
 def test_413_on_a_track_upload_uses_the_per_track_message(tmp_path):
@@ -232,6 +289,7 @@ def test_413_on_a_track_upload_uses_the_per_track_message(tmp_path):
 
     assert "Chapter Nine" in str(exc.value)
     assert "5 hours" not in str(exc.value)
+    assert _POINTER in str(exc.value)   # §4b.1 row 1 — the only row that points
 
 
 def test_413_elsewhere_no_longer_claims_a_ceiling_it_cannot_vouch_for():
@@ -244,15 +302,130 @@ def test_413_elsewhere_no_longer_claims_a_ceiling_it_cannot_vouch_for():
     assert "too big" in msg.lower()
 
 
-@pytest.mark.parametrize("exc", [_http_error(401), _http_error(503),
-                                 httpx.ConnectTimeout("slow"), httpx.ConnectError("x")])
+def test_the_generic_413_is_no_longer_a_dead_end():
+    """copy.md §10.4 — the app's only error sentence that offered nothing now
+    ends in configuration-surface §4d's ratified recovery, the phrasing already
+    shipped at app.js:2267."""
+    msg = _friendly_http(_http_error(413), "building your card")
+    assert msg == (
+        "Yoto wouldn’t take that — it was too big to send. "
+        "Tell whoever set Yoto Maker up for you."
+    )
+    # No retry hedge: the realistic generic 413 is the same size next time.
+    assert "keeps happening" not in msg
+    assert "try again" not in msg.lower()
+    # `doing` is deliberately not interpolated — two of the six call sites are
+    # reads, and "wouldn't take that while listing your cards" says nothing.
+    assert "building your card" not in msg
+    # §4b.1 row 2: this arm does NOT point at the save button.
+    assert "Save the files to a folder" not in msg
+
+
+# ⚠ interactions.md §4b.1's table, implemented as a test rather than trusted.
+#
+# The pointer belongs ONLY to failures a retry cannot fix. A size refusal is
+# deterministic — the file is the same size next time — which is what makes
+# "there's another way" honest there and wrong everywhere else. Sending a user
+# with an expired sign-in, or a transient 5xx, to the save button is wrong
+# advice, and it is exactly the leak a string change can reintroduce: the old
+# guard asserted on "100 MB", which this ruling deleted, so it would have gone
+# vacuous and still passed.
+
+_NOT_POINTED_AT = [
+    pytest.param(_http_error(401), id="401-sign-in-expired"),
+    pytest.param(_http_error(403), id="403-sign-in-expired"),
+    pytest.param(_http_error(500), id="500-retry-is-the-recovery"),
+    pytest.param(_http_error(503), id="503-retry-is-the-recovery"),
+    pytest.param(httpx.ConnectTimeout("slow"), id="timeout-retry"),
+    pytest.param(httpx.ConnectError("x"), id="transport-retry"),
+]
+
+
+@pytest.mark.parametrize("exc", _NOT_POINTED_AT)
 def test_too_big_never_leaks_out_of_the_413_branch(exc):
     """_put_audio passes too_big on EVERY failure, not just 413 (client.py:267).
     Only the 413 branch may use it."""
     msg = _friendly_http(exc, "uploading the audio",
-                         too_big=_track_too_big("Chapter Nine", 118_400_000))
+                         too_big=_track_too_big("Chapter Nine"))
     assert "Chapter Nine" not in msg
-    assert "100 MB" not in msg
+    assert _POINTER not in msg
+    assert "Save the files to a folder" not in msg
+    assert "bigger than Yoto allows" not in msg
+
+
+def test_an_expired_sign_in_during_a_track_upload_still_says_reconnect(tmp_path):
+    """§4b.1 row 3, end to end through the call site that supplies `too_big`.
+
+    The MEDIUM this closes: `too_big` is built on every _put_audio failure, so
+    the only thing keeping a 401 from claiming the track was too large is the
+    413 branch's exclusive use of it.
+    """
+    audio = tmp_path / "chapter nine.wav"
+    audio.write_bytes(b"z" * 1024)
+
+    with pytest.raises(YotoError) as exc:
+        YotoClient(client=_mock_client(lambda r: httpx.Response(401)))._put_audio(
+            "http://upload.example/put", audio, title="Chapter Nine"
+        )
+
+    assert str(exc.value) == (
+        "Your Yoto sign-in has expired. Please connect your Yoto account again."
+    )
+
+
+# --- §4b.4: "below" is a positional claim, so it is checked ------------------ #
+
+@pytest.fixture(scope="module")
+def index_html() -> str:
+    return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def app_js() -> str:
+    return (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+
+def test_the_save_button_really_is_below_the_send_error(index_html):
+    """interactions.md §4b.4's standing condition, as an invariant.
+
+    The string says "below". That is true only while #exportRow is the next
+    VISIBLE element after #sendError in step 3 — and the two elements that sit
+    between them in the DOM are both hidden when this message renders.
+    """
+    order = [index_html.index(f'id="{el}"')
+             for el in ("sendError", "sendDone", "connectWarn", "exportRow")]
+    assert order == sorted(order)
+
+    between = index_html[index_html.index('id="sendError"'):
+                         index_html.index('id="exportRow"')]
+    ids = set(re.findall(r'id="([^"]+)"', between)) - {"sendError"}
+    # A new box inserted here is precisely what §4b.4 says must change the string.
+    assert ids == {"sendDone", "connectWarn"}, (
+        f"{ids} now sits between #sendError and #exportRow — copy.md §10.1's "
+        "'below' is no longer true and the string must change with it"
+    )
+
+    for el in ("sendDone", "connectWarn"):
+        tag = index_html[index_html.index(f'id="{el}"'):]
+        assert "hidden" in tag[:tag.index(">") + 1]
+
+    row = index_html[index_html.index('id="exportRow"'):]
+    assert "hidden" not in row[:row.index(">") + 1]
+
+
+def test_connect_warn_cannot_be_visible_during_a_send_that_reaches_a_413(app_js):
+    """The second row of §4b.4's table. #connectWarn renders only for an invalid
+    Client ID, which hard-blocks sign-in, which disables #sendBtn — so a send
+    that can reach a 413 cannot coexist with a visible #connectWarn."""
+    assert '$("#sendBtn").disabled = !connected;' in app_js
+
+
+def test_the_pointer_quotes_the_button_label_that_ships(index_html):
+    """copy.md §10.3: the string is ratified in export-only-mode because it
+    quotes that package's button label — so a future relabel finds it here."""
+    label = "📁 Save the files to a folder"
+    assert f">{label}</button>" in index_html
+    assert label in _track_too_big("Chapter Nine")
 
 
 # --- end to end: the right track gets named --------------------------------- #

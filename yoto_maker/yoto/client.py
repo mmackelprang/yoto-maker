@@ -22,7 +22,10 @@ documentation, not observed behaviour, and the send path — unlike the save-to-
 folder path — has no format reason to re-encode, so acting on them would mean a
 second lossy generation on top of Yoto's own server-side transcode, triggered by
 a number the app cannot verify. The app therefore only EXPLAINS a refusal Yoto
-has already made (see _track_too_big). Reasoning in full:
+has already made (see _track_too_big), and — since 2026-09-06 — explains it
+WITHOUT printing either figure: the ceilings above are documentation the live
+probe has not yet tested, so they stay here, where they govern queue item 21,
+and out of the user-facing string (copy.md §10.2). Reasoning in full:
 docs/superpowers/plans/2026-09-05-per-track-size-limit.md §0.
 """
 from __future__ import annotations
@@ -266,7 +269,7 @@ class YotoClient:
             log.warning("Yoto audio PUT failed (%s, %d bytes): %r", audio_path.name, size, exc)
             raise YotoError(
                 _friendly_http(
-                    exc, "uploading the audio", too_big=_track_too_big(title, size)
+                    exc, "uploading the audio", too_big=_track_too_big(title)
                 )
             ) from exc
 
@@ -500,26 +503,55 @@ def _safe_probe(path: Path) -> AudioInfo:
         return AudioInfo(duration_s=0.0, channels=2, format="mp3", file_size=size)
 
 
-def _track_too_big(title: str | None, size_bytes: int) -> str:
+def _track_too_big(title: str | None) -> str:
     """What to say when Yoto has refused ONE track's audio as too large.
 
-    ⚠ PROVENANCE: the 100 MB figure is Yoto's published documentation
-    (support.yotoplay.com, 2026-07-20), not observed behaviour — the same
-    evidence tier as the accepted-format list in export/rules.py. It is used
-    here ONLY to explain a refusal Yoto has already made. Nothing in this module
-    compares a file against it, and nothing should: the send path advises on
-    size, it does not act on it (queue item 20's plan §0.2). That is why this is
-    prose and not a constant.
+    Verbatim from design-handoffs/export-only-mode/copy.md §10.1. Three
+    sentences doing three jobs, in the order she needs them: which track, what
+    it cost her, what to do.
+
+    ⚠ NO NUMBER IS PRINTED, and the absence IS the ruling (copy.md §10.2) — not
+    an omission to be helpfully filled in later. Neither Yoto's ceiling nor the
+    file's size appears. PROVENANCE is the reason that matters here: the 100 MB
+    figure is Yoto's published documentation (support.yotoplay.com, 2026-07-20),
+    not observed behaviour — the same evidence tier as the accepted-format list
+    in export/rules.py — and plan §8's live probe has NOT been run. The refusal
+    itself *is* observed (this string only renders after Yoto returned a 413),
+    so every clause below survives that probe whatever it finds. The one clause
+    a probe could falsify is the one clause not printed. The figure still
+    governs queue item 21; it is documented in this module's header.
+
+    That is also why this function is not given a size. Nothing here compares a
+    file against a ceiling and nothing should — the send path advises on size,
+    it does not measure it (item 20's plan §0.2 and §2). Taking no size is the
+    cheapest guarantee that no size can be printed.
+
+    ⚠ THE RECOVERY IS THE SAVE BUTTON on the same screen (copy.md §10.3), and it
+    PROMISES NOTHING: a file already in export/rules.py's copy-as-is set is
+    copied untouched (rules.py:46-47), so the string says "there's another way
+    to finish this card" and never says the files will be smaller. It is also
+    deliberately NOT conditioned on file type — for that minority the save path
+    fires its own §5.9 advisory on the other side, naming her exact file. A type
+    check here would put a rule in client.py that export/rules.py already owns.
+
+    "No card was made in your Yoto account." is the narrowest true form of the
+    reassurance this path owes: create_card() uploads every track first and
+    calls _create_content() only after the loop, so a refusal at track 3 of 5
+    leaves no card. It deliberately does not claim NOTHING reached Yoto — tracks
+    1 and 2 reached staging and an icon may have been uploaded. ⚠ STANDING
+    CONDITION (copy.md §10.1): if the send path is ever restructured to create
+    the card first, or incrementally, this sentence must change with it.
+
+    "below" is a positional claim about step 3's markup, held by
+    interactions.md §4b.4's standing condition and pinned in
+    tests/test_send_size_limits.py. If #exportRow ever stops being the next
+    visible thing beneath #sendError, this string changes with it.
     """
-    what = f"“{title}”" if title else "that track"
-    # Whole MB, read as 10^6 — the same conservative reading copy.md §5.9 uses.
-    mb = int(round(size_bytes / 1_000_000))
-    how_big = f", and this one is {mb} MB" if mb > 0 else ""
+    what = f"“{title}”" if title else "one of your tracks"
     return (
-        f"Yoto wouldn’t take {what} — it’s bigger than Yoto allows for one "
-        f"track. Yoto’s limit is 100 MB{how_big}. If you have a shorter "
-        "recording of it, try that instead — otherwise tell whoever set Yoto "
-        "Maker up for you."
+        f"Yoto wouldn’t take {what} — it’s bigger than Yoto allows for a single "
+        "track. No card was made in your Yoto account. There’s another way to "
+        "finish this card: press “📁 Save the files to a folder” below."
     )
 
 
@@ -537,7 +569,25 @@ def _friendly_http(exc: Exception, doing: str, *, too_big: str | None = None) ->
             # say. A caller that knows which limit applies passes `too_big`;
             # everyone else gets a sentence that names no ceiling, because we
             # cannot tell which one it was.
-            return too_big or "Yoto wouldn’t take that — it was too big to send."
+            #
+            # The default arm's second sentence closes the app's only dead-end
+            # error (copy.md §10.4) — configuration-surface §4d's ratified "no
+            # button, the recovery is carried in words" pattern, already shipped
+            # at app.js:2267. Deliberately NO retry hedge: the realistic generic
+            # 413 is an over-large card body, the same size next time. And
+            # `doing` is deliberately NOT interpolated — two of the six call
+            # sites are reads, and "Yoto wouldn't take that while listing your
+            # cards" is a sentence about nothing.
+            #
+            # ⚠ Only this branch may use `too_big`. _put_audio passes it on
+            # EVERY failure, so consuming it in the 401/403, 5xx or timeout arms
+            # would tell a user with an expired sign-in that her track was too
+            # large. interactions.md §4b.1's table is the contract; it is pinned
+            # by test_send_size_limits.py's parametrised leak tests.
+            return too_big or (
+                "Yoto wouldn’t take that — it was too big to send. "
+                "Tell whoever set Yoto Maker up for you."
+            )
         if 500 <= code < 600:
             return f"Yoto had a problem while {doing}. Please try again shortly."
     if isinstance(exc, httpx.TimeoutException):
