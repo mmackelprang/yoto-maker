@@ -164,3 +164,107 @@ def test_split_groups_report_only_real_multi_part_tracks():
     ]
     groups = rules.split_groups(files)
     assert [(g.title, g.parts) for g in groups] == [("Ch Two", 2)]
+
+
+# --------------------------------------------------------------------------- #
+# Task 4 — "What to do next.html"
+# --------------------------------------------------------------------------- #
+from yoto_maker.export import sheet as sheet_mod
+
+
+def _sheet(files, failures=(), picture=None, split=(), version="0.1.13"):
+    return sheet_mod.SheetData(
+        card_name="Bedtime Stories",
+        files=list(files),
+        failures=list(failures),
+        advisories=rules.advise(list(files)),
+        split=list(split),
+        picture_png=picture,
+        has_card_picture_file=picture is not None,
+        version=version,
+        date_label="5 September 2026",
+    )
+
+
+def test_the_sheet_lists_her_actual_files_in_order():
+    html_out = sheet_mod.render_sheet(_sheet([_f(1, "01 - A.mp3"), _f(2, "02 - B.mp3")]))
+    assert html_out.index("01 - A.mp3") < html_out.index("02 - B.mp3")
+    assert "Bedtime Stories" in html_out
+
+
+def test_the_sheet_is_self_contained():
+    """No external request, ever. DESIGN.md §8 — the app makes none anywhere."""
+    html_out = sheet_mod.render_sheet(_sheet([_f(1, "01 - A.mp3")], picture=b"\x89PNG-fake"))
+    assert "<script" not in html_out.lower()
+    assert "<link" not in html_out.lower()
+    assert "data:image/png;base64," in html_out
+    # The ONLY absolute URL on the page is the one she is meant to click.
+    # Asserted as "no plain http:// at all, and every https:// is that one",
+    # not as a count comparison across both schemes: "http://" is not a
+    # substring of "https://", so the plan's loop compared 0 against 1.
+    assert "http://" not in html_out
+    assert html_out.count("https://") == html_out.count("https://my.yotoplay.com") == 1
+
+
+def test_step_6_is_always_present():
+    """Omitting it leaves a correct upload and a card that does nothing."""
+    html_out = sheet_mod.render_sheet(_sheet([_f(1, "01 - A.mp3")]))
+    assert "6. Put it on a card" in html_out
+    assert "tap a blank" in html_out
+
+
+def test_the_picture_step_is_omitted_entirely_when_there_is_no_picture():
+    html_out = sheet_mod.render_sheet(_sheet([_f(1, "01 - A.mp3")]))
+    assert "Card picture.png" not in html_out
+    assert "4. Add the picture" not in html_out
+
+
+def test_a_partial_run_names_the_missing_track_and_counts_only_what_landed():
+    files = [_f(1, "01 - A.mp3"), _f(2, "02 - B.mp3")]
+    html_out = sheet_mod.render_sheet(_sheet(files, failures=["Chapter Four"]))
+    assert "isn’t here" in html_out
+    assert "Chapter Four" in html_out
+    assert "2 tracks" in html_out
+    # "above the card name" (copy.md §6.8) means above the visible <h2>, not
+    # above the <title> — that is document metadata and is always first.
+    assert html_out.index("isn’t here") < html_out.index("<h2>Bedtime Stories</h2>")
+
+
+def test_titles_are_escaped():
+    files = [rules.SavedFile(index=1, name="01 - x.mp3", title="<b>x</b>",
+                             size_bytes=1, duration_s=1, converted=False)]
+    data = _sheet(files)
+    data.card_name = "<script>alert(1)</script>"
+    html_out = sheet_mod.render_sheet(data)
+    assert "<script>alert(1)" not in html_out
+    assert "&lt;script&gt;" in html_out
+
+
+def test_the_size_bullet_is_always_shown_even_for_a_small_card():
+    html_out = sheet_mod.render_sheet(_sheet([_f(1, "01 - A.mp3")]))
+    assert "100 MB and an hour" in html_out
+    assert "500 MB, five hours and 100 tracks" in html_out
+
+
+def test_the_sheet_split_line_has_a_singular_and_a_plural(tmp_path):
+    """copy.md §6.4, amended 2026-09-05. The plan emitted only the singular.
+
+    Neither variant names a title or a count: every part is printed with its own
+    number in the file list immediately below.
+    """
+    one = sheet_mod.render_sheet(
+        _sheet([_f(1, "01 - A.mp3")], split=[rules.SplitGroup(title="Ch One", parts=2)])
+    )
+    assert "One of your tracks was too long for a Yoto card, so it’s in more" in one
+    assert "Some of your tracks" not in one
+
+    many = sheet_mod.render_sheet(_sheet([_f(1, "01 - A.mp3")], split=[
+        rules.SplitGroup(title="Ch One", parts=2),
+        rules.SplitGroup(title="Ch Two", parts=3),
+    ]))
+    assert "Some of your tracks were too long for a Yoto card, so they’re each" in many
+    assert "One of your tracks was too long" not in many
+    # No titles, no counts, in either variant.
+    for out in (one, many):
+        assert "Ch One" not in out
+        assert "Ch Two" not in out
