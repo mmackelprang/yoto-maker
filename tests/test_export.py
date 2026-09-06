@@ -268,3 +268,164 @@ def test_the_sheet_split_line_has_a_singular_and_a_plural(tmp_path):
     for out in (one, many):
         assert "Ch One" not in out
         assert "Ch Two" not in out
+
+
+# --------------------------------------------------------------------------- #
+# Task 5 — the orchestration
+# --------------------------------------------------------------------------- #
+from yoto_maker.export import runner as runner_mod
+from yoto_maker.export.errors import ExportError
+
+
+def _track(path, title, dur=2.0, icon=None):
+    return runner_mod.ExportTrack(title=title, audio_path=Path(path),
+                                  icon_path=icon, duration_s=dur)
+
+
+def test_a_saved_folder_holds_exactly_the_deliverables(tmp_path, sample_mp3):
+    root = tmp_path / "saved"
+    res = runner_mod.export_card(
+        tracks=[_track(sample_mp3, "Chapter One"), _track(sample_mp3, "Chapter Two")],
+        card_name="Bedtime Stories", picture_path=None, root=root,
+        scratch_dir=tmp_path / "scratch", version="0.1.13",
+    )
+    names_on_disk = sorted(p.name for p in res.folder.iterdir())
+    assert names_on_disk == ["01 - Chapter One.mp3", "02 - Chapter Two.mp3",
+                            "What to do next.html"]
+    assert res.folder == root / "Bedtime Stories"
+
+
+def test_pressing_save_twice_never_overwrites(tmp_path, sample_mp3):
+    root = tmp_path / "saved"
+    kwargs = dict(tracks=[_track(sample_mp3, "A")], card_name="Bedtime Stories",
+                  picture_path=None, root=root, scratch_dir=tmp_path / "s",
+                  version="0.1.13")
+    first = runner_mod.export_card(**kwargs)
+    second = runner_mod.export_card(**kwargs)
+    assert first.folder.name == "Bedtime Stories"
+    assert second.folder.name == "Bedtime Stories (2)"
+    assert first.folder.exists()
+
+
+def test_a_mixed_card_copies_mp3_and_m4a_and_converts_flac(tmp_path, sample_mp3):
+    """Acceptance criterion 11. The .m4a staying put is the specific thing to check."""
+    from yoto_maker.tools import find_ffmpeg
+    import subprocess
+
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        pytest.skip("ffmpeg not available")
+    incoming = tmp_path / "in"
+    incoming.mkdir()
+    m4a = incoming / "sea.m4a"
+    flac = incoming / "rain.flac"
+    for out in (m4a, flac):
+        subprocess.run([ffmpeg, "-y", "-f", "lavfi", "-i",
+                        "sine=frequency=440:duration=1", str(out)],
+                       capture_output=True, check=True)
+
+    res = runner_mod.export_card(
+        tracks=[_track(sample_mp3, "Song"), _track(m4a, "The Sea"), _track(flac, "Rain")],
+        card_name="Mixed", picture_path=None, root=tmp_path / "saved",
+        scratch_dir=tmp_path / "s", version="0.1.13",
+    )
+    written = [f.name for f in res.files]
+    assert written == ["01 - Song.mp3", "02 - The Sea.m4a", "03 - Rain.mp3"]
+    assert [f.converted for f in res.files] == [False, False, True]
+
+
+def test_conversion_uses_192k(tmp_path, sample_mp3, monkeypatch):
+    seen = {}
+    real = runner_mod.normalize_to_mp3
+
+    def spy(src, out_dir, *, bitrate="192k", **kw):
+        seen["bitrate"] = bitrate
+        return real(src, out_dir, bitrate=bitrate, **kw)
+
+    monkeypatch.setattr(runner_mod, "normalize_to_mp3", spy)
+    wav = tmp_path / "in.wav"
+    wav.write_bytes(sample_mp3.read_bytes())      # extension drives the decision
+    try:
+        runner_mod.export_card(
+            tracks=[_track(wav, "A")], card_name="C", picture_path=None,
+            root=tmp_path / "saved", scratch_dir=tmp_path / "s", version="0.1.13",
+        )
+    except ExportError:
+        pass                                       # ffmpeg may reject the fake wav
+    assert seen["bitrate"] == "192k"
+
+
+def test_a_partial_run_keeps_the_rest_and_the_sheet_tells_the_truth(tmp_path, sample_mp3):
+    """Acceptance criterion 5."""
+    missing = tmp_path / "in" / "gone.mp3"
+    res = runner_mod.export_card(
+        tracks=[_track(sample_mp3, "Chapter One"), _track(missing, "Chapter Four")],
+        card_name="Bedtime Stories", picture_path=None, root=tmp_path / "saved",
+        scratch_dir=tmp_path / "s", version="0.1.13",
+    )
+    assert [f.name for f in res.files] == ["01 - Chapter One.mp3"]
+    assert [f.title for f in res.failures] == ["Chapter Four"]
+    page = (res.folder / "What to do next.html").read_text(encoding="utf-8")
+    assert "Chapter Four" in page              # named in the notice
+    assert "02 - Chapter Four" not in page     # NOT in the file list
+    assert "1 track" in page
+
+
+def test_a_total_failure_leaves_no_folder_behind(tmp_path):
+    """Acceptance criterion 9, and the reason copy.md §5.7's last line is true."""
+    root = tmp_path / "saved"
+    with pytest.raises(ExportError):
+        runner_mod.export_card(
+            tracks=[_track(tmp_path / "nope.mp3", "A")], card_name="Bedtime Stories",
+            picture_path=None, root=root, scratch_dir=tmp_path / "s", version="0.1.13",
+        )
+    assert not (root / "Bedtime Stories").exists()
+
+
+def test_every_track_failing_names_them_all_rather_than_guessing_one_cause(tmp_path):
+    """copy.md §5.7's fourth {reason} row, added 2026-09-05.
+
+    The plan raised ExportError(failures[0].reason), which reports one cause as
+    if it were the only one. §5.7 reuses §5.6's numbered list instead.
+    """
+    root = tmp_path / "saved"
+    with pytest.raises(ExportError) as exc:
+        runner_mod.export_card(
+            tracks=[_track(tmp_path / "gone-a.mp3", "Chapter One"),
+                    _track(tmp_path / "gone-b.mp3", "Chapter Two")],
+            card_name="Bedtime Stories", picture_path=None, root=root,
+            scratch_dir=tmp_path / "s", version="0.1.13",
+        )
+    lines = str(exc.value).split("\n")
+    assert lines[0] == "None of your 2 tracks could be saved:"
+    assert lines[1].startswith("1. “Chapter One” — ")
+    assert lines[2].startswith("2. “Chapter Two” — ")
+    assert not (root / "Bedtime Stories").exists()
+
+
+def test_track_pictures_go_in_a_subfolder_named_to_match(tmp_path, sample_mp3):
+    icon = tmp_path / "icon.png"
+    from PIL import Image
+    Image.new("RGB", (16, 16), "purple").save(icon)
+    res = runner_mod.export_card(
+        tracks=[_track(sample_mp3, "Chapter One", icon=icon)],
+        card_name="Bedtime Stories", picture_path=None, root=tmp_path / "saved",
+        scratch_dir=tmp_path / "s", version="0.1.13",
+    )
+    assert (res.folder / "Track pictures" / "01 - Chapter One.png").exists()
+    # The subfolder is the whole point: no loose 16x16 PNG beside the audio.
+    assert not list(res.folder.glob("*.png"))
+
+
+def test_the_result_view_carries_everything_the_panel_needs(tmp_path, sample_mp3):
+    res = runner_mod.export_card(
+        tracks=[_track(sample_mp3, "A")], card_name="Bedtime Stories",
+        picture_path=None, root=tmp_path / "saved", scratch_dir=tmp_path / "s",
+        version="0.1.13",
+    )
+    v = res.view()
+    for key in ("folder_name", "folder_path", "saved_count", "total_count", "files",
+                "failures", "split_groups", "converted", "oversize_tracks", "card_mb",
+                "card_duration_words", "card_tracks", "over_card_bytes",
+                "over_card_seconds", "over_card_tracks"):
+        assert key in v
