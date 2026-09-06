@@ -963,6 +963,7 @@ function renderHelpSection() {
     CLIENT_ID_ORIGIN[y.client_id_source] || CLIENT_ID_ORIGIN.builtin;
   $("#helpRedirect").textContent = cfg.redirect_uri || "";
   $("#helpDataDir").textContent = cfg.data_dir || "";
+  $("#helpSavedDir").textContent = cfg.saved_dir || "";
 }
 
 function openClientIdConfirm(kind, unusual = false) {
@@ -2023,6 +2024,237 @@ async function makeLabel() {
   }
 }
 
+// ---- save the files to a folder -------------------------------------------
+// Every string below is docs/design-handoffs/export-only-mode/copy.md, verbatim,
+// with typographic apostrophes. The word "export" appears only in identifiers.
+//
+// THE PANEL RECONSTRUCTS NOTHING. Every name, number, path and list comes from
+// the job result (interactions.md §3.3 step 2) — the same rule
+// configuration-surface §13.4 set for the redirect URL, for the same reason.
+
+const EXPORT_FAIL_HEAD = "Yoto Maker couldn’t save the files.";
+const EXPORT_FAIL_TAIL =
+  "Nothing was saved, and nothing on this card has changed. You can try again, " +
+  "or send it to your Yoto instead.";
+const EXPORT_PARTIAL_TAIL =
+  "Everything else is in the folder. The page in the folder lists what’s actually there.";
+const EXPORT_CEILING_FIX =
+  "Yoto’s website may refuse some of it. If it does, make two shorter cards instead of one.";
+
+function exportWhere(r) {
+  return `in a folder called “${r.folder_name}” — in your Documents, under Yoto Maker.`;
+}
+
+function exportSuccessLine(r) {
+  // The 🎉 is dropped from the partial message, deliberately: celebrating an
+  // incomplete result is the kind of small dishonesty that costs trust, and the
+  // missing track is named directly below (copy.md §5.1).
+  if (r.failures.length) return `${r.saved_count} of your ${r.total_count} tracks are saved, ${exportWhere(r)}`;
+  if (r.saved_count === 1) return `🎉 Your track is saved, ${exportWhere(r)}`;
+  return `🎉 All ${r.saved_count} tracks are saved, ${exportWhere(r)}`;
+}
+
+// The fixed order of overview.md §10.3's table: split → converted → track over
+// 100 MB → card over 500 MB / 5 hours → card over 100 tracks, then ONE shared
+// recovery sentence if any card ceiling fired. Fixed here so two cards with the
+// same conditions never read differently.
+function exportNotes(r) {
+  const out = [];
+
+  // ONE paragraph, never one per split group (copy.md §5.3, overview.md §10.3).
+  // It is one fact about the card, not N facts — the action is the same sentence
+  // either way — and N paragraphs would blow the note box's five-paragraph
+  // budget on a card with four split tracks.
+  if (r.split_groups.length === 1) {
+    const g = r.split_groups[0];
+    out.push(
+      "One of your tracks was too long for a Yoto card, so it’s saved as more " +
+      `than one file — “${g.title}” is in ${g.parts} parts. Add them all, in ` +
+      "number order, and they’ll play one after the other."
+    );
+  } else if (r.split_groups.length > 1) {
+    const list = r.split_groups.map((g) => `“${g.title}” (${g.parts} parts)`).join(", ");
+    out.push(
+      `${r.split_groups.length} of your tracks were too long for a Yoto card, so ` +
+      `each one is saved as more than one file: ${list}. Add them all, in number ` +
+      "order, and they’ll play one after the other."
+    );
+  }
+
+  if (r.converted.length) {
+    const list = r.converted.map((c) => c.label).join(", ");
+    out.push(
+      r.converted.length === 1
+        ? "Yoto Maker saved an MP3 copy of one of your files, because Yoto’s " +
+          "website is fussier about this than the app is. It’s the same audio, " +
+          `and nothing else changed: ${list}.`
+        : `Yoto Maker saved MP3 copies of ${r.converted.length} of your files, ` +
+          "because Yoto’s website is fussier about this than the app is. They’re " +
+          `the same audio, and nothing else changed: ${list}.`
+    );
+  }
+
+  // Both variants finish on the actionable thing — the list is at the END, which
+  // is the sentence she reads aloud on the phone (copy.md §5.9). The singular
+  // uses the same "NN - Title (n MB)" list shape as the plural, deliberately:
+  // it is the file name she will have to find in a file dialog, which is more
+  // use to her than the track title alone.
+  if (r.oversize_tracks.length === 1) {
+    const list = `${r.oversize_tracks[0].label} (${r.oversize_tracks[0].size_mb} MB)`;
+    out.push(
+      "One of your tracks is bigger than Yoto allows for a single track — Yoto’s " +
+      "limit is 100 MB. Yoto’s website may refuse it. If it does, tell whoever " +
+      `set Yoto Maker up for you which one it is: ${list}.`
+    );
+  } else if (r.oversize_tracks.length > 1) {
+    const list = r.oversize_tracks.map((t) => `${t.label} (${t.size_mb} MB)`).join(", ");
+    out.push(
+      `${r.oversize_tracks.length} of your tracks are bigger than Yoto allows for a ` +
+      "single track — Yoto’s limit is 100 MB each. Yoto’s website may refuse them. If " +
+      "it does, tell whoever set Yoto Maker up for you which ones they are: " +
+      `${list}.`
+    );
+  }
+
+  if (r.over_card_bytes) {
+    out.push(`This card is ${r.card_mb} MB altogether, and Yoto allows 500 MB on one card.`);
+  }
+  if (r.over_card_seconds) {
+    out.push(`This card is ${r.card_duration_words} altogether, and Yoto allows 5 hours on one card.`);
+  }
+  if (r.over_card_tracks) {
+    out.push(`This card has ${r.card_tracks} tracks, and Yoto allows 100 on one card.`);
+  }
+  // ONE closing sentence, however many of the three fired. At ~192 kbps the
+  // 500 MB and 5-hour ceilings are the same card, and repeating the fix under
+  // each would read as two problems with two fixes (copy.md §5.9).
+  if (r.over_card_bytes || r.over_card_seconds || r.over_card_tracks) {
+    out.push(EXPORT_CEILING_FIX);
+  }
+
+  return out;
+}
+
+function exportFailureParagraphs(r) {
+  if (r.failures.length === 1) {
+    const f = r.failures[0];
+    return [`One track couldn’t be saved: “${f.title}”. ${f.reason}`, EXPORT_PARTIAL_TAIL];
+  }
+  return [
+    `${r.failures.length} tracks couldn’t be saved:`,
+    ...r.failures.map((f, i) => `${i + 1}. “${f.title}” — ${f.reason}`),
+    EXPORT_PARTIAL_TAIL,
+  ];
+}
+
+function renderExportResult(r) {
+  const done = $("#exportDone");
+  const lines = [exportSuccessLine(r)];
+  // The full path appears ONLY when the folder cannot be opened for her, where
+  // it stops being clutter and becomes the answer (copy.md §5.5).
+  if (!r.can_open) lines.push("The folder is here:");
+  setMsgBoxContent(done, lines);
+  if (!r.can_open) {
+    const p = document.createElement("div");
+    p.className = "mono-value";
+    p.textContent = r.folder_path;
+    done.appendChild(p);
+  }
+  show(done, true);
+
+  const notes = exportNotes(r);
+  const noteBox = $("#exportNote");
+  // Omitted entirely when nothing fired: an empty .msg-box has 12px of padding
+  // and a background, and would render as a stray grey bar.
+  if (notes.length) { setMsgBoxContent(noteBox, notes); show(noteBox, true); }
+  else { noteBox.textContent = ""; show(noteBox, false); }
+
+  $("#exportReadme").href = r.sheet_url + "?t=" + Date.now();
+  // Omitted, never disabled — a disabled button invites her to keep pressing it
+  // (configuration-surface §3.5.2, §13.5).
+  show($("#exportOpen"), !!r.can_open);
+  show($("#exportActions"), true);
+
+  if (r.failures.length) {
+    setMsgBoxContent($("#exportError"), exportFailureParagraphs(r));
+    show($("#exportError"), true);
+    // The failure is the part she has to read, and it overrides the success
+    // focus (interactions.md §3.6). The assertive alert lands AFTER the focus
+    // move so it is not queued behind it.
+    $("#exportError").focus();
+  } else {
+    done.focus();
+  }
+}
+
+async function saveToFolder() {
+  clearError($("#exportError"));
+  $("#exportNote").textContent = "";
+  show($("#exportNote"), false);
+  show($("#exportDone"), false);
+  show($("#exportActions"), false);
+  show($("#exportProgress"), true);
+  $("#exportBar").style.width = "2%";
+  $("#exportMsg").textContent = "Making the folder…";
+  $("#exportBtn").disabled = true;
+  try {
+    const { job_id } = await api("/api/export", { method: "POST" });
+    const result = await pollJob(job_id, (p, m) => {
+      $("#exportBar").style.width = Math.max(2, p) + "%";
+      $("#exportMsg").textContent = m;
+    });
+    renderExportResult(result);
+  } catch (e) {
+    // A refusal (no tracks / no card name) is one sentence on its own. A job
+    // failure is copy.md §5.7's three paragraphs, and only the middle one is
+    // cause-specific — jobs.py carries no reason code, so the server composes
+    // that line and these two frame it. It may itself be several paragraphs
+    // (copy.md §5.7's every-track-failed row), which travel as newlines.
+    //
+    // e.status alone is enough to tell the two apart: pollJob builds a bare
+    // Error with no .status, so a job failure can never be 400.
+    const paragraphs = e.status === 400
+      ? [e.message]
+      : [EXPORT_FAIL_HEAD, ...String(e.message).split("\n"), EXPORT_FAIL_TAIL];
+    setMsgBoxContent($("#exportError"), paragraphs);
+    show($("#exportError"), true);
+    $("#exportError").focus();
+  } finally {
+    show($("#exportProgress"), false);
+    // Never gated on the connection. overview.md §10.1.
+    $("#exportBtn").disabled = false;
+  }
+}
+
+async function openSavedFolder() {
+  // No spinner, no transient "Opened!" state — configuration-surface tokens.md
+  // §3a rejected exactly that shape.
+  try {
+    await api("/api/export/open", { method: "POST" });
+  } catch (e) {
+    // copy.md §5.5a(b) carries the path beneath the sentence, in .mono-value —
+    // a bare "couldn't open" is a dead end and the server is holding the one
+    // thing that resolves it. Case (a) has no path and renders one paragraph.
+    //
+    // setMsgBoxContent, not showError: showError sets textContent, which would
+    // delete the .mono-value child appended below.
+    const path = e.data && e.data.path;
+    const box = $("#exportError");
+    setMsgBoxContent(box, [e.message]);
+    if (path) {
+      const p = document.createElement("div");
+      p.className = "mono-value";
+      p.textContent = path;
+      box.appendChild(p);
+    }
+    show(box, true);
+    // #exportError sits ABOVE #exportActions in the DOM, so a message raised by
+    // this button renders behind her scroll position. Moving focus is what takes
+    // her to it — interactions.md §4.4, and it is why that rule exists.
+    box.focus();
+  }
+}
+
 // ---- wire up --------------------------------------------------------------
 function wire() {
   $("#ytAdd").addEventListener("click", addYouTube);
@@ -2205,6 +2437,8 @@ function wire() {
   // symptom lands her exactly where the fix is.
   $("#yotoPill").addEventListener("click", (e) => gotoSettings(e.currentTarget));
   $("#sendBtn").addEventListener("click", sendToYoto);
+  $("#exportBtn").addEventListener("click", saveToFolder);
+  $("#exportOpen").addEventListener("click", openSavedFolder);
   $("#labelBtn").addEventListener("click", makeLabel);
 
   $("#startOver").addEventListener("click", async (e) => {
@@ -2215,6 +2449,14 @@ function wire() {
       $("#cardName").value = "";
       show($("#sendDone"), false);
       show($("#labelDone"), false);
+      // The card this described has been discarded, and a stale
+      // "📄 What to do next" points at instructions for it (interactions.md §9.3).
+      show($("#exportProgress"), false);
+      show($("#exportError"), false);
+      show($("#exportDone"), false);
+      show($("#exportNote"), false);
+      show($("#exportActions"), false);
+      $("#exportReadme").removeAttribute("href");
     }
   });
 }

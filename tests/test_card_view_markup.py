@@ -279,3 +279,73 @@ def test_the_feature_adds_no_css(styles_css, index_html):
     allowed = {"btn", "primary", "tiny", "progress", "bar", "msg", "msg-box",
                "err", "ok", "info", "done-actions", "hidden"}
     assert used <= allowed, used - allowed
+
+
+def test_the_export_panel_renders_only_from_the_job_result(app_js):
+    """It must never rebuild the folder name or path from anything local.
+
+    Sliced across the whole render half, from the folder sentence's own helper
+    down to the start of the request: r.folder_name is read in exportWhere(),
+    which sits above renderExportResult(), so a slice starting at the renderer
+    would miss it.
+    """
+    block = app_js[app_js.index("function exportWhere"):app_js.index("async function saveToFolder")]
+    assert "Documents" not in block.replace("in your Documents, under Yoto Maker", "")
+    assert "r.folder_path" in block and "r.folder_name" in block
+
+
+def test_the_open_button_is_omitted_not_disabled(app_js):
+    assert 'show($("#exportOpen"), !!r.can_open)' in app_js
+    assert '#exportOpen").disabled' not in app_js
+
+
+def test_there_is_no_cancel(app_js, index_html):
+    """jobs.py has no cancellation and this PR does not add one (spec §2.8)."""
+    assert "exportCancel" not in app_js
+    assert "exportCancel" not in index_html
+
+
+def test_start_over_clears_the_saved_panel(app_js):
+    handler = app_js[app_js.index('$("#startOver")'):]
+    assert 'show($("#exportActions"), false)' in handler
+    assert '$("#exportReadme").removeAttribute("href")' in handler
+
+
+def test_the_recovery_sentence_appears_once_however_many_ceilings_fired(app_js):
+    assert app_js.count("make two shorter cards instead of one") == 1
+
+
+def test_the_split_note_is_one_paragraph_however_many_tracks_were_split(app_js):
+    """copy.md §5.3, which replaces the plan's paragraph-per-group stopgap.
+
+    It is one fact about the card, not N facts, and N paragraphs would blow
+    overview.md §10.3's five-paragraph budget for the note box.
+    """
+    block = app_js[app_js.index("function exportNotes"):app_js.index("function exportFailureParagraphs")]
+    assert "for (const g of r.split_groups)" not in block
+    assert "r.split_groups.length === 1" in block
+    assert "r.split_groups.length > 1" in block
+
+
+def test_the_oversize_note_ends_on_the_list_in_both_variants(app_js):
+    """copy.md §5.9 moved the list to the end so both variants finish on the
+    actionable thing, and rejected the earlier draft's closing advice."""
+    block = app_js[app_js.index("function exportNotes"):app_js.index("function exportFailureParagraphs")]
+    assert "needs making smaller" not in block
+    assert "those tracks need" not in block
+    assert block.count("which one it is: ${list}") == 1
+    assert block.count("which ones they are: ") == 1
+
+
+def test_a_failed_open_moves_focus_and_renders_the_path(app_js):
+    """interactions.md §4.4: #exportError sits ABOVE #exportActions, so a message
+    raised by the reveal button appears behind the user's position. Moving focus
+    is what takes her to it. And copy.md §5.5a(b)'s path must be rendered, in
+    .mono-value, or the message is a dead end."""
+    block = app_js[app_js.index("async function openSavedFolder"):]
+    block = block[:block.index("// ---- wire up")]
+    assert "box.focus()" in block
+    assert "e.data && e.data.path" in block
+    assert 'p.className = "mono-value"' in block
+    # showError() sets textContent, which would delete the appended child.
+    assert "showError(" not in block
