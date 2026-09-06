@@ -418,12 +418,14 @@ thing at all four:
 | Call site | What a failed poll means | Opts in? |
 | --- | --- | --- |
 | `saveToFolder()` `app.js:2231` | *I don't know the outcome* | **Yes** — §5.10 |
-| `sendToYoto()` `app.js:1995` | *I don't know the outcome* | **Yes** — `copy.md` §9 |
+| `sendToYoto()` `app.js:1995` | *I don't know the outcome* | **Designed yes, NOT SHIPPED** — `copy.md` §9's banner. The maintainer took §9.1's fallback on 2026-09-05: verifying a send-path retry needs a live authenticated send against a real Yoto account. It keeps today's generic transport line. |
 | `doUpdate()` `app.js:160` | *The app is restarting — this is the expected end* | **No.** It already catches every poll failure and reports success (`app.js:167-171`). Retrying would freeze a bar for the whole window before showing a message that was already right. |
 | `addYouTube()` `app.js:1251` | *I don't know the outcome* | **No, deliberately.** Its message asserts nothing false, and the thing left uncertain is the track list on the same screen. `copy.md` §9.3 records why this is a later job. |
 
 **The send path's string is `copy.md` §9**, and §9.1 carries why it is in this
-package and what declining it would give up. Its rendering rules are the save
+package and what declining it would give up. **It was declined — see §9's
+banner and item 5 of §11; the rules below are what the follow-up implements, not
+what shipped.** Its rendering rules are the save
 path's — hide `#sendProgress`, re-enable `#sendBtn`, render no success box —
 with one difference, and it follows from the shipped markup rather than from a
 choice made here: `#sendError` carries neither `role` nor `tabindex`
@@ -633,7 +635,20 @@ on purpose, and each says who owns it.
    it for this PR; `copy.md` §9.3 carries the reasoning. It is a follow-up with a
    real user benefit and no urgency.
 
+5. **When the send path gets §9's message.** *(Moved here 2026-09-05, out of the
+   "now settled" line below.)* Designer ruled it into this package and the
+   maintainer took `copy.md` §9.1's stated fallback instead: verifying a
+   send-path retry needs a live authenticated send against a real Yoto account,
+   which is exactly what this feature exists to avoid needing. So §9 is
+   **written and unshipped**, `#sendError` keeps today's generic transport line,
+   and the duplicate-card protection is knowingly given up until a follow-up
+   ships it. The string, the argument and the rendering rules are all already
+   written — §9, §9.1, §9.2 and §4a.1 — so the follow-up is implementation, not
+   design.
+
 **What is *not* on this list, because it is now settled:** which region a reveal
-failure renders into (§4.4), what the app may claim when it loses contact with a
-running job (§4a, `copy.md` §5.10), and whether the send path is in (`copy.md`
-§9.1 — yes, with the fallback stated).
+failure renders into (§4.4), and what the app may claim when it loses contact
+with a running job (§4a, `copy.md` §5.10). **Whether the send path is *in* was
+on this line until 2026-09-05 and is now item 5 above** — it was named settled
+in the section whose whole job is to list what is still open, which is the drift
+this file's own §1 note about stale claims exists to catch.

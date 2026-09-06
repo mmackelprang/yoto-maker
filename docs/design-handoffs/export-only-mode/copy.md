@@ -891,24 +891,41 @@ reason: the one moment the value matters is the moment a guess would be wrong.
 ## 8. Strings explicitly unchanged
 
 `index.html` steps 1, 2 and 4 in full; step 3's `h2` and `.hint`; `#connectBtn`;
-`#sendBtn`; `#sendDone`; **every message rendered into `#sendError` except the
-one new state in §9**; `#connectWarn` and all of `copy.md` §4d;
-`#advRow`/`#advToggle` in both variants; the header pill; the footer; the About
-modal; every string in the settings view except the one row in §7.
+`#sendBtn`; `#sendDone`; **every message rendered into `#sendError`** *(§9 is
+specified but not shipped — see §9's banner)*; `#connectWarn` and all of
+`copy.md` §4d; `#advRow`/`#advToggle` in both variants; the header pill; the
+footer; the About modal; every string in the settings view except the one row
+in §7.
 
 This feature appends. It **edits** exactly one shipped string (§1), and that
-string is edited because the feature makes it false. It **adds** exactly one
-string to the send path (§9), in a state that previously had no send-path string
-at all.
+string is edited because the feature makes it false. It **specifies** one string
+for the send path (§9), in a state that previously had no send-path string at
+all, and **does not ship it**.
 
 *Amended 2026-09-05.* This section previously listed `#sendError` and *"every
 message rendered into it"* as untouched. §9 makes that false and the list is
 corrected rather than quietly outgrown — which is the defect §1 exists to fix,
-applied to this file.
+applied to this file. *Ruling appended 2026-09-05: §9 did not ship, so the
+original wording is restored above — the correction stands as the record of what
+§9 will require when it does.*
 
 ---
 
 ## 9. The one send-path string this feature adds *(added 2026-09-05)*
+
+> **NOT SHIPPED. Written, ruled out of this PR, and kept here as the follow-up.**
+> *(Maintainer's ruling, 2026-09-05 — §9.1's stated fallback, taken.)* The send
+> path does not opt into the retry: verifying one needs a live authenticated
+> send against a real Yoto account, which is the thing this feature exists to
+> avoid needing, and it was not verifiable on the night. `#sendError` keeps
+> today's generic transport line and **nothing on the send path changes**.
+> §9.1 already names what that gives up — the duplicate-card protection — and it
+> is given up knowingly. Everything below stands as written, for the pass that
+> ships it.
+>
+> Worth recording that this is §9.1's *"The fallback, stated so it survives being
+> rejected"* paragraph working exactly as designed: the document anticipated its
+> own rejection, and the anticipation is what made the ruling cheap.
 
 `#sendError`, `.msg-box err`. Rendered when a status poll fails after
 `POST /api/send` has returned a job id — §5.10's boundary table, on the other

@@ -203,7 +203,7 @@ Step 3's children, after this feature:
   #connectRow                       unchanged in structure; ONE string edited (§4.6)
   #sendBtn                          unchanged
   #sendProgress                     unchanged
-  #sendError                        markup unchanged; ONE new message (copy.md §9)
+  #sendError                        unchanged (copy.md §9 designed, NOT shipped)
   #sendDone                         unchanged
   #connectWarn                      unchanged
   ── new ───────────────────────────────────────────────
@@ -1143,6 +1143,13 @@ touched. This feature appends; it does not fork the existing path.
 > `interactions.md` §4a specifies, and renders one new message when it is spent.
 > **`copy.md` §9.1 carries the argument, including the one-line fallback that
 > keeps the send path out of the diff entirely and what that gives up.**
+>
+> **Not taken.** The maintainer took that fallback on 2026-09-05: the send path
+> stays out of this PR's diff entirely. **The unamended paragraph above the
+> blockquote is therefore what shipped, and it is accurate as written** — none
+> of `#sendBtn`, `#sendProgress`, `#sendError`, `#sendDone`, `connectYoto()`,
+> `sendToYoto()`, `POST /api/send` or `YotoClient` is touched. What is given up
+> is the duplicate-card protection. §9 is a written follow-up.
 
 **Step 3's title and hint.** *"Send it to your Yoto"* names the goal, not the
 mechanism, and stays true (§4.2). `INSTALL-FOR-MOM.md`'s step numbering and

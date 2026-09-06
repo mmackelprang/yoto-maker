@@ -512,4 +512,7 @@ completeness signal. **If that write order ever changes, this string becomes a
 lie** — the same standing condition §10's reassurance sentence carries.
 
 The send path gets the parallel message in `#sendError` — `../copy.md` §9, and
-§9.2 for why the two are near-identical rather than shared.
+§9.2 for why the two are near-identical rather than shared. **It did not ship:**
+the maintainer took §9.1's stated fallback on 2026-09-05, so `#sendError` keeps
+today's generic transport line and §9 is a written follow-up. See §9's banner
+and `../interactions.md` §11 item 5.

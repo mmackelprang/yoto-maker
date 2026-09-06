@@ -2664,6 +2664,49 @@ converted, so it is exactly the case the app advises about rather than acts on.
 If B4 above is skipped, the oversize advisory ships **unverified against a real
 file** and must be recorded as such in the PR body.
 
+### Y. Test notes — the retry window, measured *(added 2026-09-06)*
+
+`interactions.md` §11 item 1 leaves `POLL_RETRY_WINDOW_MS` deliberately
+unspecified, fixes the two bounds, and makes the number **Builder's measurement
+in UAT** rather than something a spec may assert from a desk. This is that
+measurement.
+
+**Chosen: `POLL_RETRY_WINDOW_MS = 12000` (12s), with `POLL_TIMEOUT_MS = 4000`.**
+
+**What was measured.** A save of **351 MB across 8 tracks** — the 103 MB
+copy-as-is oversize MP3 from §B4, a 192 kbps FLAC re-encode, and four ~72 MB
+split parts — with the machine **deliberately saturated**: 32 CPU-bound
+processes and 4 concurrent disk writers each rewriting a 200 MB file in a loop.
+
+| Measurement | Result |
+| --- | --- |
+| Worst gap between two **answered** polls, as the browser saw it | **599 ms** (poll interval is 500 ms, so ~99 ms of real delay) |
+| Worst `/api/jobs/{id}` latency, 1,705 samples from an external prober | **25.6 ms** (median 1.1 ms, p99 15.4 ms) |
+| Outright poll failures under saturation | **none** |
+| Wall time for the 351 MB save | 2.3 s |
+
+**Why 12s.** The save runs off the event loop, so the server stays responsive
+even flat out — the worst real stall is three orders of magnitude below the
+window. 12s is ~20× the worst gap actually observed and 24 attempts at 500 ms,
+so a blip has to be genuinely sustained to spend it. **The headroom is
+deliberately for the stalls that cannot be reproduced on demand** — the machine
+sleeping, an antivirus scan hooking a large write, swap pressure — which are
+what §4a means by *"a couple of seconds is not enough"*. It is well under §4a's
+~30s *"past which the cure is the disease"* line: worst case press-to-message is
+the window plus one final timeout, **measured at 17.6s** in the hung-poll test.
+
+**Why a separate `POLL_TIMEOUT_MS`.** Pre-merge review found that the retry
+could only see a poll that *failed*, never one that was never *answered* — and
+"Yoto Maker stopped answering" is the literal case `copy.md` §5.10 is named for.
+`fetch()` has no timeout, so each poll now carries a 4s `AbortSignal`: ~150× the
+worst latency measured above, which turns not-answering into failing without
+ever tripping on a slow-but-live poll.
+
+**B7 is verified emphatically by the same run.** 1,705 status polls answered in
+a median of 1.1 ms while 351 MB was being written on a saturated machine.
+
+---
+
 ### Z. What nobody can verify, and why that must be said out loud
 
 **The maintainer has no Yoto player.** His daughter owns it and lives in another
