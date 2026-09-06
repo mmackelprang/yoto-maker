@@ -1,19 +1,51 @@
 # Builder queue
 
-**Last updated:** 2026-09-06 by Builder — **item 19 MERGED as [PR #24](https://github.com/mmackelprang/yoto-maker/pull/24) (`7574d0d`).**
+**Last updated:** 2026-09-06 by Planner — **item 19's follow-ups exist now: rows
+22, 23 and 24. The fourth finding was a stale mockup and is fixed here, not
+queued.**
 
+The three rows the merge banner said were owed are filed, so nobody has to chase
+them. **22** ships `copy.md` §9's send-path string — already written, already
+approved, deliberately unshipped; until it lands the **duplicate-card
+protection** is what is given up, on the path where the duplicate is hardest to
+undo. **23** is `#startOver` leaving `#exportBtn` disabled, marked
+`_needs Designer pass_` rather than `_needs Planner pass_` **because the obvious
+fix causes a worse bug** — it must not be scheduled as a quick win. **24** is
+the `BaseException` that strands `job.status` at *"running"* forever.
+
+**24 is its own row rather than a fold-in to item 14, and that was checked
+before filing.** Item 14 owns moving `POST /api/tracks/file` onto the job system
+and the *client contract* around it. The ADR's nearest neighbour is §5.2.3 — a
+job killed by an app restart, whose id then 404s — which is the **opposite**
+case: there the client gets a legible signal. Nothing in it contemplates a live
+process still answering `running` for a job that is already dead. Item 14 is ⛔
+on an ADR that is still `proposed`, so folding a live three-line defect into it
+would block the fix behind an unapproved architecture decision. The one genuine
+overlap — both want `tests/test_jobs.py`, which still does not exist — is
+written into item 24's row as a fold-in rule in both directions.
+
+**Builder's fourth finding was fixed, not queued.** `mockups/step-3.md` §8/§8a
+drew the green box above the red one; the shipped DOM is the reverse and matches
+`interactions.md` §1 and `overview.md` §4.3 — the ordering authority the mockup
+file itself cites in its own first lines. Under the package's precedence rule
+the mockup is the bug, and correcting a drawing to match the contract it defers
+to needs no design judgement, so it is corrected in this commit. **No shipped
+behaviour changed.** This is the **third** stale mockup in this feature's life,
+so the file's precedence banner now covers ordering as well as strings — it
+previously only claimed authority over copy, which is exactly why an ordering
+drift walked past it.
+
+**Item 20 is in flight** — claimed on `fix/send-path-size-limit`, so its row
+below still reads 📋 until that PR lands. Items 22 and 24 are queued behind it;
+item 23 is not Builder-eligible until Designer has ruled.
+
+Previously: 2026-09-06 by Builder — **item 19 MERGED as
+[PR #24](https://github.com/mmackelprang/yoto-maker/pull/24) (`7574d0d`).**
 Designer's ruling on Builder's two behavioral deferrals shipped with it: a
 reveal failure gets its own region (`#exportOpenError` — six regions, not five),
 and the app stops asserting an outcome it does not have when a status poll
-drops. **Two follow-up rows are owed and are Planner's to file:** (a) `copy.md`
-§9's send-path string, written and deliberately unshipped because verifying a
-send-path retry needs a live authenticated send against a real Yoto account —
-what is given up is the duplicate-card protection; (b) two deferred pre-merge
-findings, both pre-existing: `#startOver` leaves `#exportBtn` disabled until a
-disowned job's `finally` runs (the obvious fix causes a worse bug and needs a
-design pass), and a `BaseException` in a worker thread leaves `job.status`
-"running" forever, which is a `jobs.py` fix item 19 was constrained not to make.
-**Item 20 is now the first eligible queued row.**
+drops. The two follow-ups it said were owed became three rows — 22, 23 and 24
+above — because its second bullet carried two independent findings.
 
 Previously: 2026-09-05 by Planner — **item 20 planned; item 21 filed.**
 Item 20's Planner pass is done and answered the open scoping question: the send
@@ -298,6 +330,122 @@ day because these two states shared one word.
 | 19 | ✅ | **Save the files to a folder** — a second, user-chosen way to finish one card. The app writes the finished audio, the pictures and a self-contained `What to do next.html` into `<Documents>\Yoto Maker\<card name>\`; the user uploads them by hand on `my.yotoplay.com`. **Needs no sign-in at all.** One `.btn` + one `.tiny` caption appended to step 3 after `#connectWarn`, six `.hidden` regions beneath it (planned as five; see the ruling in the notes), three new routes, a new `yoto_maker/export/` package. The signed-in send path is untouched | [`specs/2026-09-05-export-only-mode-design.md`](superpowers/specs/2026-09-05-export-only-mode-design.md) + [`design-handoffs/export-only-mode/`](design-handoffs/export-only-mode/) | [`plans/2026-09-05-export-only-mode.md`](superpowers/plans/2026-09-05-export-only-mode.md) | — (13, 17, 18 all on `main`) | **MERGED to `main` as [PR #24](https://github.com/mmackelprang/yoto-maker/pull/24) (`7574d0d`, v0.1.13); also recorded in the Shipped table.** Shipped **six** `.hidden` regions, not five — Designer's 2026-09-05 ruling added `#exportOpenError` so a reveal failure stops destroying the partial-save notice. Spec approved 2026-09-05. 10 tasks, one PR, shipped as v0.1.13 — this PR owned the bump. Extends the `configuration-surface/` handoff; deviates from nothing. **Zero new CSS, zero new tokens, `styles.css` unmodified** — a diff that touches it means something in spec §2 was reinterpreted and goes back to Designer. `copy.md` is the authority on every string, and **no user-visible string may contain "export"**. Read the briefing notes — five constraints in this feature read as arbitrary and are not. |
 | 20 | 📋 | **The send path's 413 names the wrong ceiling, and the audio PUT holds the whole track in RAM** — `client.py:481-482` maps every 413 to *"That audio file is too big for Yoto (max 5 hours per card)"*, the **card-level** limit, at the moment the user has hit the **per-track** one; and `client.py:237` sends `content=fh.read()`, ~529 MB resident for a 50-minute WAV | — (decision recorded in the plan §0; no separate spec) | [`plans/2026-09-05-per-track-size-limit.md`](superpowers/plans/2026-09-05-per-track-size-limit.md) | — (independent of 19 in both directions) | **MEDIUM. Planned 2026-09-05. 6 tasks, one PR, branch `fix/send-path-size-limit` off `main`. NO version bump** — backend-only, no served static asset, and item 19 owns v0.1.13. **The Planner pass answered the open scoping question: advise, do not act.** No byte-split (it leaves the card over the 500 MB ceiling and multiplies the uploads) and no send-path transcode (Yoto already transcodes server-side, so converting adds a *second* lossy generation — a strictly worse trade than the export path's, where conversion is forced). What ships is only what is certain regardless of Yoto's published numbers. **The advisory surface itself is now item 21**, because `copy.md` §5.9's strings are **not** verbatim-reusable here (plan §1.4). Read plan §0 first — it is the decision the maintainer is actually reviewing. |
 | 21 | 📋 | **The send path never warns that a track is over Yoto's limits until a long upload fails** — the app knows every track's size the moment it is added, and says nothing. A `.msg-box info` on step 3 above `🚀 Send to Yoto`, naming the per-track and card-level ceilings | _needs Designer pass_ | _needs Designer pass, then Planner_ | **20**, + a Designer ruling on copy, + the live probe in [item 20's plan §8](superpowers/plans/2026-09-05-per-track-size-limit.md) | **LOW-MEDIUM, and it may correctly turn out NOT to ship.** Item 20's plan §8 specifies a cheap, non-destructive live probe (get an upload URL, PUT a ~120 MB file, never call `/content` — no card is created) that settles whether the 100 MB figure binds the **API** path at all. If it does not, an advisory naming it is a false alarm on the shipped path and **this row closes unshipped**. **`copy.md` §5.9's approved strings cannot be reused verbatim** — they name *"Yoto's website"*, which is false on this path, and their `{list}` format is justified by a file dialog that does not exist here (plan §1.4). Touches `index.html` → **needs a version bump.** |
+| 22 | 📋 | **`copy.md` §9's send-path string — written, approved, and deliberately unshipped** — when a status poll fails *after* `POST /api/send` has already returned a job id, `#sendError` still renders today's generic transport line, which ends *"…then try again."* The approved replacement is three paragraphs: the app cannot tell her whether the card went through, nothing on the card has changed, look in the Yoto app on her phone — and if it isn't there, press `🚀 Send to Yoto` **once** | [`design-handoffs/export-only-mode/copy.md`](design-handoffs/export-only-mode/copy.md) §9 (+ §9.1–9.3) — **the copy already exists; this row ships it, it does not author it** | _needs Planner pass_ | — (19 on `main`) · **a live authenticated send against a real Yoto account**, which is the whole reason this is not already shipped | **MEDIUM, and Designer's ranking is why it is not LOW: the send path's current instruction is the *more dangerous of the two*.** It ends *"then try again"*, and pressing `🚀 Send to Yoto` while the first send is still uploading puts **a second card in her Yoto account** — on a website this app does not control, which she must then find and delete. The save path's identical mistake produces `Bedtime Stories (2)` in Documents, which `copy.md` §5.8 says needs no explanation at all. **Until this lands, the duplicate-card protection is what is given up**, on the path where the duplicate is hardest to undo — knowingly, per the maintainer's 2026-09-05 ruling (§9.1's stated fallback, taken). Held for a **verification** reason, not a design one. `#sendError` gains **no `role` and no `tabindex`** (§9.3, deliberate); the YouTube add path still does not opt in (§9.3). The retry is **opt-in per call site** — see briefing. Touches `app.js` → **needs a version bump.** |
+| 23 | 📋 | **`#startOver` leaves `#exportBtn` disabled** — "Start a new card" pressed during a save disowns the running job (`app.js:2675`) and clears all six regions, but never re-enables the save button. It returns only when the disowned run's `finally` (`app.js:2420-2424`) eventually executes — for a large save, the rest of the write plus up to the 12s poll-retry window. `#exportProgress` is hidden by then, so nothing on screen explains why the button is dead | _needs Designer pass_ | _needs Designer pass_ | — (19 on `main`) | **MEDIUM. Pre-existing; deferred from item 19's pre-merge review. `_needs Designer pass_` is not a formality here — the obvious fix causes a worse bug, which is why this row must not be scheduled as a quick win.** Adding `$("#exportBtn").disabled = false` to the `#startOver` handler re-arms a second save while the first is **still writing server-side** (`jobs.py` has no cancellation — that is item 15 / [ADR §3.2](architecture/decisions/2026-07-21-file-upload-on-job-system.md)), and the disowned run's `finally` is **not generation-guarded** the way its `catch` and its progress callback are: when it finally fires it hides the *second* run's `#exportProgress` and re-enables the button mid-run. The one-liner trades a stuck button for a dead progress bar on a live save. Designer owes the question underneath it first: what does the save button *mean* while a disowned job is still writing a discarded card's folder? See briefing. |
+| 24 | 📋 | **A `BaseException` in a worker thread strands `job.status` at "running" forever** — `jobs.py:70` catches `Exception`, so a `SystemExit` / `KeyboardInterrupt` escaping a job target leaves the `Job` in its **non-terminal** state with no error, no timeout and no eviction. The client keeps receiving a *successful* `running` answer, so `pollJob`'s retry window never engages: the bar freezes at its last percent, the button that started it stays disabled, and only a page reload gets out. Live on **both** shipped job paths — the YouTube add and item 19's save | — · [ADR](architecture/decisions/2026-07-21-file-upload-on-job-system.md) is the arc this sits beside, **not** this row's design basis | _needs Planner pass_ | — · **but read the fold-in rule against 14 in the notes before scheduling either** | **LOW-MEDIUM — rare trigger, unbounded consequence, ~3-line fix.** Pre-existing; deferred from item 19's pre-merge review, which was explicitly constrained not to touch `jobs.py`. **Checked against item 14 before filing, and it is not work 14 already owns:** 14 owns moving `POST /api/tracks/file` onto the job system, and its `jobs.py` work is the *client contract* (`reason` / `retryable`, the 404 → *"Yoto Maker restarted"* mapping); the ADR's terminal-state material — §3.2's `cancelled` state, §5.2's list of newly-possible failure modes — covers a job that finishes badly and a job whose **process** died and now 404s (§5.2.3), and **never contemplates a live process still cheerfully answering `running` for a job that is already dead**. It is also not foldable *now*: **14 is ⛔ on an ADR still marked `proposed`**, and blocking a three-line correctness fix that is live on two shipped paths behind an unapproved architecture decision is the wrong trade. **The one real overlap is `tests/test_jobs.py`** — item 14's row calls for it, and `jobs.py` still has **zero coverage** (confirmed 2026-09-06: no such file exists). Rule, both directions: **whichever lands first creates the file and the other adds cases; if 14 is claimed while this row is still 📋, fold this in as a task in 14's plan and retire this row rather than shipping both.** |
+
+### Item 22 — briefing notes
+
+- **The string is written, approved and sitting in the handoff. Do not rewrite
+  it.** [`copy.md`](design-handoffs/export-only-mode/copy.md) §9 carries the
+  three paragraphs verbatim, under a banner that says *NOT SHIPPED* and why.
+  This row is a shipping row, not an authoring row, and a Planner pass that
+  reopens the copy has misread it. §9.2 already answers the obvious
+  refactor — *"why is this not one string shared with §5.10?"* — with the test
+  the package's own §3 rule states: **the recoveries are not identical.** Save
+  sends her to her Documents; send sends her to the Yoto app on her phone. And
+  **both boxes can be on screen at once** (`#exportRow` sits directly beneath
+  `#sendError` by design, `overview.md` §4.3 point 2), so a single shared
+  sentence would put the same words in two red boxes fourteen pixels apart.
+- **The retry is opt-in per call site, and that is a design rule rather than an
+  implementation convenience** (`interactions.md` §4a.1, `copy.md` §9.1).
+  `pollJob` has **four** call sites, and `doUpdate()` (`app.js:167-171`)
+  *catches every poll failure and reports success* — the server exits
+  mid-restart, so the last poll failing is the expected end of a self-update.
+  Retrying there would freeze a bar for the whole retry window before showing a
+  message that was already correct. **The same transport event means different
+  things on different paths.** Item 19 already shipped the opt-in mechanism
+  (`saveToFolder` passes `retryWindowMs`), so this row adds one caller, not a
+  mechanism.
+- **Why it costs more than its diff suggests, and this is the row's real
+  constraint.** Verifying a send-path retry needs a **live authenticated send
+  against a real Yoto account** — the exact dependency this whole feature area
+  exists to route around — and a wrong-but-plausible implementation fails in
+  the direction of *"the app told her nothing happened when a card was
+  created."* Budget for the live send; do not accept a green unit suite as
+  evidence that this works. There is no way to simulate the interesting case
+  (a dropped poll *after* a job id exists) without one.
+- **What is deliberately not in scope** (`copy.md` §9.3, all three still
+  standing): `#sendError` gains no `role` and no `tabindex` — making it a live
+  region changes announcement behaviour for **every** shipped send failure and
+  deserves its own pass and its own UAT. `#sendDone`, `#sendBtn`,
+  `#sendProgress` and the send flow's control logic are untouched. The YouTube
+  add path does not opt in — its dropped-poll message asserts nothing false and
+  the uncertain outcome is visible on the same screen.
+
+### Item 23 — briefing notes
+
+- **The mechanism, exactly.** `saveToFolder` disables `#exportBtn`
+  (`app.js:2364`) and re-enables it only in its `finally` (`app.js:2420-2424`).
+  `#startOver` (`app.js:2670-2701`) bumps `exportSaveGeneration`, clears all six
+  `#export*` regions and resets the draft — but never touches
+  `#exportBtn.disabled`. The generation bump makes the in-flight run *silent*,
+  not *finished*: its `await pollJob(...)` is still outstanding, so the button
+  is dead until that promise settles, with `#exportProgress` already hidden and
+  nothing on screen accounting for it. Reachable by pressing exactly the two
+  buttons the screen offers, which is the same standard item 19 used when it
+  added the generation guards in the first place.
+- **Why the obvious fix is worse, stated so nobody has to rediscover it.**
+  Adding `$("#exportBtn").disabled = false` to the `#startOver` handler makes
+  a second save startable while the first is **still writing on the server** —
+  `jobs.py` has no cancellation, deliberately (item 19's briefing, item 15 /
+  [ADR §3.2](architecture/decisions/2026-07-21-file-upload-on-job-system.md)).
+  And the disowned run's `finally` block is **not** generation-guarded, unlike
+  its `catch` (`app.js:2390`) and its progress callback (`app.js:2382`): when
+  it eventually fires it runs `show($("#exportProgress"), false)` and
+  `$("#exportBtn").disabled = false` against whatever run is current, hiding
+  the **second** save's progress bar mid-write. A stuck button becomes a save
+  that appears to have stopped and has not.
+- **What Designer actually has to rule**, before any plan is written: what the
+  save button *means* while a job the user has discarded is still writing to
+  the discarded card's folder. Offering it immediately invites two concurrent
+  writes and the `(2)`-folder semantics of `copy.md` §5.8 in a case §5.8 was not
+  written for; leaving it disabled with no visible reason is today's bug. The
+  answer decides whether the fix is a guard in `finally`, a visible
+  *"still finishing the last one"* state, or something else — and only then is
+  it a Planner pass. **Marked `_needs Designer pass_` for that reason, not as a
+  formality.**
+
+### Item 24 — briefing notes
+
+- **What actually happens.** `JobManager.start`'s worker (`jobs.py:63-73`) is
+  `try / except Exception`. A `BaseException` — `SystemExit`,
+  `KeyboardInterrupt` — propagates out of `run()` and dies with the thread,
+  leaving `Job.status` at its initial `"running"` (`jobs.py:20`) with
+  `error` still `None`. There is no timeout, no watchdog and no eviction, so
+  `/api/jobs/{id}` answers `running` **successfully** forever. That is what
+  makes it worse than a crash: `pollJob`'s retry window
+  (`POLL_RETRY_WINDOW_MS`, 12s) is spent only on *failed* polls, and these
+  polls succeed. The bar freezes, the originating button stays disabled, and a
+  page reload is the only exit.
+- **Shape of the fix, for the Planner pass.** The `except` clause is the whole
+  of it — catch `BaseException`, record the terminal state, then re-raise so
+  interpreter shutdown still behaves. It is ~3 lines in one function and it
+  needs a test that asserts a job whose target raises a `BaseException` does
+  **not** stay `running`.
+- **Why this is its own row and not a fold-in to item 14 — the check the row
+  claims, written out.** Item 14 owns the `POST /api/tracks/file` migration and
+  the *client contract* around job failure: `err.data.reason` + `retryable`
+  precedence, and mapping a `/api/jobs/{id}` 404 to *"Yoto Maker restarted"*
+  ([ADR §5.2.3](architecture/decisions/2026-07-21-file-upload-on-job-system.md),
+  §4.3). Item 15 adds a `cancelled` terminal state. **Neither reaches this
+  defect**: every terminal-state discussion in the ADR is about *which* terminal
+  state a finished job reports, and this is a job that never reports one. The
+  ADR's nearest neighbour is §5.2.3 — a job killed by an app restart, whose id
+  then 404s — and it is the **opposite** case: there the client gets a legible
+  signal and item 14 is told to map it to *"Yoto Maker restarted"*. Here the
+  process is alive and answering `running` successfully, which is precisely why
+  nothing downstream notices. Item
+  14 is additionally ⛔ behind an ADR that is still `proposed`, so a fold-in
+  parks a live defect on two shipped paths behind an approval that has not
+  happened.
+- **The overlap that is real, and the rule for it.** Both this row and item 14
+  want `tests/test_jobs.py`, and it does not exist — `jobs.py` has zero test
+  coverage, which item 14's row already flags as its load-bearing risk.
+  **Whichever lands first creates the file; the second adds cases to it.** If
+  item 14 is claimed while this row is still 📋, **fold this in as a task in
+  item 14's plan and retire this row** — do not ship both. A Builder that finds
+  both eligible should say so rather than guess.
 
 ### Item 19 — briefing notes
 

@@ -15,6 +15,20 @@ Structure and ordering are [`../overview.md`](../overview.md) §4.3.
 > `copy.md` §5.4 from 2026-09-05 until Planner caught it, and an implementer
 > reading the picture rather than the copy file would have re-shipped the exact
 > misleading sentence that amendment removed. Corrected 2026-09-05.
+>
+> ### ⚠️ The same rule governs **box order**, and this file does not decide it
+>
+> Line 6 already says structure and ordering are `../overview.md` §4.3's, and the
+> markup contract is [`../interactions.md`](../interactions.md) §1. **Where a
+> drawing's box order and those two disagree, they win and the drawing is the
+> bug.** In particular `#exportError` precedes `#exportDone` in the DOM, so on a
+> partial save **the red box renders above the green one**.
+>
+> Stated explicitly because the banner above claimed authority only over
+> *strings*, and an ordering drift walked straight past it: §8 and §8a drew the
+> green box on top from 2026-09-05 until Builder checked them against the shipped
+> DOM on 2026-09-06. Corrected 2026-09-06 — the drawings changed, the shipped
+> behaviour did not.
 
 ---
 
@@ -298,15 +312,15 @@ pointless re-encode while acting wrongly on size quietly degrades her audio.
 
 ```
    │ ┌─────────────────────────────────────────────────────────┐ │
-   │ │ 4 of your 5 tracks are saved, in a folder called        │ │  no 🎉
-   │ │ “Bedtime Stories” — in your Documents, under Yoto Maker.│ │  .msg-box ok
-   │ └─────────────────────────────────────────────────────────┘ │
-   │ ┌─────────────────────────────────────────────────────────┐ │
    │ │ One track couldn’t be saved: “Chapter Four”. We couldn’t│ │  #exportError
    │ │ read that file — it may be open in another program.     │ │  .msg-box err
    │ │                                                         │ │  focus lands HERE
    │ │ Everything else is in the folder. The page in the folder│ │  (overrides §6)
    │ │ lists what’s actually there.                            │ │
+   │ └─────────────────────────────────────────────────────────┘ │
+   │ ┌─────────────────────────────────────────────────────────┐ │
+   │ │ 4 of your 5 tracks are saved, in a folder called        │ │  #exportDone
+   │ │ “Bedtime Stories” — in your Documents, under Yoto Maker.│ │  .msg-box ok, no 🎉
    │ └─────────────────────────────────────────────────────────┘ │
    │                                                             │
    │ ┌────────────────────────┐  ┌────────────────────┐          │
@@ -326,9 +340,13 @@ Three things are true here at once and all three are required.
    the folder, that sentence becomes a lie.
 
 A red box beside a green one is the honest rendering of a partial outcome, and it
-is what the multi-file add already produces.
+is what the multi-file add already produces. **The red one is on top**, because
+`#exportError` precedes `#exportDone` in
+[`../interactions.md`](../interactions.md) §1's markup contract and in
+[`../overview.md`](../overview.md) §4.3's child order — not because a failure
+outranks a success.
 
-**The box drawn above is `#exportError`, and it survives a press of
+**The red box drawn above is `#exportError`, and it survives a press of
 `📂 Open the folder`.** §8a draws what happens when that press fails.
 
 ---
@@ -342,15 +360,15 @@ sheet.)*
 
 ```
    │ ┌─────────────────────────────────────────────────────────┐ │
-   │ │ 4 of your 5 tracks are saved, in a folder called        │ │  #exportDone
-   │ │ “Bedtime Stories” — in your Documents, under Yoto Maker.│ │  .msg-box ok
-   │ └─────────────────────────────────────────────────────────┘ │
-   │ ┌─────────────────────────────────────────────────────────┐ │
    │ │ One track couldn’t be saved: “Chapter Four”. We couldn’t│ │  #exportError
    │ │ read that file — it may be open in another program.     │ │  .msg-box err
    │ │                                                         │ │
    │ │ Everything else is in the folder. The page in the folder│ │  ← THIS SENTENCE
    │ │ lists what’s actually there.                            │ │    IS THE POINT
+   │ └─────────────────────────────────────────────────────────┘ │
+   │ ┌─────────────────────────────────────────────────────────┐ │
+   │ │ 4 of your 5 tracks are saved, in a folder called        │ │  #exportDone
+   │ │ “Bedtime Stories” — in your Documents, under Yoto Maker.│ │  .msg-box ok
    │ └─────────────────────────────────────────────────────────┘ │
    │                                                             │
    │ ┌────────────────────────┐  ┌────────────────────┐          │  .done-actions
@@ -366,9 +384,14 @@ sheet.)*
    │ ⚙️ Connect a different Yoto account                          │
 ```
 
-**Three boxes, and each one is about a different thing.** Green: what the save
-achieved. First red: what the save could not do. Second red: what the button she
-just pressed could not do. The order on screen is the order the events happened.
+**Three boxes, and each one is about a different thing.** First red: what the
+save could not do. Green: what the save achieved. Second red: what the button
+she just pressed could not do.
+
+The first two are the two halves of one event and their order is fixed by the
+markup contract ([`../interactions.md`](../interactions.md) §1 — `#exportError`
+then `#exportDone`), not by which matters more. The third is last because it
+happened last.
 
 **The new region is below `#exportActions`, not above `#exportDone`.** Feedback
 sits beneath the control that raised it — `../overview.md` §4.3 point 1's own
