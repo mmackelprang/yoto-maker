@@ -22,6 +22,25 @@ Built to be usable by someone with little computer knowledge.
 - **Nothing is ever overwritten.** Save the same card twice and you get a second
   folder ending in **(2)**, exactly like copying a file in Windows.
 
+### Fixed in v0.1.13
+
+- **When a track is too big, the message now talks about *that track*.** If Yoto
+  refused one of your tracks for being too large, Yoto Maker used to answer with
+  the limit for a whole card — *“max 5 hours per card”* — at the very moment the
+  problem was one single track, on a card that might be nowhere near five hours.
+  It now names the track Yoto wouldn’t take, says plainly that **no card was made
+  in your Yoto account**, and points you at **📁 Save the files to a folder** as
+  another way to finish that same card.
+- **A message that used to be a dead end now tells you what to do.** If something
+  else turns out to be too big to send, the app no longer just says so and leaves
+  you there — it tells you to let whoever set Yoto Maker up for you know.
+- **Sending a long track no longer eats the computer’s memory.** The app used to
+  load an entire track into memory before sending it: a 200 MB file meant about
+  **200 MB** held in memory at once, and a long recording more again. It now
+  sends the file as it reads it — the same upload, sent the same way, holding
+  **well under a megabyte** at a time. Nothing looks different; it simply no
+  longer strains an older computer.
+
 ### 🆕 New in v0.1.12
 
 - **Nothing you do changes in this release.** Making a card works exactly as it
@@ -260,6 +279,13 @@ Adding audio, pictures, and printing labels all work without it.
   measured here, and nobody has yet uploaded one of these folders by hand. If a
   real upload ever disagrees with what the instructions page says, the upload is
   right.
+- **Whether Yoto turns down an over-large track the way the new message
+  expects.** The wording described above has been seen on screen, but with a
+  stand-in playing Yoto’s part — nobody here has had Yoto itself refuse a real
+  over-large track. If Yoto ever refuses one in some other way, you may still
+  get a vaguer message instead. The new wording deliberately quotes no size
+  limit at all, so there is at least no figure in it that can turn out to be
+  wrong.
 
 ## ❓ Not verified in v0.1.10
 
