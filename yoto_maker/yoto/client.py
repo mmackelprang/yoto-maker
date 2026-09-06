@@ -14,6 +14,16 @@ best-effort: if it fails, the card is still created without that icon.
 NOTE: these endpoints are exercised by mocked tests here; live verification
 against a real Yoto account requires a registered Client ID (see
 docs/SETUP-YOTO-CONNECTION.md).
+
+SIZE LIMITS: this module does NOT check a track against Yoto's published ceilings
+(100 MB / 60 min per track; 500 MB / 5 h / 100 tracks per card) before uploading,
+and that is deliberate rather than an oversight. Those figures are Yoto's
+documentation, not observed behaviour, and the send path — unlike the save-to-a-
+folder path — has no format reason to re-encode, so acting on them would mean a
+second lossy generation on top of Yoto's own server-side transcode, triggered by
+a number the app cannot verify. The app therefore only EXPLAINS a refusal Yoto
+has already made (see _track_too_big). Reasoning in full:
+docs/superpowers/plans/2026-09-05-per-track-size-limit.md §0.
 """
 from __future__ import annotations
 
