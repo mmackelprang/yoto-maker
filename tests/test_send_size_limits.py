@@ -10,7 +10,9 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from yoto_maker.yoto import client as client_mod
 from yoto_maker.yoto.client import (
+    TrackInput,
     YotoClient,
     YotoError,
     _friendly_http,
@@ -30,6 +32,35 @@ def _http_error(status: int) -> httpx.HTTPStatusError:
         request=httpx.Request("PUT", "http://upload.example/put"),
         response=httpx.Response(status),
     )
+
+
+@pytest.fixture
+def _authed(monkeypatch):
+    """Mirrors test_yoto_client.py:79-82. NOT autouse here — most tests in this
+    file call _put_audio directly, which touches neither auth nor sleep."""
+    monkeypatch.setattr(client_mod.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(client_mod.auth, "get_access_token", lambda: "TOKEN")
+
+
+class _Resp:
+    """Minimal stand-in for httpx.Response, matching test_yoto_client.py's
+    FakeResponse. Defined locally rather than imported so the two test modules
+    stay independently readable — the repo's existing per-file-fake habit."""
+
+    def __init__(self, payload=None, status=200):
+        self._payload = payload or {}
+        self.status_code = status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "err",
+                request=httpx.Request("PUT", "http://upload.example/put"),
+                response=httpx.Response(self.status_code),
+            )
+
+    def json(self):
+        return self._payload
 
 
 # --- the wire form of the audio PUT ---------------------------------------- #
@@ -198,3 +229,42 @@ def test_413_elsewhere_no_longer_claims_a_ceiling_it_cannot_vouch_for():
     assert "5 hours" not in msg
     assert "100 MB" not in msg
     assert "too big" in msg.lower()
+
+
+# --- end to end: the right track gets named --------------------------------- #
+
+def test_create_card_names_the_refused_track(sample_mp3, temp_config, _authed):
+    """End-to-end: a 413 on the second track's PUT must name the second track.
+
+    `TrackInput` is (audio_path, title, icon_path) — client.py's dataclass.
+    """
+
+    class _RefuseSecondPut:
+        def __init__(self):
+            self.puts = 0
+
+        def get(self, url, **k):
+            if url.endswith("/uploadUrl"):
+                return _Resp({"uploadUrl": "http://upload.example/put", "uploadId": "u1"})
+            return _Resp({"transcode": {"transcodedSha256": "SHA", "transcodedInfo": {}}})
+
+        def put(self, url, content=None, headers=None, **k):
+            if hasattr(content, "read"):
+                content.read()
+            self.puts += 1
+            return _Resp({}, status=200 if self.puts == 1 else 413)
+
+        def post(self, url, **k):
+            return _Resp({"cardId": "C1"})
+
+    with pytest.raises(YotoError) as exc:
+        YotoClient(client=_RefuseSecondPut()).create_card(
+            "My Card",
+            [
+                TrackInput(audio_path=sample_mp3, title="Chapter One"),
+                TrackInput(audio_path=sample_mp3, title="Chapter Two"),
+            ],
+        )
+
+    assert "Chapter Two" in str(exc.value)
+    assert "Chapter One" not in str(exc.value)

@@ -156,7 +156,7 @@ class YotoClient:
         for i, tr in enumerate(tracks, start=1):
             emit("upload", i, total, f"Sending track {i} of {total}…")
             upload_url, upload_id = self._request_upload_url()
-            self._put_audio(upload_url, tr.audio_path)
+            self._put_audio(upload_url, tr.audio_path, title=tr.title)
 
             emit("transcode", i, total, f"Preparing track {i} of {total}…")
             sha, transcoded_info = self._poll_transcode(
