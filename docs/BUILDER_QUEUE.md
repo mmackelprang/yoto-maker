@@ -1,9 +1,19 @@
 # Builder queue
 
-**Last updated:** 2026-09-05 by Builder — **item 19 claimed and in flight.**
+**Last updated:** 2026-09-05 by Planner — **item 20 planned; item 21 filed.**
+Item 20's Planner pass is done and answered the open scoping question: the send
+path **advises on size, it does not act on it** — no byte-split, no transcode.
+The plan ships only the two halves that are certain regardless of Yoto's
+published ceilings (the wrong 413 ceiling, and a send-side memory defect the
+job-system ADR does not reach), and hands the advisory surface itself to a new
+**item 21** blocked on a Designer ruling and a live probe. **Item 20 branches
+off `main`, needs no version bump, and stays independent of item 19 in both
+directions.**
+
+Previously: 2026-09-05 by Builder — **item 19 claimed and in flight.**
 Branch `feat/save-to-a-folder`, shipping as **v0.1.13** (this PR owns the bump —
-the version string is the asset cache key). **Item 20 is explicitly NOT part of
-this cycle** and stays 📋 queued.
+the version string is the asset cache key). **Item 20 was explicitly NOT part of
+that cycle** and stayed 📋 queued.
 
 Previously: 2026-09-05 by Planner — **two rows filed: item 19 (specced,
 planned, ready) and item 20 (needs a Planner pass).**
@@ -271,7 +281,8 @@ day because these two states shared one word.
 | 16 | ⛔ | **Client-only XHR upload-progress for short files (ADR PR C)** — replace `fetch` with `XMLHttpRequest` in `uploadOneFile` (seam S1) for `upload.onprogress`, fed through `setAddProgress` (seam S3) | [ADR §3.3](architecture/decisions/2026-07-21-file-upload-on-job-system.md) | _needs go/no-go, then plan_ | **14 (PR A); 13; maintainer go/no-go** | **DEFERRABLE cut-line — needs an explicit maintainer go/no-go before it is planned** (ADR open question 1). Open product question: for **under-50-min files the whole wait is the upload leg**, which **only the browser can measure**, so A+B alone leave short files with a differently-fake bar (ADR §1.4, §7.4–7.5). The arc is coherent with A + B alone. See arc briefing. |
 | 18 | ✅ | **Repair existing cards' declared `format` (mp3 → opus) IN PLACE** — a CLI utility (`python -m yoto_maker.repair --card-id … [--apply]`) that reads a card via `GET /card/{id}`, probes each track's served artifact for Ogg Opus, and rewrites **only** each track's `format` via `POST /content` with `cardId` — preserving the physical NFC link, icons, keys, order and every other field. Dry-run by default; backup-before-write; all-or-nothing per card; verify-after; idempotent | [ADR](architecture/decisions/2026-07-21-repair-existing-cards.md) (design basis; committed by this PR) | [plan](superpowers/plans/2026-07-21-repair-existing-cards.md) | 17 (PR #18) + 13 (PR #19) — both on main | **MERGED as [PR #20](https://github.com/mmackelprang/yoto-maker/pull/20); also in the Shipped table. The live 3-card `--apply` run is the coordinator's next step (staged rollout).** New `yoto/repair.py` (pure corrector + orchestration + CLI) + 4 small `client.py` methods + a `yoto_maker/repair.py` shim + `tests/test_repair.py` + `tests/fixtures/card_sample.json`. **`format` is the only field ever written.** **Step-0 pinning found the real body is wrapped `{"card":…,"ownership":…}` and the artifact URL is `trackUrl` itself** (adapted from the plan's assumptions). **No version bump.** The live 3-card `--apply` run is the coordinator's post-merge step — this PR does not write. 6 tasks. |
 | 19 | 🚧 | **Save the files to a folder** — a second, user-chosen way to finish one card. The app writes the finished audio, the pictures and a self-contained `What to do next.html` into `<Documents>\Yoto Maker\<card name>\`; the user uploads them by hand on `my.yotoplay.com`. **Needs no sign-in at all.** One `.btn` + one `.tiny` caption appended to step 3 after `#connectWarn`, five `.hidden` regions beneath it, three new routes, a new `yoto_maker/export/` package. The signed-in send path is untouched | [`specs/2026-09-05-export-only-mode-design.md`](superpowers/specs/2026-09-05-export-only-mode-design.md) + [`design-handoffs/export-only-mode/`](design-handoffs/export-only-mode/) | [`plans/2026-09-05-export-only-mode.md`](superpowers/plans/2026-09-05-export-only-mode.md) | — (13, 17, 18 all on `main`) | **Spec approved 2026-09-05. 10 tasks, one PR, ships as v0.1.13 — this PR owns the bump.** Extends the `configuration-surface/` handoff; deviates from nothing. **Zero new CSS, zero new tokens, `styles.css` unmodified** — a diff that touches it means something in spec §2 was reinterpreted and goes back to Designer. `copy.md` is the authority on every string, and **no user-visible string may contain "export"**. Read the briefing notes — five constraints in this feature read as arbitrary and are not. |
-| 20 | 📋 | **The send path splits on duration only and never checks bytes** — `MAX_TRACK_SECONDS = 3000` (`audio/normalize.py:191`, applied at `server/app.py:235`) clears Yoto's 60-minute per-track limit and says nothing about its **100 MB** one. Plus: `client.py:481-482` maps a 413 to *"That audio file is too big for Yoto (max 5 hours per card)"* — the **card-level** limit, when the user has hit the **per-track** one | _needs Planner pass_ | _needs Planner pass_ | — | **MEDIUM (recommended).** Pre-existing on the **shipped authenticated send path**; surfaced while researching Yoto's limits for item 19. Independent of item 19 in both directions. The 413 copy fix is the cheap half and is worth doing whatever is decided about splitting. **The 100 MB figure is Yoto's published documentation, not observed behaviour** — same evidence tier as item 19's format list; if a live test disagrees, the test wins. See briefing notes. |
+| 20 | 📋 | **The send path's 413 names the wrong ceiling, and the audio PUT holds the whole track in RAM** — `client.py:481-482` maps every 413 to *"That audio file is too big for Yoto (max 5 hours per card)"*, the **card-level** limit, at the moment the user has hit the **per-track** one; and `client.py:237` sends `content=fh.read()`, ~529 MB resident for a 50-minute WAV | — (decision recorded in the plan §0; no separate spec) | [`plans/2026-09-05-per-track-size-limit.md`](superpowers/plans/2026-09-05-per-track-size-limit.md) | — (independent of 19 in both directions) | **MEDIUM. Planned 2026-09-05. 6 tasks, one PR, branch `fix/send-path-size-limit` off `main`. NO version bump** — backend-only, no served static asset, and item 19 owns v0.1.13. **The Planner pass answered the open scoping question: advise, do not act.** No byte-split (it leaves the card over the 500 MB ceiling and multiplies the uploads) and no send-path transcode (Yoto already transcodes server-side, so converting adds a *second* lossy generation — a strictly worse trade than the export path's, where conversion is forced). What ships is only what is certain regardless of Yoto's published numbers. **The advisory surface itself is now item 21**, because `copy.md` §5.9's strings are **not** verbatim-reusable here (plan §1.4). Read plan §0 first — it is the decision the maintainer is actually reviewing. |
+| 21 | 📋 | **The send path never warns that a track is over Yoto's limits until a long upload fails** — the app knows every track's size the moment it is added, and says nothing. A `.msg-box info` on step 3 above `🚀 Send to Yoto`, naming the per-track and card-level ceilings | _needs Designer pass_ | _needs Designer pass, then Planner_ | **20**, + a Designer ruling on copy, + the live probe in [item 20's plan §8](superpowers/plans/2026-09-05-per-track-size-limit.md) | **LOW-MEDIUM, and it may correctly turn out NOT to ship.** Item 20's plan §8 specifies a cheap, non-destructive live probe (get an upload URL, PUT a ~120 MB file, never call `/content` — no card is created) that settles whether the 100 MB figure binds the **API** path at all. If it does not, an advisory naming it is a false alarm on the shipped path and **this row closes unshipped**. **`copy.md` §5.9's approved strings cannot be reused verbatim** — they name *"Yoto's website"*, which is false on this path, and their `{list}` format is justified by a file dialog that does not exist here (plan §1.4). Touches `index.html` → **needs a version bump.** |
 
 ### Item 19 — briefing notes
 
@@ -372,12 +383,37 @@ day because these two states shared one word.
   wins** — and a Planner pass should decide whether to act (split on bytes) or
   advise (surface the number), which is exactly the two-tier question
   configuration-surface §13.2 and export-only §8.6 both answered before.
-- **Open scoping questions for the Planner pass**, none blocking: whether to split
-  on a byte budget as well as a duration one (and at what bitrate assumption),
-  whether to transcode oversized local files on the send path the way export does,
-  or whether to surface the ceilings as advisories on the send path using
-  export-only's existing strings — `overview.md` §8.6 notes that last option and
-  calls it "a small argument for the send path borrowing these strings later".
+- **~~Open scoping questions for the Planner pass~~ — ANSWERED 2026-09-05.** The
+  three options were: split on a byte budget, transcode oversized local files on
+  the send path, or advise. **The plan picks advise**, and the reasoning is in
+  [plan §0.1–0.2](superpowers/plans/2026-09-05-per-track-size-limit.md). Two
+  points worth not rediscovering: a byte-split leaves the card's *total* bytes
+  unchanged, so a 529 MB WAV split six ways is still over the **500 MB card**
+  ceiling — it converts one probable refusal into a more certain one. And a
+  send-path transcode is a **worse** trade than the export path's: export
+  converts because the website would refuse the file outright (0 added lossy
+  generations — the alternative is failure), whereas the send path's API ingests
+  it and Yoto transcodes server-side, so a local re-encode adds a **second**
+  generation to audio that was going to be re-encoded anyway. That is exactly
+  §8.6's *"her audio is quietly made worse"*, in a sharper form than §8.6 itself
+  describes.
+- **`copy.md` §5.9's strings were checked and are NOT verbatim-reusable here.**
+  `overview.md` §8.6 speculated they might be — *"a small argument for the send
+  path borrowing these strings later"*. They cannot, for two independent reasons:
+  the approved sentence says *"Yoto's **website** may refuse it"*, which is false
+  on a path where the app does the sending; and §5.9's `{list}` format is
+  ratified explicitly because *"it is the file name she will have to find in a
+  file dialog"* — there are no written files and no file dialog on the send path.
+  Which list form is right there is a genuine copy decision, which is why the
+  advisory surface is **item 21 and Designer-blocked** rather than folded into
+  item 20.
+- **Two things the Planner pass found that were not in this briefing**, both now
+  in item 20's scope. `client.py:237` PUTs `content=fh.read()` — the entire track
+  held in memory, ~529 MB for the same WAV — which is the **send-side twin of the
+  add-side fix in the job-system ADR §3.1**, and which items 14, 15 and 16 do not
+  reach. And `_friendly_http` is shared by six call sites, so no single 413 string
+  can be right for all of them; the fix routes a per-track message from the one
+  caller that knows, and stops the default naming a ceiling it cannot vouch for.
 
 ### Item 18 — briefing notes
 
