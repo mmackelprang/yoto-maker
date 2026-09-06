@@ -35,10 +35,11 @@ Built to be usable by someone with little computer knowledge.
   else turns out to be too big to send, the app no longer just says so and leaves
   you there — it tells you to let whoever set Yoto Maker up for you know.
 - **Sending a long track no longer eats the computer’s memory.** The app used to
-  load an entire track into memory before sending it: about **200 MB** of memory
-  for a 200 MB file, and more again for a long recording. It now sends the file
-  as it reads it — the same upload, sent the same way, using **0.4 MB** instead.
-  Nothing looks different; it simply no longer strains an older computer.
+  load an entire track into memory before sending it: a 200 MB file meant about
+  **200 MB** held in memory at once, and a long recording more again. It now
+  sends the file as it reads it — the same upload, sent the same way, holding
+  **well under a megabyte** at a time. Nothing looks different; it simply no
+  longer strains an older computer.
 
 ### 🆕 New in v0.1.12
 
