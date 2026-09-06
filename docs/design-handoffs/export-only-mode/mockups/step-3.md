@@ -281,11 +281,10 @@ action, because re-encoding an MP3 to shrink it is a quality decision the app ha
 no basis to make for her.
 
 ```
-   │ │ One of your tracks is bigger than Yoto allows — “Chapter │ │
-   │ │ Nine” is 118 MB, and Yoto’s limit for one track is       │ │
-   │ │ 100 MB. Yoto’s website may refuse it. If it does, tell   │ │
-   │ │ whoever set Yoto Maker up for you — that track needs     │ │
-   │ │ making smaller.                                          │ │
+   │ │ One of your tracks is bigger than Yoto allows for a      │ │
+   │ │ single track — Yoto’s limit is 100 MB. Yoto’s website    │ │
+   │ │ may refuse it. If it does, tell whoever set Yoto Maker   │ │
+   │ │ up for you which one it is: 09 - Chapter Nine (118 MB).  │ │
 ```
 
 This is `../overview.md` §8.6's split made visible: **the app acts on format and

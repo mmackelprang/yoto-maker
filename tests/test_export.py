@@ -74,6 +74,27 @@ def test_two_titles_that_truncate_identically_still_differ(tmp_path):
     assert a != b
 
 
+def test_the_budget_covers_the_track_picture_which_sits_one_level_deeper(tmp_path):
+    """The budget was measured against the audio path only.
+
+    A track's picture is written to ``<folder>\\Track pictures\\<stem>.png`` — one
+    segment and one separator further down, 15 characters — so a folder and title
+    that produced a 255-character audio path produced a 270-character picture
+    path. With Windows long paths disabled (the default) that write fails, the
+    runner swallows it as a log warning, and the pictures vanish silently while
+    the sheet says they are there.
+    """
+    folder = tmp_path / ("d" * 40)
+    name = names.track_filename(7, 20, "T" * 400, ".mp3", folder=folder)
+    picture = folder / names.TRACK_PICTURES_DIR / (Path(name).stem + ".png")
+
+    assert len(str(folder / name)) <= names.MAX_PATH_CHARS
+    assert len(str(picture)) <= names.MAX_PATH_CHARS
+    # Not simply over-generous either: the title is truncated to exactly the room
+    # the DEEPER of the two paths leaves, so the picture lands on the limit.
+    assert len(str(picture)) == names.MAX_PATH_CHARS
+
+
 def test_an_impossible_path_raises_rather_than_writing_something_wrong(tmp_path):
     deep = tmp_path / ("d" * 240)
     with pytest.raises(NameTooLongError):
@@ -172,7 +193,8 @@ def test_split_groups_report_only_real_multi_part_tracks():
 from yoto_maker.export import sheet as sheet_mod
 
 
-def _sheet(files, failures=(), picture=None, split=(), version="0.1.13"):
+def _sheet(files, failures=(), picture=None, split=(), version="0.1.13",
+           track_pictures=False):
     return sheet_mod.SheetData(
         card_name="Bedtime Stories",
         files=list(files),
@@ -181,6 +203,7 @@ def _sheet(files, failures=(), picture=None, split=(), version="0.1.13"):
         split=list(split),
         picture_png=picture,
         has_card_picture_file=picture is not None,
+        has_track_pictures=track_pictures,
         version=version,
         date_label="5 September 2026",
     )
@@ -217,6 +240,39 @@ def test_the_picture_step_is_omitted_entirely_when_there_is_no_picture():
     html_out = sheet_mod.render_sheet(_sheet([_f(1, "01 - A.mp3")]))
     assert "Card picture.png" not in html_out
     assert "4. Add the picture" not in html_out
+
+
+def test_the_sheet_names_the_track_pictures_folder_only_when_it_is_there():
+    """overview.md §9.2: the sheet mentions them CONDITIONALLY.
+
+    The paragraph was unconditional, while the runner skips the subfolder
+    entirely when no track resolves an icon and when its mkdir fails — so the
+    page told her to look for a folder that was not there.
+    """
+    present = sheet_mod.render_sheet(_sheet([_f(1, "01 - A.mp3")], track_pictures=True))
+    assert "The little pictures on the Yoto screen" in present
+    assert "<strong>Track pictures</strong>" in present
+
+    absent = sheet_mod.render_sheet(_sheet([_f(1, "01 - A.mp3")]))
+    assert "The little pictures on the Yoto screen" not in absent
+    assert "Track pictures" not in absent
+    # Step 6 is never conditional and must survive either branch.
+    assert "6. Put it on a card" in absent
+
+
+def test_the_plural_missing_track_notice_agrees_with_itself():
+    """copy.md §6.8 gives the singular verbatim; the plural body it leaves
+    unspecified. The closing clause was shared, so the plural read "…so they
+    aren’t in this folder… If you want IT on the card…".
+    """
+    one = sheet_mod.render_sheet(_sheet([_f(1, "01 - A.mp3")], failures=["Chapter Four"]))
+    assert "If you want it on the card, go back to Yoto Maker and try again." in one
+
+    many = sheet_mod.render_sheet(
+        _sheet([_f(1, "01 - A.mp3")], failures=["Chapter Four", "Chapter Five"])
+    )
+    assert "If you want them on the card, go back to Yoto Maker and try again." in many
+    assert "If you want it on the card" not in many
 
 
 def test_a_partial_run_names_the_missing_track_and_counts_only_what_landed():
@@ -307,6 +363,74 @@ def test_pressing_save_twice_never_overwrites(tmp_path, sample_mp3):
     assert first.folder.exists()
 
 
+def test_two_saves_of_one_card_name_both_succeed_and_get_their_own_folder(tmp_path, sample_mp3):
+    """unique_dir() probes and then the runner creates — a gap two saves can sit
+    in. The loser's mkdir() raised FileExistsError, which _os_reason maps to the
+    generic "something went wrong", reporting a fault for a collision.
+
+    Pressing save, reloading (which re-enables the button) and pressing save
+    again is all it takes; two tabs do it too.
+    """
+    import threading
+
+    root = tmp_path / "saved"
+    results: list = []
+    errors: list = []
+    ready = threading.Barrier(2)
+
+    def run(n: int) -> None:
+        try:
+            ready.wait(timeout=10)
+            results.append(runner_mod.export_card(
+                tracks=[_track(sample_mp3, "A")], card_name="Bedtime Stories",
+                picture_path=None, root=root, scratch_dir=tmp_path / f"s{n}",
+                version="0.1.13",
+            ))
+        except BaseException as exc:          # noqa: BLE001 - reported below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run, args=(n,)) for n in (1, 2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert not errors, errors
+    assert len(results) == 2
+    assert len({r.folder for r in results}) == 2, "one folder held both cards"
+    assert all(r.folder.exists() for r in results)
+    assert {r.folder.name for r in results} == {"Bedtime Stories", "Bedtime Stories (2)"}
+
+
+def test_losing_the_race_for_a_folder_name_re_resolves_instead_of_failing(
+    tmp_path, sample_mp3, monkeypatch
+):
+    """The race above, made deterministic: something else takes the resolved name
+    between the probe and the create. Nothing is overwritten — the stolen folder
+    is left exactly as it was found."""
+    root = tmp_path / "saved"
+    root.mkdir(parents=True)
+    real = runner_mod.unique_dir
+    stolen: list = []
+
+    def steal(r, name):
+        candidate = real(r, name)
+        if not stolen:                        # only the first resolution loses
+            stolen.append(candidate)
+            candidate.mkdir()
+            (candidate / "someone else's file.txt").write_text("x", encoding="utf-8")
+        return candidate
+
+    monkeypatch.setattr(runner_mod, "unique_dir", steal)
+    res = runner_mod.export_card(
+        tracks=[_track(sample_mp3, "A")], card_name="Bedtime Stories",
+        picture_path=None, root=root, scratch_dir=tmp_path / "s", version="0.1.13",
+    )
+    assert stolen[0].name == "Bedtime Stories"
+    assert res.folder.name == "Bedtime Stories (2)"
+    assert (stolen[0] / "someone else's file.txt").exists(), "never overwrite"
+
+
 def test_a_mixed_card_copies_mp3_and_m4a_and_converts_flac(tmp_path, sample_mp3):
     """Acceptance criterion 11. The .m4a staying put is the specific thing to check."""
     from yoto_maker.tools import find_ffmpeg
@@ -335,10 +459,19 @@ def test_a_mixed_card_copies_mp3_and_m4a_and_converts_flac(tmp_path, sample_mp3)
 
 
 def test_conversion_uses_192k(tmp_path, sample_mp3, monkeypatch):
+    """192 kbps is what keeps a 50-minute track under Yoto's 100 MB cap, and this
+    is the only test that names the figure.
+
+    ``bitrate`` is a REQUIRED keyword on the spy, with no default. Given one it
+    would have matched normalize_to_mp3's own ``"192k"`` default, so deleting
+    ``bitrate=EXPORT_BITRATE`` from the runner left this test green — verified by
+    removing that kwarg and watching this fail, then putting it back.
+    """
+    assert rules.EXPORT_BITRATE == "192k"
     seen = {}
     real = runner_mod.normalize_to_mp3
 
-    def spy(src, out_dir, *, bitrate="192k", **kw):
+    def spy(src, out_dir, *, bitrate, **kw):
         seen["bitrate"] = bitrate
         return real(src, out_dir, bitrate=bitrate, **kw)
 
@@ -352,7 +485,7 @@ def test_conversion_uses_192k(tmp_path, sample_mp3, monkeypatch):
         )
     except ExportError:
         pass                                       # ffmpeg may reject the fake wav
-    assert seen["bitrate"] == "192k"
+    assert seen["bitrate"] == rules.EXPORT_BITRATE == "192k"
 
 
 def test_a_partial_run_keeps_the_rest_and_the_sheet_tells_the_truth(tmp_path, sample_mp3):
@@ -415,6 +548,25 @@ def test_track_pictures_go_in_a_subfolder_named_to_match(tmp_path, sample_mp3):
     assert (res.folder / "Track pictures" / "01 - Chapter One.png").exists()
     # The subfolder is the whole point: no loose 16x16 PNG beside the audio.
     assert not list(res.folder.glob("*.png"))
+    # …and the sheet says so, because it is there.
+    page = (res.folder / "What to do next.html").read_text(encoding="utf-8")
+    assert "Track pictures" in page
+
+
+def test_the_sheet_never_claims_a_pictures_folder_that_was_not_written(tmp_path, sample_mp3):
+    """spec §2.6 requirement 1: the sheet is generated from what actually landed.
+
+    No track resolved an icon, so the runner writes no subfolder — and the page
+    must not send her looking for one.
+    """
+    res = runner_mod.export_card(
+        tracks=[_track(sample_mp3, "Chapter One")], card_name="Bedtime Stories",
+        picture_path=None, root=tmp_path / "saved", scratch_dir=tmp_path / "s",
+        version="0.1.13",
+    )
+    assert not (res.folder / "Track pictures").exists()
+    page = (res.folder / "What to do next.html").read_text(encoding="utf-8")
+    assert "Track pictures" not in page
 
 
 def test_the_result_view_carries_everything_the_panel_needs(tmp_path, sample_mp3):
@@ -522,14 +674,38 @@ def test_the_sheet_route_serves_what_is_in_the_folder(client, sample_mp3):
     assert served.text == (folder / "What to do next.html").read_text(encoding="utf-8")
 
 
-def test_the_open_route_accepts_no_path(client):
-    """The safety property. The route's signature takes nothing at all."""
+def test_the_open_route_accepts_an_opaque_id_and_never_a_path(client, sample_mp3):
+    """The safety property, overview.md §7.3.
+
+    The route now takes one field so the button can open the folder its OWN panel
+    is about rather than whichever job finished last — but that field is an
+    opaque id this server minted, never a filesystem path. The distinction is
+    what this test pins: the model has exactly one field named ``id``, and a
+    real, existing path offered as an id is simply an id nobody minted, so it
+    takes the same "folder is gone" failure a deleted folder does.
+    """
     import inspect
-    from yoto_maker.server.app import open_saved_folder
+
+    from yoto_maker.export.errors import REASON_FOLDER_GONE
+    from yoto_maker.server.app import OpenSavedBody, open_saved_folder
 
     client.post("/api/draft/reset")
-    assert list(inspect.signature(open_saved_folder).parameters) == []
+    assert list(inspect.signature(open_saved_folder).parameters) == ["body"]
+    assert list(OpenSavedBody.model_fields) == ["id"]
     assert client.post("/api/export/open").status_code == 400   # nothing saved yet
+
+    with sample_mp3.open("rb") as fh:
+        client.post("/api/tracks/file", files={"file": ("sample.mp3", fh, "audio/mpeg")})
+    client.post("/api/card/name", json={"name": "Bedtime Stories"})
+    job = _drain(client, client.post("/api/export").json()["job_id"])
+    assert job["status"] == "done", job
+
+    # The folder EXISTS and is the one the server just wrote — and offering its
+    # path as the id still gets nowhere, because ids are looked up, never joined.
+    refused = client.post("/api/export/open", json={"id": job["result"]["folder_path"]})
+    assert refused.status_code == 400
+    assert refused.json()["error"] == REASON_FOLDER_GONE
+    assert "path" not in refused.json()
 
 
 def test_a_failed_open_carries_the_path_so_the_message_is_not_a_dead_end(
@@ -566,6 +742,69 @@ def test_a_failed_open_carries_the_path_so_the_message_is_not_a_dead_end(
     assert refused.json()["path"] == job["result"]["folder_path"]
 
 
+def test_every_save_gets_its_own_scratch_root_and_removes_it_afterwards(
+    client, sample_mp3, monkeypatch
+):
+    """Two concurrent saves once shared ``work/export`` — and the runner keys each
+    track's staging directory on the track index alone, while normalize_to_mp3
+    names its output after the input's stem. Two jobs converting their own track
+    1 therefore wrote to the same path, and a card was written holding another
+    card's audio and reported as a complete success.
+    """
+    import yoto_maker.server.app as app_mod
+
+    seen: list[Path] = []
+    real = app_mod.export_card
+
+    def spy(**kwargs):
+        seen.append(Path(kwargs["scratch_dir"]))
+        return real(**kwargs)
+
+    monkeypatch.setattr(app_mod, "export_card", spy)
+    client.post("/api/draft/reset")
+    with sample_mp3.open("rb") as fh:
+        client.post("/api/tracks/file", files={"file": ("sample.mp3", fh, "audio/mpeg")})
+    client.post("/api/card/name", json={"name": "Bedtime Stories"})
+
+    for _ in range(2):
+        job = _drain(client, client.post("/api/export").json()["job_id"])
+        assert job["status"] == "done", job
+
+    assert len(seen) == 2
+    assert len(set(seen)) == 2, f"two jobs shared one scratch root: {seen}"
+    assert not [p for p in seen if p.exists()], "each run must remove its own"
+
+
+def test_each_save_gets_an_id_that_resolves_to_its_own_folder(client, sample_mp3):
+    """interactions.md §9.3. A single "last folder" global served whichever job
+    finished LAST to every panel: save card A in one tab, card B in another, and
+    tab A's "📄 What to do next" showed card B's instructions.
+    """
+    client.post("/api/draft/reset")
+    with sample_mp3.open("rb") as fh:
+        client.post("/api/tracks/file", files={"file": ("sample.mp3", fh, "audio/mpeg")})
+    client.post("/api/card/name", json={"name": "Bedtime Stories"})
+
+    first = _drain(client, client.post("/api/export").json()["job_id"])["result"]
+    second = _drain(client, client.post("/api/export").json()["job_id"])["result"]
+
+    assert first["save_id"] and second["save_id"]
+    assert first["save_id"] != second["save_id"]
+    assert first["folder_path"] != second["folder_path"]
+    # The id travels INSIDE the URL the panel is handed — it reconstructs nothing.
+    assert first["sheet_url"].endswith(first["save_id"])
+
+    for r in (first, second):
+        served = client.get(r["sheet_url"])
+        assert served.status_code == 200
+        assert served.text == (
+            Path(r["folder_path"]) / "What to do next.html"
+        ).read_text(encoding="utf-8")
+
+    # The proof that the ids are doing the work: the two pages are different.
+    assert client.get(first["sheet_url"]).text != client.get(second["sheet_url"]).text
+
+
 def test_starting_a_new_card_forgets_the_folder(client, sample_mp3):
     client.post("/api/draft/reset")
     with sample_mp3.open("rb") as fh:
@@ -577,14 +816,26 @@ def test_starting_a_new_card_forgets_the_folder(client, sample_mp3):
     assert client.get("/api/export/sheet.html").status_code == 404
 
 
-def test_both_paths_build_the_same_card(client, sample_mp3):
-    """Acceptance criterion 8, at the seam where the two could drift."""
+def test_both_paths_build_the_same_card(client, sample_mp3, monkeypatch):
+    """Acceptance criterion 8, at the seam where the two could drift.
+
+    Calling _build_card_inputs twice and comparing proves DETERMINISM, not
+    SHARING — it would still pass if the send path went back to its own inline
+    comprehension, which is the exact drift criterion 8 forbids. So the sharing
+    itself is pinned below: both route bodies must name the function, and both
+    must be observed calling it when actually driven.
+    """
+    import inspect
+    from types import SimpleNamespace
+
     import yoto_maker.server.app as app_mod
 
     client.post("/api/draft/reset")
     with sample_mp3.open("rb") as fh:
         client.post("/api/tracks/file", files={"file": ("sample.mp3", fh, "audio/mpeg")})
     client.post("/api/card/name", json={"name": "Bedtime Stories"})
+
+    # 1. Determinism, and that _resolve_icon is called rather than reimplemented.
     draft = app_mod.get_draft()
     a, name_a = app_mod._build_card_inputs(draft)
     b, name_b = app_mod._build_card_inputs(draft)
@@ -592,3 +843,40 @@ def test_both_paths_build_the_same_card(client, sample_mp3):
     assert [(x.title, x.audio_path, x.icon_path) for x in a] == \
            [(x.title, x.audio_path, x.icon_path) for x in b]
     assert all(x.icon_path is not None for x in a), "_resolve_icon must have run"
+
+    # 2. Both routes name the shared function in their own source.
+    for route in (app_mod.send_to_yoto, app_mod.export_to_folder):
+        assert "_build_card_inputs(" in inspect.getsource(route), route.__name__
+
+    # 3. And both actually call it when driven end to end.
+    calls: list = []
+    real = app_mod._build_card_inputs
+
+    def spy(d):
+        calls.append(d)
+        return real(d)
+
+    class _FakeYotoClient:
+        """No network. The send path's only job here is to reach the shared call."""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def create_card(self, name, inputs, progress=None):
+            return SimpleNamespace(content_id="fake", title=name)
+
+    monkeypatch.setattr(app_mod, "_build_card_inputs", spy)
+    monkeypatch.setattr(app_mod, "connection_status",
+                        lambda: {"connected": True, "client_id_verdict": "ok"})
+    monkeypatch.setattr(app_mod, "YotoClient", _FakeYotoClient)
+
+    sent = _drain(client, client.post("/api/send").json()["job_id"])
+    assert sent["status"] == "done", sent
+    assert len(calls) == 1, "the send path must go through _build_card_inputs"
+
+    saved = _drain(client, client.post("/api/export").json()["job_id"])
+    assert saved["status"] == "done", saved
+    assert len(calls) == 2, "the save path must go through _build_card_inputs"

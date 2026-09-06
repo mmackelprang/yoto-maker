@@ -30,6 +30,7 @@ from .errors import (
 )
 from .names import (
     FALLBACK_CARD_NAME,
+    TRACK_PICTURES_DIR,
     date_words,
     duration_words,
     megabytes,
@@ -44,7 +45,8 @@ log = logging.getLogger("yoto_maker.export")
 
 SHEET_NAME = "What to do next.html"
 CARD_PICTURE_NAME = "Card picture.png"
-TRACK_PICTURES_DIR = "Track pictures"
+# Re-exported, not redefined: names.py owns it because it is part of the path
+# budget there (a track's picture sits one segment deeper than its audio).
 
 # The card picture is embedded in the sheet as a data URI, so it is downscaled
 # first: the file on disk can be 1024px (picture.py:14), and a page that carries
@@ -122,8 +124,7 @@ def export_card(
     folder_name = sanitize_component(card_name, fallback=FALLBACK_CARD_NAME)
     try:
         root.mkdir(parents=True, exist_ok=True)
-        folder = unique_dir(root, folder_name)
-        folder.mkdir()
+        folder = _claim_folder(root, folder_name)
     except NameTooLongError as exc:
         raise ExportError(REASON_TOO_LONG) from exc
     except OSError as exc:
@@ -140,6 +141,37 @@ def export_card(
         # find it and use it (overview.md §10.5).
         shutil.rmtree(folder, ignore_errors=True)
         raise
+
+
+# How many times to re-resolve a taken name before giving up. A few dozen covers
+# any plausible number of saves racing for one card name; past that something
+# other than a race is wrong and the generic failure is the honest answer.
+_FOLDER_ATTEMPTS = 40
+
+
+def _claim_folder(root: Path, name: str) -> Path:
+    """Resolve the next free name and create it, re-resolving if we lose a race.
+
+    unique_dir() is a probe followed by a create, so two saves of the same card
+    resolve to the SAME candidate and the loser's mkdir() raises FileExistsError
+    — which _os_reason maps to the generic failure, reporting a fault for what is
+    only a collision. Re-resolving is the whole fix.
+
+    mkdir() without ``exist_ok`` is what keeps this safe: the winner's folder is
+    never opened, never written into and never overwritten (overview.md §5.2), so
+    the " (2)" behaviour is exactly what it was. The last attempt is deliberately
+    unguarded — it falls through to export_card's existing OSError handling.
+    """
+    for _ in range(_FOLDER_ATTEMPTS - 1):
+        folder = unique_dir(root, name)
+        try:
+            folder.mkdir()
+        except FileExistsError:
+            continue
+        return folder
+    folder = unique_dir(root, name)
+    folder.mkdir()
+    return folder
 
 
 def _write_all(*, tracks, folder: Path, picture_path, scratch_dir: Path,
@@ -210,7 +242,7 @@ def _write_all(*, tracks, folder: Path, picture_path, scratch_dir: Path,
         raise ExportError(_all_failed_message(failures, len(tracks)))
 
     say("pictures", 82, "Saving the pictures…")
-    has_picture = _write_pictures(folder, picture_path, saved)
+    has_picture, has_track_pictures = _write_pictures(folder, picture_path, saved)
 
     say("sheet", 92, "Writing the instructions…")
     data = SheetData(
@@ -221,6 +253,7 @@ def _write_all(*, tracks, folder: Path, picture_path, scratch_dir: Path,
         split=split_groups(saved),
         picture_png=_sheet_picture(folder / CARD_PICTURE_NAME) if has_picture else None,
         has_card_picture_file=has_picture,
+        has_track_pictures=has_track_pictures,
         version=version,
         date_label=date_words(today),
     )
@@ -251,8 +284,15 @@ def _all_failed_message(failures: list[Failure], total: int) -> str:
     return "\n".join(lines)
 
 
-def _write_pictures(folder: Path, picture_path, saved: list[SavedFile]) -> bool:
-    """Best-effort. A picture must never fail a save that has the audio in it."""
+def _write_pictures(folder: Path, picture_path, saved: list[SavedFile]) -> tuple[bool, bool]:
+    """Best-effort. A picture must never fail a save that has the audio in it.
+
+    Returns ``(card picture written, track-pictures subfolder written with at
+    least one picture in it)``. The second value exists because the sheet's
+    paragraph about that subfolder is CONDITIONAL (overview.md §9.2, spec §2.6
+    requirement 1: the sheet is generated from what actually landed on disk) and
+    every branch below can silently decline to create it.
+    """
     has_picture = False
     if picture_path and Path(picture_path).exists():
         try:
@@ -267,19 +307,21 @@ def _write_pictures(folder: Path, picture_path, saved: list[SavedFile]) -> bool:
     # Only for tracks that LANDED — a picture with no matching audio is a decoy.
     wanted = [f for f in saved if f.icon_path and Path(f.icon_path).exists()]
     if not wanted:
-        return has_picture
+        return has_picture, False
     pics = folder / TRACK_PICTURES_DIR
     try:
         pics.mkdir(exist_ok=True)
     except OSError as exc:
         log.warning("save: could not make the pictures folder: %s", exc)
-        return has_picture
+        return has_picture, False
+    written = 0
     for f in wanted:
         try:
             shutil.copy2(f.icon_path, pics / (Path(f.name).stem + ".png"))
+            written += 1
         except OSError as exc:
             log.warning("save: could not write a track picture: %s", exc)
-    return has_picture
+    return has_picture, written > 0
 
 
 def _sheet_picture(path: Path) -> bytes | None:

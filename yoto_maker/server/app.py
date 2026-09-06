@@ -7,8 +7,11 @@ YotoError / AudioError / ImageError), so the UI can show it verbatim.
 """
 from __future__ import annotations
 
+import shutil
 import webbrowser
+from collections import OrderedDict
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -222,7 +225,11 @@ async def reset_draft() -> dict:
     # The card that folder described is gone. Serving its instruction page from
     # a blank draft would point at a card the user has just discarded
     # (interactions.md §9.3). The folder itself is hers and stays on disk.
+    #
+    # The id map is cleared with it, for the same reason and no other: an id that
+    # outlived its draft would keep serving the discarded card's instructions.
     _last_saved_folder = None
+    _saved_folders.clear()
     return {"ok": True}
 
 
@@ -708,6 +715,43 @@ async def send_to_yoto() -> dict:
 # never needs it: there is exactly one folder the button can mean.
 _last_saved_folder: Path | None = None
 
+# …except that there can be more than one panel on screen. Two tabs, or a reload
+# mid-save, produce two completed saves, and a single "last folder" global serves
+# whichever finished LAST to both of them — so tab 1's "📄 What to do next" opens
+# tab 2's card. Each completed save therefore gets an OPAQUE ID, minted here, and
+# the job result carries it inside the URLs the panel is handed.
+#
+# The id is not a relaxation of §7.3's rule. A path from the browser is still
+# refused: this is a lookup in a map the server itself populated, so an unknown
+# id resolves to nothing and lands on the SAME "folder is gone" failure a deleted
+# folder does (copy.md §5.5a). Capped and evicted oldest-first so a long session
+# cannot grow it without bound.
+_SAVED_FOLDER_MEMORY = 8
+_saved_folders: "OrderedDict[str, Path]" = OrderedDict()
+
+
+def _remember_saved_folder(folder: Path) -> str:
+    global _last_saved_folder
+    save_id = uuid4().hex
+    _saved_folders[save_id] = folder
+    while len(_saved_folders) > _SAVED_FOLDER_MEMORY:
+        _saved_folders.popitem(last=False)
+    _last_saved_folder = folder
+    return save_id
+
+
+def _resolve_saved_folder(save_id: str) -> Path | None:
+    """The folder an id names, or the last one saved when no id was given.
+
+    The fallback is what keeps a panel from before this change working, and it is
+    the pre-existing behaviour unchanged. An id that is not in the map resolves to
+    None — it is never joined onto anything, so a path sent as an id is simply an
+    id the server never minted.
+    """
+    if save_id:
+        return _saved_folders.get(save_id)
+    return _last_saved_folder
+
 
 @app.post("/api/export")
 async def export_to_folder() -> dict:
@@ -742,23 +786,36 @@ async def export_to_folder() -> dict:
     picture = Path(draft.picture_path) if draft.picture_path else None
     cfg = get_config()
     root = cfg.saved_dir
-    scratch = cfg.work_dir / "export"
+    # A FRESH scratch root per job, and never a fixed one. The runner keys each
+    # track's staging directory on the track index, and normalize_to_mp3 names its
+    # output after the input's stem — so two jobs converting their own track 1
+    # shared a directory and one card was written holding another card's audio,
+    # reported as a complete success. Pressing save, reloading, and pressing save
+    # again is all it takes.
+    scratch = cfg.work_dir / "export" / uuid4().hex
 
     def work(update):
-        global _last_saved_folder
-        result = export_card(
-            tracks=tracks,
-            card_name=card_name,
-            picture_path=picture,
-            root=root,
-            scratch_dir=scratch,
-            version=__version__,
-            update=update,
-        )
-        _last_saved_folder = result.folder
+        try:
+            result = export_card(
+                tracks=tracks,
+                card_name=card_name,
+                picture_path=picture,
+                root=root,
+                scratch_dir=scratch,
+                version=__version__,
+                update=update,
+            )
+        finally:
+            # Unconditional: a failed run leaves half-converted audio behind, and
+            # the next job must never be able to see it.
+            shutil.rmtree(scratch, ignore_errors=True)
+        save_id = _remember_saved_folder(result.folder)
         return {
             **result.view(),
-            "sheet_url": "/api/export/sheet.html",
+            "save_id": save_id,
+            # The id travels INSIDE the URL, so the panel reconstructs nothing —
+            # it uses the string it is handed (interactions.md §3.3 step 2).
+            "sheet_url": f"/api/export/sheet.html?id={save_id}",
             "can_open": reveal_supported(),
         }
 
@@ -767,26 +824,43 @@ async def export_to_folder() -> dict:
 
 
 @app.get("/api/export/sheet.html")
-async def get_export_sheet():
+async def get_export_sheet(id: str = ""):
     """Serve the page that is already in the folder. Same shape as /api/label.pdf.
 
     One file, one rendering, both routes: this returns the exact bytes written
     into the folder, so the two can never drift (overview.md §6.3).
+
+    ``id`` is the opaque id of one completed save, minted by this server and
+    handed to the panel inside ``sheet_url``. It is looked up, never joined onto
+    anything — see _resolve_saved_folder. Omitted, it means "the last one", which
+    is what this route always did.
     """
-    if _last_saved_folder is None:
+    folder = _resolve_saved_folder(id)
+    if folder is None:
         raise HTTPException(404, "Nothing has been saved yet")
-    page = _last_saved_folder / SHEET_NAME
+    page = folder / SHEET_NAME
     if not page.exists():
         raise HTTPException(404, "Nothing has been saved yet")
     return FileResponse(page, media_type="text/html")
 
 
+class OpenSavedBody(BaseModel):
+    """The one field this route accepts, and it is NOT a path (overview.md §7.3)."""
+
+    id: str = ""
+
+
 @app.post("/api/export/open")
-async def open_saved_folder():
-    """Show the folder the server last wrote. TAKES NO PATH FROM THE BROWSER.
+async def open_saved_folder(body: OpenSavedBody | None = None):
+    """Show the folder ONE completed save wrote. TAKES NO PATH FROM THE BROWSER.
 
     POST rather than GET: it has an effect, and the origin guard only vets
     non-GET requests (app.py:66).
+
+    The body carries an opaque ``id`` and nothing else, so the button opens the
+    folder its own panel is about rather than whichever job finished last. An id
+    this server never minted resolves to nothing and takes failure (a) below,
+    which is exactly what a caller-supplied path would do.
 
     Two failures, two strings (copy.md §5.5a, interactions.md §4.4):
     (a) nothing recorded or the folder is gone -> ExportError, the friendly
@@ -799,7 +873,7 @@ async def open_saved_folder():
     No return annotation, deliberately: a `-> dict` would make FastAPI validate
     the JSONResponse below against a dict response model.
     """
-    folder = _last_saved_folder
+    folder = _resolve_saved_folder(body.id if body else "")
     if folder is None or not folder.exists():
         raise ExportError(REASON_FOLDER_GONE)
     try:

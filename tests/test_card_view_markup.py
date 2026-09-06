@@ -248,6 +248,130 @@ def test_the_word_export_never_reaches_the_user(index_html):
         assert word not in text, f"{word!r} is visible in index.html"
 
 
+# --------------------------------------------------------------------------- #
+# The same ban, everywhere the feature's copy actually lives.
+#
+# index.html carries one changed sentence. app.js renders ~25 of these strings
+# and yoto_maker/export/sheet.py renders the whole instruction page — the largest
+# body of user-visible copy in the app — and neither was guarded.
+#
+# WHAT THIS COVERS: string literals that get rendered.
+# WHAT IT DELIBERATELY DOES NOT: comments, identifiers, DOM ids (`#exportError`
+# is correct and intentional), route paths and URLs, and the `${…}` expressions
+# inside template literals. All of those are code; none of them is copy.
+# --------------------------------------------------------------------------- #
+import ast
+from pathlib import Path
+
+_ID_SELECTOR = re.compile(r"^#[A-Za-z][\w-]*$")
+_ROUTE_OR_URL = re.compile(r"^(/|https?://)")
+
+
+def _js_rendered_strings(js: str) -> list[str]:
+    without_comments = re.sub(r"/\*.*?\*/", " ", js, flags=re.S)
+    without_comments = re.sub(r"(?m)^[ \t]*//.*$", " ", without_comments)
+    without_comments = re.sub(r"(?m)(?<=[;,)}\]\s])//[^\n]*$", " ", without_comments)
+
+    found = re.findall(r'"((?:[^"\\\n]|\\.)*)"', without_comments)
+    found += re.findall(r"'((?:[^'\\\n]|\\.)*)'", without_comments)
+    # A template literal's ${…} holds an expression, not copy: `${exportWhere(r)}`
+    # would trip the guard on a function name the user never sees.
+    found += [
+        re.sub(r"\$\{[^{}]*\}", " ", t)
+        for t in re.findall(r"`((?:[^`\\]|\\.)*)`", without_comments, flags=re.S)
+    ]
+    return [s for s in found
+            if not _ID_SELECTOR.match(s) and not _ROUTE_OR_URL.match(s)]
+
+
+def _py_rendered_strings(path: Path) -> list[str]:
+    """Every string constant in a module except its docstrings.
+
+    ast rather than a regex, for one specific reason: a docstring IS a string
+    literal, and sheet.py's own module docstring names the route it is served
+    from. Comments never reach the tree at all, which is the other half of it.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docstrings = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                 ast.AsyncFunctionDef)):
+            continue
+        body = node.body
+        if (body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            docstrings.add(id(body[0].value))
+    return [n.value for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and id(n) not in docstrings]
+
+
+def _sheet_py() -> Path:
+    from yoto_maker.export import sheet as sheet_mod
+
+    return Path(sheet_mod.__file__)
+
+
+def test_the_banned_words_never_reach_the_user_from_app_js(app_js):
+    for text in _js_rendered_strings(app_js):
+        low = text.lower()
+        for word in _BANNED_IN_COPY:
+            assert word not in low, f"{word!r} is in a rendered app.js string: {text!r}"
+
+
+def test_the_banned_words_never_reach_the_user_from_the_instruction_sheet():
+    for text in _py_rendered_strings(_sheet_py()):
+        low = text.lower()
+        for word in _BANNED_IN_COPY:
+            assert word not in low, f"{word!r} is in a rendered sheet.py string: {text!r}"
+
+
+def test_the_ban_guard_actually_reaches_the_copy_it_guards(app_js):
+    """A guard whose extractor returns nothing passes trivially and proves
+    nothing. Pin that both extractors reach real, known user-visible strings."""
+    js = _js_rendered_strings(app_js)
+    assert any("Yoto Maker couldn’t save the files." in s for s in js)
+    assert any("in a folder called" in s for s in js)
+    assert any("bigger than Yoto allows for a single track" in s for s in js)
+
+    sheet = _py_rendered_strings(_sheet_py())
+    assert any("Open Yoto’s website" in s for s in sheet)
+    assert any("Put it on a card" in s for s in sheet)
+
+
+# --------------------------------------------------------------------------- #
+# The panel's own bookkeeping. Three defects that only show up on the second
+# press of something, which is why they are pinned as assertions on the script.
+# --------------------------------------------------------------------------- #
+def test_the_sheet_link_appends_its_cache_buster_with_the_right_separator(app_js):
+    """sheet_url now carries this save's id, so a bare "?t=" makes a second "?"."""
+    assert 'r.sheet_url + "?t=" + Date.now()' not in app_js
+    assert 'r.sheet_url.indexOf("?") === -1 ? "?" : "&"' in app_js
+
+
+def test_the_open_button_sends_an_id_and_never_a_path(app_js):
+    """overview.md §7.3. The id is opaque and server-minted; a path is refused."""
+    assert "JSON.stringify({ id: exportSaveId })" in app_js
+    assert "JSON.stringify({ path" not in app_js
+    assert "folder_path }" not in app_js
+
+
+def test_a_successful_open_clears_only_a_reveal_failure(app_js):
+    """After a partial save #exportError holds the list of tracks that could not
+    be saved (copy.md §5.6). An unconditional clear would destroy it."""
+    body = app_js.split("async function openSavedFolder")[1]
+    assert "if (exportErrorIsRevealFailure) {" in body
+    assert body.count('clearError($("#exportError"))') == 1
+
+
+def test_start_over_disowns_a_save_that_is_still_running(app_js):
+    """#startOver is not disabled during a save — only #exportBtn is — so an
+    in-flight poll could resolve and re-show a panel for the discarded card."""
+    assert "exportSaveGeneration += 1;" in app_js
+    assert app_js.count("if (generation !== exportSaveGeneration) return;") == 2
+
+
 def test_the_connect_box_no_longer_claims_connecting_is_required(index_html):
     assert "To send cards straight to your Yoto, connect your account first." in index_html
     assert "You'll need to connect your Yoto account first." not in index_html

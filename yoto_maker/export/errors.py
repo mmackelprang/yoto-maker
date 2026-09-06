@@ -28,10 +28,13 @@ REASON_TOO_LONG = (
 REASON_GENERIC = "Something went wrong while writing the files."
 
 # --- copy.md §5.6, the per-track {reason} ---------------------------------- #
-# Both are EXISTING in-tree strings, reused rather than reinvented:
+# Both are ADOPTED FROM existing in-tree strings rather than reinvented:
 #   sources/audiofile.py:46  and  audio/normalize.py:183-185 (its first sentence
 #   pair only — the "Technical detail: …" tail is a developer string and must
 #   never reach this panel).
+# They are NOT byte-identical to those originals: the originals use a straight
+# apostrophe ('), and copy.md:17 mandates the typographic one (’) throughout this
+# package. The wording is the same; only that character differs.
 REASON_UNREADABLE = "We couldn’t read that file — it may be open in another program."
 REASON_CONVERT_FAILED = "We couldn’t convert that audio. It may be an unusual or damaged file."
 

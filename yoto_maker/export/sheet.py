@@ -62,6 +62,11 @@ class SheetData:
     split: list[SplitGroup] = field(default_factory=list)
     picture_png: bytes | None = None
     has_card_picture_file: bool = False
+    # Whether the "Track pictures" subfolder is actually there with pictures in
+    # it. The runner declines to create it whenever no track resolved an icon, and
+    # its mkdir can fail — so this is reported from what landed on disk rather
+    # than assumed (overview.md §9.2: the sheet mentions them CONDITIONALLY).
+    has_track_pictures: bool = False
     version: str = ""
     date_label: str = ""
 
@@ -168,16 +173,21 @@ def render_sheet(d: SheetData) -> str:
             "</div>"
         )
 
-    # --- the little pictures: ALWAYS, and true under both answers to the ---- #
-    # --- open question about per-track pictures (overview.md §9.2) ---------- #
-    out.append(
-        '<div class="card"><h3>The little pictures on the Yoto screen</h3>'
-        "<p>There’s a folder here called <strong>Track pictures</strong>, with a "
-        "small picture for each track — the ones that show on the Yoto player’s "
-        "screen. They’re named to match the audio files.</p>"
-        "<p>If Yoto’s website asks you for a picture for each track, they’re in "
-        "there. If it doesn’t ask, you don’t need them.</p></div>"
-    )
+    # --- the little pictures: whenever that subfolder actually landed, and ---- #
+    # --- true under both answers to the open question (overview.md §9.2) ----- #
+    # Conditional, not unconditional: the runner skips the subfolder when no track
+    # resolved an icon and when its mkdir fails, and a page that says "there's a
+    # folder here called Track pictures" beside no such folder sends her looking
+    # for something that does not exist.
+    if d.has_track_pictures:
+        out.append(
+            '<div class="card"><h3>The little pictures on the Yoto screen</h3>'
+            "<p>There’s a folder here called <strong>Track pictures</strong>, with a "
+            "small picture for each track — the ones that show on the Yoto player’s "
+            "screen. They’re named to match the audio files.</p>"
+            "<p>If Yoto’s website asks you for a picture for each track, they’re in "
+            "there. If it doesn’t ask, you don’t need them.</p></div>"
+        )
 
     # --- 5 and 6. STEP 6 IS NEVER CONDITIONAL AND MUST NEVER BE DROPPED. ---- #
     out.append('<div class="card"><h3>5. Save it on the website</h3></div>')
@@ -224,12 +234,18 @@ def render_sheet(d: SheetData) -> str:
 
 def _missing_notice(titles: list[str]) -> str:
     e = html.escape
+    # The closing clause belongs to its branch. Shared, it made the plural read
+    # "…couldn’t save “A”, “B”, so they aren’t in this folder… If you want IT on
+    # the card…". copy.md §6.8 gives the singular verbatim and leaves the plural
+    # body unspecified, so this is a grammar fix inside an unspecified string —
+    # the singular below is byte-identical to §6.8 and must stay that way.
     if len(titles) == 1:
         head = "One of your tracks isn’t here."
         body = (
             f"Yoto Maker couldn’t save <strong>“{e(titles[0])}”</strong>, so it isn’t "
             "in this folder and isn’t in the list below."
         )
+        tail = "If you want it on the card, go back to Yoto Maker and try again."
     else:
         head = f"{len(titles)} of your tracks aren’t here."
         listed = ", ".join(f"“{e(t)}”" for t in titles)
@@ -237,7 +253,7 @@ def _missing_notice(titles: list[str]) -> str:
             f"Yoto Maker couldn’t save <strong>{listed}</strong>, so they aren’t in "
             "this folder and aren’t in the list below."
         )
+        tail = "If you want them on the card, go back to Yoto Maker and try again."
     return (
-        f'<div class="notice"><p><strong>⚠️ {head}</strong></p><p>{body} If you want '
-        "it on the card, go back to Yoto Maker and try again.</p></div>"
+        f'<div class="notice"><p><strong>⚠️ {head}</strong></p><p>{body} {tail}</p></div>'
     )

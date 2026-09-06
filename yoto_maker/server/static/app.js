@@ -2041,6 +2041,24 @@ const EXPORT_PARTIAL_TAIL =
 const EXPORT_CEILING_FIX =
   "Yoto’s website may refuse some of it. If it does, make two shorter cards instead of one.";
 
+// The opaque id of the save this panel is showing, straight from the job result.
+// It is what makes "📁 Open the folder" open THIS card's folder rather than
+// whichever save finished last — two tabs, or a reload mid-save, produce two.
+let exportSaveId = "";
+
+// Whether #exportError is currently holding a REVEAL failure rather than a save
+// failure. A successful open clears the box only when this is set: after a
+// partial save that box holds the list of tracks that could not be saved
+// (copy.md §5.6), and clearing that would destroy the one record of it.
+let exportErrorIsRevealFailure = false;
+
+// Bumped by "Start over". saveToFolder captures it and drops a result whose
+// generation has moved on, so an in-flight save cannot re-show a panel for the
+// card the user has just discarded (interactions.md §9.3). #startOver is not
+// disabled during a save, so this is reachable by pressing exactly the two
+// buttons the screen offers.
+let exportSaveGeneration = 0;
+
 function exportWhere(r) {
   return `in a folder called “${r.folder_name}” — in your Documents, under Yoto Maker.`;
 }
@@ -2149,6 +2167,10 @@ function exportFailureParagraphs(r) {
 
 function renderExportResult(r) {
   const done = $("#exportDone");
+  exportSaveId = r.save_id || "";
+  // A save result replaces whatever was in #exportError, so any reveal failure
+  // it was holding is gone with it.
+  exportErrorIsRevealFailure = false;
   const lines = [exportSuccessLine(r)];
   // The full path appears ONLY when the folder cannot be opened for her, where
   // it stops being clutter and becomes the answer (copy.md §5.5).
@@ -2169,7 +2191,10 @@ function renderExportResult(r) {
   if (notes.length) { setMsgBoxContent(noteBox, notes); show(noteBox, true); }
   else { noteBox.textContent = ""; show(noteBox, false); }
 
-  $("#exportReadme").href = r.sheet_url + "?t=" + Date.now();
+  // sheet_url already carries this save's id, so the cache-buster is appended
+  // with the right separator rather than a second "?".
+  $("#exportReadme").href =
+    r.sheet_url + (r.sheet_url.indexOf("?") === -1 ? "?" : "&") + "t=" + Date.now();
   // Omitted, never disabled — a disabled button invites her to keep pressing it
   // (configuration-surface §3.5.2, §13.5).
   show($("#exportOpen"), !!r.can_open);
@@ -2188,7 +2213,11 @@ function renderExportResult(r) {
 }
 
 async function saveToFolder() {
+  // Captured, not read again at the end: "Start over" may fire while the job
+  // runs, and this is how the result knows it belongs to a discarded card.
+  const generation = exportSaveGeneration;
   clearError($("#exportError"));
+  exportErrorIsRevealFailure = false;
   $("#exportNote").textContent = "";
   show($("#exportNote"), false);
   show($("#exportDone"), false);
@@ -2203,8 +2232,11 @@ async function saveToFolder() {
       $("#exportBar").style.width = Math.max(2, p) + "%";
       $("#exportMsg").textContent = m;
     });
+    // The card this describes has been discarded — render nothing at all.
+    if (generation !== exportSaveGeneration) return;
     renderExportResult(result);
   } catch (e) {
+    if (generation !== exportSaveGeneration) return;
     // A refusal (no tracks / no card name) is one sentence on its own. A job
     // failure is copy.md §5.7's three paragraphs, and only the middle one is
     // cause-specific — jobs.py carries no reason code, so the server composes
@@ -2230,7 +2262,20 @@ async function openSavedFolder() {
   // No spinner, no transient "Opened!" state — configuration-surface tokens.md
   // §3a rejected exactly that shape.
   try {
-    await api("/api/export/open", { method: "POST" });
+    // The id, never a path — the server refuses one and has no use for it
+    // (overview.md §7.3). It is the id this panel was handed, so the button
+    // opens the folder this panel is about.
+    await api("/api/export/open", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: exportSaveId }),
+    });
+    // Clear the box ONLY when it is a reveal failure of ours. After a partial
+    // save it holds the list of tracks that could not be saved (copy.md §5.6),
+    // and that must survive.
+    if (exportErrorIsRevealFailure) {
+      clearError($("#exportError"));
+      exportErrorIsRevealFailure = false;
+    }
   } catch (e) {
     // copy.md §5.5a(b) carries the path beneath the sentence, in .mono-value —
     // a bare "couldn't open" is a dead end and the server is holding the one
@@ -2248,6 +2293,7 @@ async function openSavedFolder() {
       box.appendChild(p);
     }
     show(box, true);
+    exportErrorIsRevealFailure = true;
     // #exportError sits ABOVE #exportActions in the DOM, so a message raised by
     // this button renders behind her scroll position. Moving focus is what takes
     // her to it — interactions.md §4.4, and it is why that rule exists.
@@ -2444,6 +2490,11 @@ function wire() {
   $("#startOver").addEventListener("click", async (e) => {
     e.preventDefault();
     if (confirm("Start a brand-new card? This clears what you've added.")) {
+      // Before the await: a save already in flight must be disowned now, not
+      // after the reset round-trip, or its result can land in between.
+      exportSaveGeneration += 1;
+      exportSaveId = "";
+      exportErrorIsRevealFailure = false;
       await api("/api/draft/reset", { method: "POST" });
       await refreshDraft();
       $("#cardName").value = "";

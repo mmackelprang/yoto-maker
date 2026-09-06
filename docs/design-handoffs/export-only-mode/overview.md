@@ -566,11 +566,19 @@ has no authentication of any kind, so *"the browser, the server, the OS account
 and the person are all the same."* There is nothing for a gate to gate.
 
 **One safety property is a design requirement, not an implementation detail:**
-the route must reveal **the folder the server last wrote**, remembered
-server-side. The browser must not be able to name a path. Even on loopback, an
-endpoint that hands an arbitrary caller-supplied string to the shell is a
-foot-gun with no upside, and the UI never needs it — there is exactly one folder
-this button can mean.
+the route must reveal a folder **remembered server-side**. The browser must not
+be able to name a path. Even on loopback, an endpoint that hands an arbitrary
+caller-supplied string to the shell is a foot-gun with no upside.
+
+*Amended: "**the** folder the server last wrote" was too narrow.* There can be
+more than one panel — two tabs, or a reload during a save — and a single "last
+folder" serves whichever job finished **last** to all of them, so one tab's
+buttons act on another tab's card. Each completed save therefore gets an **opaque
+id** the server mints, carried inside the URLs the job result hands the panel, and
+kept in a small capped map. That is not a relaxation of the rule above: an id is
+looked up in a map the server itself populated, never joined onto anything, so an
+id nobody minted — a path included — resolves to nothing and takes the same
+"folder is gone" failure a deleted folder does (`copy.md` §5.5a).
 
 **Packaging.** `os.startfile` is stdlib, imports nothing, and needs no hook, so a
 PyInstaller-frozen build is not a concern. Planner should still confirm it in the
@@ -917,25 +925,30 @@ brief — §12.1.**
 `#exportDone` (`.msg-box ok`) names what happened and where it went, then
 `#exportActions` carries the two buttons. Between them, `#exportNote`
 (`.msg-box info`) appears only when there is something true to say. There are now
-**five** things it can say, each its own paragraph, in this fixed order:
+**seven** things it can say, each its own paragraph, in this fixed order:
 
 | # | Paragraph | Shown when |
 | --- | --- | --- |
 | 1 | One or more long tracks were split into parts — **one paragraph however many were split** (`copy.md` §5.3, singular and plural) | any title ends `(part N)` |
 | 2 | Files were saved as MP3 copies | anything was converted (§8.4) |
 | 3 | A single track is over Yoto's 100 MB limit | after conversion, any file > 100 MB (§8.6) |
-| 4 | The card is over 500 MB, or over 5 hours | either card ceiling exceeded |
-| 5 | The card has more than 100 tracks | track count > 100 |
+| 4 | The card is over 500 MB | card ceiling exceeded |
+| 5 | The card is over 5 hours | card ceiling exceeded |
+| 6 | The card has more than 100 tracks | track count > 100 |
+| 7 | The shared recovery sentence for rows 4–6 — shown **once**, however many of the three fired | any card ceiling exceeded |
 
 Ordered by how likely she is to meet it and by how early in her upload it
-matters. Paragraphs 3–5 are **advisory, never blocking** — the numbers are a
+matters. Paragraphs 3–7 are **advisory, never blocking** — the numbers are a
 third party's current policy, not something the app can verify (§8.6) — and each
 names the real figure against the limit rather than saying "too big".
 
 `.msg-box p` / `.msg-box p:last-child` (`styles.css:257-258`) already carry
-multi-paragraph bodies. Five is the theoretical maximum and would need a card
-that is simultaneously split, converted, oversized, over-long and over-count;
-realistically one or two appear.
+multi-paragraph bodies. Seven is the theoretical maximum and would need a card
+that is simultaneously split, converted, oversized, over-500-MB, over-five-hours
+and over-count; realistically one or two appear. (The count is seven and not five
+because `copy.md` §5.9 gives the three card ceilings **a line each** and then one
+shared recovery sentence — the recovery is factored out precisely so that two
+ceilings firing together do not read as two problems with two fixes.)
 
 The box names the folder **in words** (`a folder called “Bedtime Stories”, in
 your Documents, under Yoto Maker`), not as a path. The full path appears only

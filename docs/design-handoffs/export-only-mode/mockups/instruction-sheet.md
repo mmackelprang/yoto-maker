@@ -218,7 +218,7 @@ anywhere** (`DESIGN.md` §8) and must not gain one for this.
 | The split line, inside step 3 | Any track title ends `(part N)` |
 | The MP3-copies line, inside step 3 | Any file was converted |
 | The over-a-limit line, inside step 3 | Any track exceeds 100 MB, or the card exceeds 500 MB / 5 hours / 100 tracks (`../copy.md` §5.9) |
-| *The little pictures* (§1) | Always — it is written to be true whether or not the website supports them |
+| *The little pictures* (§1) | The `Track pictures\` subfolder was actually written, with at least one picture in it (`../overview.md` §9.2). Its **wording** is still true whether or not the website supports per-track pictures — but a page naming a folder she does not have sends her looking for nothing, and the runner skips that subfolder whenever no track resolved a picture |
 | The size bullet in *If something doesn't work* (§1) | **Always**, even for a small card |
 
 **The over-a-limit line flags; the troubleshooting bullet carries the numbers.**

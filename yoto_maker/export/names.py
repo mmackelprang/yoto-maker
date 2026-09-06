@@ -31,6 +31,12 @@ _RESERVED = {
 # rather than on it — the folder may later be copied one level deeper.
 MAX_PATH_CHARS = 255
 
+# The subfolder the runner puts per-track pictures in. It lives HERE rather than
+# in runner.py because it is part of the path budget below — a track's picture is
+# written one level deeper than its audio, and the length of this name is exactly
+# how much deeper. runner.py imports it from here so there is still one constant.
+TRACK_PICTURES_DIR = "Track pictures"
+
 # Room a folder must leave for the longest plausible entry it will hold
 # ("Track pictures\NNN - <at least one character>.png").
 FOLDER_HEADROOM = 40
@@ -67,10 +73,22 @@ def track_filename(index: int, total: int, title: str, ext: str, *, folder: Path
 
     The ``NN - `` prefix is what stops two titles that truncate to the same text
     from colliding — the number differs, so the names differ.
+
+    The budget is measured against the DEEPEST path this name produces, which is
+    the track picture — ``<folder>\\Track pictures\\<name>.png``, one segment and
+    one separator further down than the audio file itself. Budgeting for the audio
+    alone put the picture 15 characters over: with long paths disabled (the
+    Windows default) that write fails, the runner swallows it as a log warning,
+    and the pictures vanish while the sheet says they are there.
+
+    ``len(ext)`` stands in for the picture's ``.png`` as well: every suffix this
+    is given comes from output_suffix(), i.e. ``.mp3`` or a member of COPY_AS_IS,
+    and all of them are four characters — the same as ``.png``.
     """
     prefix = f"{index:0{number_width(total)}d} - "
     safe = sanitize_component(title, fallback=FALLBACK_TRACK_TITLE)
-    room = MAX_PATH_CHARS - len(str(folder)) - 1 - len(prefix) - len(ext)
+    deeper = len(TRACK_PICTURES_DIR) + 1
+    room = MAX_PATH_CHARS - len(str(folder)) - 1 - deeper - len(prefix) - len(ext)
     if room < 1:
         raise NameTooLongError(str(folder))
     if len(safe) > room:
