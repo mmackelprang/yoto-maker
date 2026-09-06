@@ -56,7 +56,11 @@ class FakeClient:
         return FakeResponse({})
 
     def put(self, url, content=None, headers=None, **k):
-        self.calls.append(("PUT", url, len(content or b"")))
+        # `content` is now the open file object rather than its bytes (the send
+        # path streams — client.py's _put_audio). Read it here so the recorded
+        # byte count still means what it always meant.
+        body = content.read() if hasattr(content, "read") else (content or b"")
+        self.calls.append(("PUT", url, len(body)))
         return FakeResponse({})
 
     def post(self, url, json=None, files=None, headers=None, content=None, **k):

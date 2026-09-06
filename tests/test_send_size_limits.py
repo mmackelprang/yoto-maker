@@ -93,3 +93,37 @@ def test_server_errors_still_name_what_we_were_doing():
 def test_timeouts_are_unchanged():
     msg = _friendly_http(httpx.ConnectTimeout("slow"), "uploading the audio")
     assert "timed out" in msg
+
+
+# --- the memory profile ----------------------------------------------------- #
+
+def test_put_audio_streams_the_file_and_never_materialises_it(tmp_path):
+    """Fails the moment someone reintroduces `content=fh.read()`.
+
+    The wire-form test above cannot catch that regression — a bytes body and a
+    streamed file produce an identical request. This one looks at what is handed
+    to the client instead.
+    """
+    audio = tmp_path / "track.mp3"
+    audio.write_bytes(b"y" * 4096)
+    captured: dict = {}
+
+    class _CaptureClient:
+        def put(self, url, content=None, headers=None, **k):
+            captured["is_bytes"] = isinstance(content, (bytes, bytearray))
+            captured["is_readable"] = hasattr(content, "read")
+            captured["bytes_available"] = len(content.read()) if hasattr(content, "read") else 0
+
+            class _Resp:
+                status_code = 200
+
+                def raise_for_status(self):
+                    return None
+
+            return _Resp()
+
+    YotoClient(client=_CaptureClient())._put_audio("http://upload.example/put", audio)
+
+    assert captured["is_bytes"] is False
+    assert captured["is_readable"] is True
+    assert captured["bytes_available"] == 4096

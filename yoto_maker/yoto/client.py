@@ -231,10 +231,23 @@ class YotoClient:
         content_type = mimetypes.guess_type(str(audio_path))[0] or "audio/mpeg"
         size = audio_path.stat().st_size if audio_path.exists() else 0
         try:
+            # Hand the client the OPEN FILE, not its bytes. `content=fh.read()`
+            # held the entire track in memory — ~529 MB for a 50-minute WAV,
+            # which the app copies rather than transcodes (sources/audiofile.py).
+            # This is the send-side twin of the add-side fix in the job-system
+            # ADR §3.1 ("chunked copyfileobj instead of await file.read()"),
+            # which does not reach this function.
+            #
+            # The wire form is UNCHANGED and that is load-bearing: the upload URL
+            # is a pre-signed third-party URL, and a pre-signed PUT rejects
+            # chunked transfer-encoding. httpx peeks a real file object's length
+            # (_content.py:121-127 -> _utils.py:100-104) and sets an explicit
+            # Content-Length, exactly as it did for a bytes body. Pinned by
+            # test_put_audio_sends_every_byte_with_an_explicit_content_length.
             with open(audio_path, "rb") as fh:
                 resp = self._client.put(
                     upload_url,
-                    content=fh.read(),
+                    content=fh,
                     headers={"Content-Type": content_type},
                     timeout=UPLOAD_TIMEOUT,  # don't 60s-timeout a large/slow upload
                 )
