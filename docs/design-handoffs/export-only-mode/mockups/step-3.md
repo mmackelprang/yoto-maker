@@ -80,7 +80,7 @@ asserts that the two are peers, which they are not (`../overview.md` §4.1).
    │ │           🔗 Connect my Yoto account                    │ │  unchanged
    │ └─────────────────────────────────────────────────────────┘ │
    │ ┌─────────────────────────────────────────────────────────┐ │
-   │ │              🚀 Send to Yoto        (disabled)          │ │  app.js:288
+   │ │              🚀 Send to Yoto        (disabled)          │ │  app.js:382
    │ └─────────────────────────────────────────────────────────┘ │
    │                                                             │
    │ ┌──────────────────────────────┐                            │
@@ -97,7 +97,7 @@ Two things are doing the work here, and neither needed designing.
 
 - **The dead grey primary above a live button below** is a stronger signal than
   any sentence: the thing that needs a sign-in is off, the thing that doesn't is
-  on. It falls out of `app.js:288` already disabling `#sendBtn` and this feature
+  on. It falls out of `app.js:382` already disabling `#sendBtn` and this feature
   never disabling `#exportBtn` (`../overview.md` §4.7).
 - **The edited info box no longer claims connecting is a prerequisite for
   finishing a card** — only for sending from the app. It does not advertise the

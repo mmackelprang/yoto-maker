@@ -85,7 +85,7 @@ Five notes, each load-bearing.
 `.hidden`, no `disabled`. It is the only control in step 3 with no connection
 dependency, and that is the feature.
 
-`app.js:288`'s `$("#sendBtn").disabled = !connected;` is unchanged and gains no
+`app.js:382`'s `$("#sendBtn").disabled = !connected;` is unchanged and gains no
 sibling.
 
 ---

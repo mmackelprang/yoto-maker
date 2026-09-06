@@ -105,7 +105,7 @@ the answer is the same one: put the alternative directly beneath the symptom.
 (the connection is broken in a way Settings can't repair) or she was told not to
 bother. Step 3 currently presents her with a wall: an info box saying she'll
 "need to connect first" and a **disabled** `🚀 Send to Yoto`
-(`app.js:288` — `$("#sendBtn").disabled = !connected;`). Right now that wall is
+(`app.js:382` — `$("#sendBtn").disabled = !connected;`). Right now that wall is
 the end of the road. §4.6 makes it not be.
 
 **(c) Mark, deliberately choosing the hand-upload path** because he does not yet
@@ -314,7 +314,7 @@ Verbatim string and rejected variants: [`copy.md` §1](copy.md).
 
 ### 4.7 The disabled Send button does half the work for free
 
-`app.js:288` disables `#sendBtn` whenever not connected. `#exportBtn` is
+`app.js:382` disables `#sendBtn` whenever not connected. `#exportBtn` is
 **never** disabled by connection state (§10.1). So in the not-connected state the
 user sees a dead grey primary button and, directly beneath it, a live one. That
 contrast is a stronger signal than any copy, and it required no design at all —
@@ -914,7 +914,7 @@ section is the design decision behind each state.
 This is configuration-surface §13.5's rule (*"the connect button stays enabled…
 pressing it is the fastest path to the explanation"*) and it also happens to be
 exact parity with `#sendBtn`, which is disabled **only** by connection state
-(`app.js:288`) and answers an empty draft with a plain-language refusal from the
+(`app.js:382`) and answers an empty draft with a plain-language refusal from the
 server (`app.py:634-638`).
 
 Export raises the same two refusals, worded in parallel:
