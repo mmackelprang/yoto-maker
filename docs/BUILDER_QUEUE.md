@@ -1,6 +1,48 @@
 # Builder queue
 
-**Last updated:** 2026-09-06 by Planner — **item 19's follow-ups exist now: rows
+**Last updated:** 2026-09-06 by Planner — **two rows filed out of Designer's
+item 20 ruling: 25 (`#sendError` is announced to nobody, and now holds the app's
+only cross-path recovery pointer) and 26 (`_friendly_http`'s other four
+sentences are owned by no handoff package).**
+
+Designer surfaced both while ruling item 20's blocked 413 string, judged both
+out of scope for a string fix, and **deliberately did not file them** —
+`copy.md` §10.4's boxed note says adopting the `_friendly_http` family *"is
+worth a queue row and is **not** done here"*, and `interactions.md` §11 item 3
+was **re-weighted rather than reopened**. These are those rows. **25 is MEDIUM,
+26 is LOW-MEDIUM**, and in both cases the obvious priority read is the wrong one,
+so the reasoning is written into each row rather than left to be re-derived.
+
+**Item 20's blocked string is ruled, and Builder is implementing it as this is
+written.** [PR #27](https://github.com/mmackelprang/yoto-maker/pull/27) is open
+on `fix/send-path-size-limit`, carrying Designer's ruling (`copy.md` §10,
+`interactions.md` §4b, a redrawn `mockups/step-3.md` §3) and the implementation
+of it. **Both rows below are written against the world PR #27 creates** — §10
+and §4b do not exist on `main` yet, so a reader on `main` who follows those
+links and finds nothing has found the merge order, not a broken link. Item 26
+additionally **cannot start** until §10 is on `main`: it adopts the rest of the
+family *around* §10, and §10 is the anchor.
+
+**Stale line-number citations in the handoff package: found, already fixed, and
+recorded here only so a future pass can decide whether to sweep.** Designer
+found `$("#sendBtn").disabled = !connected;` cited as `app.js:288` in **seven**
+places across `interactions.md` §1.1, `mockups/step-3.md` §2 and `overview.md` —
+item 19's own PR had moved that statement to **382**. Six were corrected in
+`196cdd0` and the seventh in `c8b5dae`, in a commit kept separate precisely so
+it stays reviewable. **Do not re-fix it.** It is noted because it is the
+**second** derived-artifact drift in this package in two days — the entry below
+fixed `mockups/step-3.md` §8/§8a drawing the two boxes in the wrong order — and
+two findings of the same shape in two days is the point at which a sweep starts
+to look cheaper than a third spot fix. **The scope was checked rather than
+assumed, and it argues against panic:** four other `app.js` citations in
+`interactions.md` (`55`, `2050`, `2081`, `2082`) and `index.html:195` were
+spot-checked against the tree and are all **correct**, so the seven were *one
+moved statement cited seven times*, not broad rot. A one-off pass over every
+`file:NNN` citation under `docs/design-handoffs/` would settle it in minutes.
+**Not filed as a row**, because the real question is whether such a check should
+keep running, and nobody has asked for that yet.
+
+Previously: 2026-09-06 by Planner — **item 19's follow-ups exist now: rows
 22, 23 and 24. The fourth finding was a stale mockup and is fixed here, not
 queued.**
 
@@ -333,6 +375,112 @@ day because these two states shared one word.
 | 22 | 📋 | **`copy.md` §9's send-path string — written, approved, and deliberately unshipped** — when a status poll fails *after* `POST /api/send` has already returned a job id, `#sendError` still renders today's generic transport line, which ends *"…then try again."* The approved replacement is three paragraphs: the app cannot tell her whether the card went through, nothing on the card has changed, look in the Yoto app on her phone — and if it isn't there, press `🚀 Send to Yoto` **once** | [`design-handoffs/export-only-mode/copy.md`](design-handoffs/export-only-mode/copy.md) §9 (+ §9.1–9.3) — **the copy already exists; this row ships it, it does not author it** | _needs Planner pass_ | — (19 on `main`) · **a live authenticated send against a real Yoto account**, which is the whole reason this is not already shipped | **MEDIUM, and Designer's ranking is why it is not LOW: the send path's current instruction is the *more dangerous of the two*.** It ends *"then try again"*, and pressing `🚀 Send to Yoto` while the first send is still uploading puts **a second card in her Yoto account** — on a website this app does not control, which she must then find and delete. The save path's identical mistake produces `Bedtime Stories (2)` in Documents, which `copy.md` §5.8 says needs no explanation at all. **Until this lands, the duplicate-card protection is what is given up**, on the path where the duplicate is hardest to undo — knowingly, per the maintainer's 2026-09-05 ruling (§9.1's stated fallback, taken). Held for a **verification** reason, not a design one. `#sendError` gains **no `role` and no `tabindex`** (§9.3, deliberate); the YouTube add path still does not opt in (§9.3). The retry is **opt-in per call site** — see briefing. Touches `app.js` → **needs a version bump.** |
 | 23 | 📋 | **`#startOver` leaves `#exportBtn` disabled** — "Start a new card" pressed during a save disowns the running job (`app.js:2675`) and clears all six regions, but never re-enables the save button. It returns only when the disowned run's `finally` (`app.js:2420-2424`) eventually executes — for a large save, the rest of the write plus up to the 12s poll-retry window. `#exportProgress` is hidden by then, so nothing on screen explains why the button is dead | _needs Designer pass_ | _needs Designer pass_ | — (19 on `main`) | **MEDIUM. Pre-existing; deferred from item 19's pre-merge review. `_needs Designer pass_` is not a formality here — the obvious fix causes a worse bug, which is why this row must not be scheduled as a quick win.** Adding `$("#exportBtn").disabled = false` to the `#startOver` handler re-arms a second save while the first is **still writing server-side** (`jobs.py` has no cancellation — that is item 15 / [ADR §3.2](architecture/decisions/2026-07-21-file-upload-on-job-system.md)), and the disowned run's `finally` is **not generation-guarded** the way its `catch` and its progress callback are: when it finally fires it hides the *second* run's `#exportProgress` and re-enables the button mid-run. The one-liner trades a stuck button for a dead progress bar on a live save. Designer owes the question underneath it first: what does the save button *mean* while a disowned job is still writing a discarded card's folder? See briefing. |
 | 24 | 📋 | **A `BaseException` in a worker thread strands `job.status` at "running" forever** — `jobs.py:70` catches `Exception`, so a `SystemExit` / `KeyboardInterrupt` escaping a job target leaves the `Job` in its **non-terminal** state with no error, no timeout and no eviction. The client keeps receiving a *successful* `running` answer, so `pollJob`'s retry window never engages: the bar freezes at its last percent, the button that started it stays disabled, and only a page reload gets out. Live on **both** shipped job paths — the YouTube add and item 19's save | — · [ADR](architecture/decisions/2026-07-21-file-upload-on-job-system.md) is the arc this sits beside, **not** this row's design basis | _needs Planner pass_ | — · **but read the fold-in rule against 14 in the notes before scheduling either** | **LOW-MEDIUM — rare trigger, unbounded consequence, ~3-line fix.** Pre-existing; deferred from item 19's pre-merge review, which was explicitly constrained not to touch `jobs.py`. **Checked against item 14 before filing, and it is not work 14 already owns:** 14 owns moving `POST /api/tracks/file` onto the job system, and its `jobs.py` work is the *client contract* (`reason` / `retryable`, the 404 → *"Yoto Maker restarted"* mapping); the ADR's terminal-state material — §3.2's `cancelled` state, §5.2's list of newly-possible failure modes — covers a job that finishes badly and a job whose **process** died and now 404s (§5.2.3), and **never contemplates a live process still cheerfully answering `running` for a job that is already dead**. It is also not foldable *now*: **14 is ⛔ on an ADR still marked `proposed`**, and blocking a three-line correctness fix that is live on two shipped paths behind an unapproved architecture decision is the wrong trade. **The one real overlap is `tests/test_jobs.py`** — item 14's row calls for it, and `jobs.py` still has **zero coverage** (confirmed 2026-09-06: no such file exists). Rule, both directions: **whichever lands first creates the file and the other adds cases; if 14 is claimed while this row is still 📋, fold this in as a task in 14's plan and retire this row rather than shipping both.** |
+| 25 | 📋 | **`#sendError` has no `role` and no `tabindex`, and it now holds the app's only cross-path recovery pointer** — `index.html:195` is a bare `<div id="sendError" class="msg-box err hidden">`. Nothing is announced and focus never moves, so a screen-reader user who hits a send failure is told nothing about it — including, once item 20 lands, that pressing `📁 Save the files to a folder` is the way to finish the card Yoto just refused | [`interactions.md` §11 item 3](design-handoffs/export-only-mode/interactions.md) (**re-weighted** 2026-09-06, not reopened) + §4b.5 · [`copy.md` §10.5](design-handoffs/export-only-mode/copy.md) + §9.3 — **all four state the question and record the decline; none of them answers it** | _needs Planner pass_ | — **not blocked and not waiting on anything.** The gap is live on `main` today; item 20 / [PR #27](https://github.com/mmackelprang/yoto-maker/pull/27) is what raises its cost, not what enables the fix. **A screen reader that actually speaks** is the one real dependency — see briefing | **MEDIUM, and the trigger-rarity argument is why it is neither LOW nor HIGH.** Designer's own framing is the argument: **_"a pointer that is never announced does not point"_** (`interactions.md` §4b.5). This **got worse rather than newly appearing** — §9.3's decline was right on its own terms when the region held only transport lines whose recovery was already on screen; §10 changed what the region carries without changing the region. **Deliberately not folded into item 20's string fix:** adding a live region changes announcement behaviour for **every** shipped send failure — the expired sign-in, the 5xx, the timeout and the fallback, not just the 413 — so it needs its own pass and its own UAT. **It is not a two-attribute change and must not be scheduled as one.** **Why not LOW:** the oversized-track gate binds the *pointer*, not the *region* — the same missing `role` silences every 5xx and timeout on the shipped send path, which are ordinary events, and item 4 (modal focus trap, MEDIUM) is the nearest calibration point. **Why not HIGH:** nothing is destroyed or unreachable — every message stays readable, `#exportBtn` stays in the Tab order regardless, and the recovery stays *reachable*, just never *offered*. **The scope question the Planner pass owns:** `#sendError` is one of **four** of the app's eleven `.msg-box err` regions carrying no `role`, so item 12's standing rule (fix the pattern or accept it; do not special-case one control) is live here. See briefing. |
+| 26 | 📋 | **`_friendly_http`'s other four sentences are owned by no handoff package** — with item 20's ruling the **413** branch is ratified in `copy.md` §10. The **401/403**, the **5xx**, the **timeout** and the **fallback** (`client.py:476-490` on `main`) are shipped, user-facing copy with no document behind them, and they are reached from the **card-repair CLI** as well as the send path | _needs Designer pass_ — **an ownership question before it is a copy question** | _needs Designer pass, then Planner only if anything ships_ | **item 20 ([PR #27](https://github.com/mmackelprang/yoto-maker/pull/27)) on `main` first** — `copy.md` §10 is the ratified anchor the rest of the family gets adopted around, and it does not exist on `main` yet | **LOW-MEDIUM. This is a copy-_adoption_ row, not a bug row, and ranking it as a bug row gets it wrong in both directions.** Nothing in the four sentences is known to be wrong. **The defect is that no document is the authority** — which is precisely how the 413 string came to name the card-level *"max 5 hours per card"* ceiling on the **per-track** upload and survive there unchallenged: it dates to `b40c702`, the founding `feat: core pipeline` commit, and is present in `client.py` at **both v0.1.2 and v0.1.12** (checked at both ends), so it shipped in every tagged release this project has cut. Nobody caught it because there was nothing to check it against. **The value here is preventing a recurrence, not fixing a known break** — a pass that reads all four, finds them correct and writes them down unchanged has succeeded. **The first question, and it is not a detail: where does this copy live?** Verified on `main` at `3330f2c` — nine `raise` sites across seven methods with seven distinct `{doing}` phrases, **three of them reachable from `yoto/repair.py`** (`get_card`, `list_my_cards`, and `update_card`, which **only** the repair path calls). A family reached from both the send path and a card-mutating CLI **cannot be adopted into a package scoped to one surface without first deciding where it lives**, and `export-only-mode/` is the wrong home by construction — §10.4 ruled the generic 413 there only because it is the other arm of the same `if`, and says so itself. **Not plain LOW** because `repair.py` mutates live production cards, where a misleading error is read by someone deciding whether a write landed. See briefing. |
+
+### Item 25 — briefing notes
+
+- **Designer's framing is the row's argument, quoted because paraphrase loses
+  it.** `interactions.md` §4b.5: *"`#sendError` has neither `role` nor
+  `tabindex` (`index.html:195`), so **nothing is announced and focus does not
+  move**. … But the cost of leaving it has gone up. Until now the region held
+  messages a user could act on by re-reading the screen. It now holds the app's
+  only cross-path recovery pointer, and **a pointer that is never announced does
+  not point**."* §11 item 3's re-weighting box carries the instruction this row
+  exists to honour: it *"should be read as an **accessibility gap on a shipped
+  recovery**, not as a nicety inherited from §9's unshipped message."*
+- **It got worse; it did not newly appear — and the earlier decline was not an
+  error.** `copy.md` §9.3 declined `role`/`tabindex` when `#sendError` held only
+  transport lines, whose recovery was on the same screen and needed no
+  announcement to be found. §10 changed what the region carries without changing
+  the region, and **both §10.5 and §4b.5 leave the decline standing while
+  recording that it now costs more.** A Planner pass should treat the earlier
+  decline as a decision whose inputs changed, not as a mistake to correct.
+- **Why it was not folded into item 20's string fix.** A live region changes
+  announcement behaviour for **every** shipped send failure, not only the 413.
+  Folding it in would have meant PR #27 shipping an untested announcement change
+  across four strings it was never scoped to touch, inside a PR already blocked
+  on a copy question. **Two attributes is the size of the diff, not the size of
+  the change** — the row needs its own UAT and must not be picked up as a quick
+  win.
+- **The pattern question, with the numbers behind it.** `index.html` has eleven
+  `.msg-box err` regions. **Seven** carry `role="alert"` — `#addError:114`,
+  `#connectWarn:210`, `#exportError:245`, `#exportOpenError:271`,
+  `#accountMsg:357`, `#clientIdMsg:428`, `#helpMsg:522` — and five of those also
+  carry `tabindex="-1"`. **Four** carry neither: `#toolsWarning:49`,
+  `#picError:161`, **`#sendError:195`** and `#labelError:294`. So `#sendError`
+  is an outlier against the app's own majority pattern but is **not unique**,
+  and item 12's rule applies — *fix the pattern or accept it, do not
+  special-case one control*. The difference from item 12 is that here one of the
+  four has an argued reason to go first, and this row is that argument. Whether
+  the deliverable is one attribute pair or four is the Planner pass's to settle.
+- **`tabindex` is a separate decision from `role`, and the tree already carries
+  the precedent for not conflating them.** `index.html:242-246` records why
+  `#exportDone` gets `tabindex="-1"` and deliberately **no** role: focus is moved
+  to it, and a role as well would announce it twice. Nothing moves focus to
+  `#sendError` today, so *announce*, *focus*, or *both* is a real question with
+  three real answers.
+- **Verification is this row's actual cost, exactly as it is item 22's.**
+  **Nobody on this project has a working screen reader** — NVDA is not installed
+  and Narrator's speech cannot be captured as text. v0.1.9's reveal toggle and
+  v0.1.10's `#yotoPill` accessible name both shipped **unheard**, each recorded
+  under *Not verified* rather than claimed. A row whose entire deliverable *is*
+  an announcement cannot repeat that and still be called shipped. Budget for a
+  real screen reader, or say plainly in the PR that nobody heard it.
+
+### Item 26 — briefing notes
+
+- **What is claimed, and what is not.** No sentence in the family is known to be
+  wrong. `copy.md` §10.4's boxed note is the entire finding: *"`_friendly_http`'s
+  five sentences — the 401/403, the 413, the 5xx, the timeout and the fallback —
+  are shipped user-facing copy owned by **no** handoff package, and this one is
+  reached from the repair path as well as the send path. It is ruled here because
+  it is the other half of the branch §10.1 changes. Adopting that family into a
+  package of its own is worth a queue row and is **not** done here."* §10
+  ratified one of the five. **Four are left.**
+- **Why an ownership gap earns a row at all — the evidence is item 20 itself.**
+  The 413 sentence named *"max 5 hours per card"*, the **card-level** ceiling, at
+  the moment of a **per-track** refusal. It dates to `b40c702` and is present in
+  `yoto_maker/yoto/client.py` at **v0.1.2** and at **v0.1.12** (both checked), so
+  it shipped in every tagged release the project has cut. It was not caught by
+  review, by tests, or by use — it was caught when someone finally wrote down
+  what the string was supposed to say, and that writing-down happened only
+  because item 20 forced it. **That recurrence is the only thing this row
+  prevents, and preventing it is the whole value.**
+- **The multi-path reach is the first question a Planner pass must answer, not a
+  detail to note in passing.** Verified against `main` at `3330f2c`:
+  `_friendly_http` is raised from **nine** sites across **seven** methods,
+  carrying **seven** distinct `{doing}` phrases. **Three are reachable from
+  `yoto/repair.py`** — `get_card` (*reading the card*), `list_my_cards`
+  (*listing your cards*) and `update_card` (*saving the repaired card*), the
+  last of which **only** the repair path calls. The family is therefore not
+  send-path copy the repair CLI happens to borrow; it is **shared copy with two
+  callers and no owner.** `export-only-mode/` is the wrong home, and §10.4 says
+  so about its own ruling — the generic 413 sits there because it is the other
+  arm of the `if` §10.1 had to change, not because it belongs there. The home
+  decision gates everything else: a new package, a section of
+  `configuration-surface/`, or a document that is not a handoff package at all.
+- **One figure in the existing record does not survive checking.** Item 20's
+  briefing above and `copy.md` §10.4 both say `_friendly_http` is *"shared by six
+  call sites."* Nine raises, seven methods, seven `{doing}` phrases — no counting
+  of the current tree yields six. §10.4's argument (no single ceiling can be
+  right for all callers) holds for any count above one, so nothing ratified
+  collapses. **Re-count before reusing the number, and do not correct it in the
+  handoff as a drive-by** — it sits inside a ratified section, so the correction
+  is Designer's.
+- **The `{doing}` asymmetry must be carried forward, not tidied away.** The 5xx,
+  timeout and fallback sentences interpolate `{doing}`; §10.4 rules that the 413
+  branch deliberately does **not**, because two call sites are reads and *"Yoto
+  wouldn't take that while listing your cards"* is a sentence about nothing. An
+  adoption pass that makes the family "consistent" would undo a ruling. Same
+  class as item 19's acts-on-format / advises-on-size asymmetry: reads like an
+  oversight, is a decision.
+- **Scope honesty — this row may correctly ship no code.** If the four sentences
+  are found sound, the deliverable is documentation: a `docs/` PR, no behaviour
+  change, row closed. That is success, not under-delivery. It is marked
+  `_needs Designer pass, then Planner only if anything ships_` for that reason,
+  and **a Builder that finds this row eligible without a Designer ruling in hand
+  has misread it.**
 
 ### Item 22 — briefing notes
 
