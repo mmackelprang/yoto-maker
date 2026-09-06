@@ -85,7 +85,7 @@ Five notes, each load-bearing.
 `.hidden`, no `disabled`. It is the only control in step 3 with no connection
 dependency, and that is the feature.
 
-`app.js:288`'s `$("#sendBtn").disabled = !connected;` is unchanged and gains no
+`app.js:382`'s `$("#sendBtn").disabled = !connected;` is unchanged and gains no
 sibling.
 
 ---
@@ -435,6 +435,103 @@ rather than closes.
 
 ---
 
+## 4b. The send path's size refusal points at the save button *(added 2026-09-06)*
+
+The contract for `copy.md` §10. Unlike §4a, **this one ships** — it is the
+rendering rule for queue item 20's per-track 413.
+
+An implementer must not have to infer any of the five rules below.
+
+### 4b.1 When the pointer appears
+
+**Only when Yoto returns 413 to the audio PUT for one track.** That is the sole
+caller that knows which limit a 413 can mean, and the only failure whose recovery
+is the other button.
+
+| Send failure | Message | Points at `📁 Save the files to a folder`? |
+| --- | --- | --- |
+| 413 on the track PUT | `copy.md` §10.1 | **Yes** |
+| 413 from any other call | `copy.md` §10.4 | No — it ends in *tell whoever set Yoto Maker up for you* |
+| 401 / 403 | *sign-in expired* | No — reconnecting is the recovery |
+| 5xx, timeout, anything else | the shipped transport lines | No — **retrying is the recovery, and diverting her to the other path would be wrong advice** |
+| A poll drops after the job starts | `copy.md` §9 — written, unshipped | No |
+
+**The rule behind the table:** the pointer belongs only to failures that
+**cannot succeed on a retry.** A size refusal is deterministic — the file is the
+same size next time — which is exactly what makes *"there's another way"* the
+honest thing to say and what makes it wrong everywhere else.
+
+### 4b.2 Where it renders
+
+**`#sendError`, and nowhere else.** No new region, no new markup, no new CSS.
+
+This is §4.4's rule read in the other direction. A reveal failure earned
+`#exportOpenError` because it was feedback on a *different* button from the one
+whose region it was landing in. Here the message is feedback on **the send
+button, about the send button's own action** — `#sendError` is its region, and
+moving it anywhere else would repeat the defect §4.4 fixed. In particular it must
+**not** render into `#exportError`: that is the save button's region, and putting
+a message there about a button the user has not pressed is `overview.md` §4.3
+point 1's *"feedback appearing below a different button"*, arriving as JavaScript
+instead of as markup.
+
+**One text node.** `showError()` sets `textContent` (`app.js:55`) and the message
+arrives from the server as a single `e.message`. `copy.md` §10 is written as one
+paragraph per string for that reason. **Do not reach for `setMsgBoxContent()`'s
+array form here** — a multi-paragraph message would mean changing how the send
+path carries errors, which is out of scope for a copy fix.
+
+**Lifetime: one send attempt.** `sendToYoto()` and `connectYoto()` both call
+`clearError($("#sendError"))` on entry (`app.js:2050`, `app.js:2081`), so the
+pointer disappears the moment she acts. Nothing new is needed; it is stated so
+nobody adds a flag to preserve it.
+
+### 4b.3 What does not change
+
+- **`#exportRow` is not touched.** No highlight, no scroll, no focus move, no
+  added class, no state on `#exportBtn`, no auto-press. §1.1's *"`#exportRow` is
+  never touched by `renderStatus()`"* is unamended and gains no exception here.
+- **No control is added, removed, disabled or re-ordered** anywhere in step 3.
+- **`#sendBtn` is left enabled** by the existing `finally` block. Pressing it
+  again will fail identically, and that is correct: configuration-surface §13.5's
+  rule is that a control is never disabled without a visible reason, and the
+  reason here is one sentence above the button.
+
+### 4b.4 The adjacency is now a contract, not just a layout property
+
+`copy.md` §10.1's string says **below**. That word is true only while
+`#exportRow` is the next *visible* element after `#sendError` in step 3.
+
+Today it holds, and it holds for a reason rather than by luck:
+
+| Between them in the DOM | State when this message renders |
+| --- | --- |
+| `#sendDone` | hidden — `sendToYoto()` hides it on entry (`app.js:2082`) |
+| `#connectWarn` | hidden — it renders only for an `invalid` Client ID, which hard-blocks sign-in, which disables `#sendBtn` (`app.js:382`). **A send that can reach a 413 cannot coexist with a visible `#connectWarn`.** |
+
+> **Standing condition.** If `#exportRow` ever stops being the next visible thing
+> beneath `#sendError` — a new box inserted between them, `#exportRow` moved, or
+> `#connectWarn` made reachable during a send — **`copy.md` §10.1's string must
+> change with it.** This is the same standing obligation §5.7's reassurance
+> carries in `copy.md`, and it is the price of a positional word. It was judged
+> worth paying: the alternative sends a non-technical user hunting for a button
+> by name.
+
+### 4b.5 Announcement — unchanged, and the gap is now more expensive
+
+`#sendError` has neither `role` nor `tabindex` (`index.html:195`), so **nothing
+is announced and focus does not move.** That is unchanged by this ruling, and
+deliberately: making it a live region changes announcement behaviour for every
+shipped send failure and needs its own pass and its own UAT (`copy.md` §9.3).
+
+**But the cost of leaving it has gone up.** Until now the region held messages a
+user could act on by re-reading the screen. It now holds the app's only
+cross-path recovery pointer, and **a pointer that is never announced does not
+point.** Recorded against §11 item 3 rather than fixed here, so that the item is
+re-read with this weight rather than as an inherited nicety.
+
+---
+
 ## 5. Announcements
 
 - `#exportMsg` — `role="status"` (polite). Per-track updates during the run.
@@ -630,6 +727,13 @@ on purpose, and each says who owns it.
    it and says why — it changes announcement behaviour for every shipped send
    failure and deserves its own pass. This package adds a message to a silent
    region knowingly, and no worse announced than the messages already there.
+
+   > **Re-weighted 2026-09-06, not reopened.** §4b.5 leaves the decline in place
+   > and records that it now costs more: `#sendError` holds the app's only
+   > cross-path recovery pointer (`copy.md` §10.1), and a pointer that is never
+   > announced does not point. This item is still open and still owned by a
+   > separate pass — but it should be read as an **accessibility gap on a shipped
+   > recovery**, not as a nicety inherited from §9's unshipped message.
 
 4. **Whether the YouTube add path should carry §5.10's shape.** §4a.1 declines
    it for this PR; `copy.md` §9.3 carries the reasoning. It is a follow-up with a

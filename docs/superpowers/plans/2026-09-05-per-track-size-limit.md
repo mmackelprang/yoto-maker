@@ -796,6 +796,20 @@ and found not verbatim-reusable.
 
 ## 7. Copy authored by this plan
 
+> ⛔ **SUPERSEDED 2026-09-06 — §7 is history, not instructions.** The copy gate
+> refused both strings below and the escalation was ruled by Designer. The
+> authority is now
+> [`design-handoffs/export-only-mode/copy.md`](../../design-handoffs/export-only-mode/copy.md)
+> **§10** (rendering: [`interactions.md`](../../design-handoffs/export-only-mode/interactions.md)
+> **§4b**), and what shipped is §10's text, not §7.1's. Two things changed:
+> **no number is printed at all** — the whole-MB rounding made the sentence
+> refute itself for the modal near-miss size, and the 100 MB figure is
+> documentation §8's probe has not tested — and the recovery **points at
+> `📁 Save the files to a folder`** instead of at a shorter recording, which
+> `server/app.py:263` had already made unreachable advice. §7.2's first two
+> questions are answered by that ruling. Kept unedited because §10.1 and §10.2
+> are written against it and are only legible next to what they rejected.
+
 ### 7.1 Two strings, both replacing text that is wrong today
 
 | Where | Today | New |
@@ -866,7 +880,7 @@ strictly smaller footprint than item 18's live `--apply` run, which was approved
 | Outcome | What it settles |
 | --- | --- |
 | PUT returns 413 (or any 4xx) | The ceiling is real on the API path. Item 21 ships the advisory as specced. Task 3's string is confirmed correct. |
-| PUT returns 200 and the transcode poll returns a sha | **The 100 MB figure does not bind the API path.** Item 21 should be **closed unshipped** — an advisory naming a limit that does not apply to the path she is on is a false alarm on the shipped path. Task 3's string stays (it only ever runs when Yoto *has* refused) but should be reworded to stop naming 100 MB. |
+| PUT returns 200 and the transcode poll returns a sha | **The 100 MB figure does not bind the API path.** Item 21 should be **closed unshipped** — an advisory naming a limit that does not apply to the path she is on is a false alarm on the shipped path. ~~Task 3's string … should be reworded to stop naming 100 MB.~~ **Already done, before the probe ran** — `copy.md` §10.2 removed the figure from the shipped string, so **no outcome of this probe requires a copy change on the send path.** Every clause that shipped is entailed by the observed refusal alone; only the number could have been falsified, and it is not printed. |
 | PUT 200, transcode never completes | The ceiling binds later and differently. Item 21 needs re-scoping around the transcode timeout message (`client.py:295-299`), not a pre-send advisory. |
 
 **Record the result in `docs/BUILDER_QUEUE.md` item 21's row either way.** This is the
@@ -905,9 +919,11 @@ readable on its own; `docs/BUILDER_QUEUE.md` is the live copy.
 | A2 | The PUT sets an explicit `Content-Length` and **never** `Transfer-Encoding: chunked` — the property a pre-signed URL depends on | same |
 | A3 | The PUT's method, URL and `Content-Type` are unchanged from `main` | same |
 | A4 | The client is handed a **file object, not bytes** — the regression guard against reintroducing `fh.read()` | `test_put_audio_streams_the_file_and_never_materialises_it` |
-| A5 | A per-track 413 names the track, names **100 MB**, and does **not** say *"5 hours"* | `test_413_on_a_track_upload_uses_the_per_track_message` + `test_track_too_big_message_names_the_track_the_limit_and_the_size` |
-| A6 | The size is whole MB read as 10⁶ (`118 MB`, not `118.4 MB`, not MiB) | `test_track_too_big_message_names_the_track_the_limit_and_the_size` |
-| A7 | An unknown size (0) omits the size clause rather than printing `0 MB` | `test_track_too_big_omits_the_size_when_it_is_unknown` |
+| A5 | ~~names **100 MB**~~ → **INVERTED by the §10 ruling.** A per-track 413 names the track, prints **no number at all** (no ceiling, no size, no digit), does **not** say *"5 hours"*, and **points at `📁 Save the files to a folder`** | `test_413_on_a_track_upload_uses_the_per_track_message` + `test_track_too_big_names_the_track_and_prints_no_number_at_all` + `test_track_too_big_is_copy_md_10_1_verbatim` |
+| A6 | ~~whole MB read as 10⁶~~ → **retired with the number.** Nothing is rounded, so no rounding has to be right | — (subsumed by A5's no-digit assertion) |
+| A7 | ~~an unknown size (0) omits the size clause~~ → **unreachable by construction.** `_track_too_big` is no longer given a size, so it cannot print one | `test_track_too_big_is_not_even_given_a_size` |
+| A7b | The pointer appears on the track-PUT 413 and on **nothing else** — not 401/403, not 5xx, not a timeout, not the generic 413 (`interactions.md` §4b.1's table) | `test_too_big_never_leaks_out_of_the_413_branch` + `test_an_expired_sign_in_during_a_track_upload_still_says_reconnect` + `test_the_generic_413_is_no_longer_a_dead_end` |
+| A7c | *"below"* is true: `#exportRow` is the next **visible** element after `#sendError`, with nothing new between them (`interactions.md` §4b.4's standing condition) | `test_the_save_button_really_is_below_the_send_error` + `test_connect_warn_cannot_be_visible_during_a_send_that_reaches_a_413` + `test_the_pointer_quotes_the_button_label_that_ships` |
 | A8 | A 413 from any **other** call site names neither ceiling | `test_413_elsewhere_no_longer_claims_a_ceiling_it_cannot_vouch_for` |
 | A9 | 401/403, 5xx and timeout messages are **byte-identical** to `main` | the three pinning tests in Task 1 |
 | A10 | `create_card` names the **right** track when the second of two is refused | `test_create_card_names_the_refused_track` |

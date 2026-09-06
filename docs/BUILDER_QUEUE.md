@@ -1,6 +1,43 @@
 # Builder queue
 
-**Last updated:** 2026-09-06 by Planner — **two rows filed out of Designer's
+**Last updated:** 2026-09-06 by Builder — **item 20 is DONE and merged as
+[PR #27](https://github.com/mmackelprang/yoto-maker/pull/27).** Designer's
+ruling shipped verbatim: the per-track 413 **prints no number at all** and
+**points at `📁 Save the files to a folder`**, and the generic 413 gains
+configuration-surface §4d's recovery sentence, closing the app's only dead-end
+error. **400 tests** (390 + 10 net). No version bump — zero files under
+`server/static/` changed on the whole branch, so the `__ASSET_V__` cache key
+does not move.
+
+**Both gates were re-run against the ruled strings, and both cleared them.** The
+copy gate — the same gate that blocked the previous draft as *NEEDS A REAL
+DESIGNER PASS* — returned **SHIP WITH NIT**, having compared all three strings
+against `copy.md` §10's blockquotes codepoint-by-codepoint. Pre-merge review
+returned **0 HIGH / 0 MEDIUM**. The old MEDIUM did not come back, and the way it
+could have is worth keeping written down: its guard asserted `"100 MB" not in
+msg`, and **this ruling deletes that number**, so the guard would have gone
+**vacuous and still passed** while `too_big` leaked into the 401 branch. It now
+asserts on the pointer itself, over six failure kinds, plus an end-to-end 401.
+**A string change can silently disarm the test that guarded the string.**
+
+**One row filed out of the copy gate's MEDIUM: 27.** `interactions.md` §4b.4's
+table asserts that a send which can reach a 413 *cannot coexist with a visible
+`#connectWarn`*. **That is false**, and it was confirmed in the live app, not
+argued: `connected` is token-presence only (`auth.py:246`) and
+`renderConnectWarn()` triggers on the verdict alone (`app.js:325`), so nothing
+couples them. **The shipped string is unaffected and stays** — `#exportRow` is
+still visible and still below, so *"below"* is still true; what is falsified is
+one sentence of the ruling's *reasoning*. Builder did not fix it: the only fixes
+touch the send path's state machine, which §4b.3 forbids, and narrowing the
+claim is Designer's call. Item 20's tests were narrowed to assert only what they
+prove.
+
+**Plan §8's live probe is still NOT run** — it needs the maintainer's
+authenticated Yoto account. **Item 21 stays open**, and §10.2's ruling means no
+outcome of that probe requires a copy change on the send path: only the number
+could have been falsified, and it is no longer printed.
+
+Previously: 2026-09-06 by Planner — **two rows filed out of Designer's
 item 20 ruling: 25 (`#sendError` is announced to nobody, and now holds the app's
 only cross-path recovery pointer) and 26 (`_friendly_http`'s other four
 sentences are owned by no handoff package).**
@@ -41,6 +78,44 @@ moved statement cited seven times*, not broad rot. A one-off pass over every
 `file:NNN` citation under `docs/design-handoffs/` would settle it in minutes.
 **Not filed as a row**, because the real question is whether such a check should
 keep running, and nobody has asked for that yet.
+Previously: 2026-09-06 by Designer — **item 20's blocker is RULED and
+cleared.** [PR #27](https://github.com/mmackelprang/yoto-maker/pull/27) is still
+open and still unmerged: Builder implements the ruling, re-runs the copy gate
+against it, and merges.
+
+**The ruling lives in the handoff, not in this file.**
+[`design-handoffs/export-only-mode/copy.md`](design-handoffs/export-only-mode/copy.md)
+**§10** is the authority on both strings — a new ratified section, because the
+send path's size refusal now **points at `📁 Save the files to a folder`**, and a
+string that quotes that button's label has to be findable from the package that
+owns the label. [`interactions.md`](design-handoffs/export-only-mode/interactions.md)
+**§4b** says when the pointer appears and where it renders;
+`mockups/step-3.md` §3 is redrawn from a placeholder to the real string. The
+headline of the ruling: **the per-track message prints no number at all** — not
+Yoto's ceiling, not the file's size — which closes the self-refuting comparison
+without a byte comparison and leaves nothing for plan §8's unrun probe to
+falsify. The **✅ RULED** block inside *⛔ Blocker — item 20* below summarises it
+and lists three things Builder must not "improve".
+
+Previously: 2026-09-06 by Builder — **item 20 is ⛔ BLOCKED on a Designer
+ruling, and [PR #27](https://github.com/mmackelprang/yoto-maker/pull/27) is open
+but deliberately NOT merged.**
+
+Both halves of the work are done and green — the streamed PUT and the 413
+routing — at **390 tests**, with pre-merge review at 0 HIGH / 1 MEDIUM / 4 LOW
+(MEDIUM and three LOW fixed, all test-only). What stops the merge is **one of
+the two error strings plan §7.1 authored instead of routing through Designer**.
+The copy gate was asked to scrutinise those two strings rather than accept them
+as pre-approved, and returned **NEEDS A REAL DESIGNER PASS** on the per-track
+one. Two grounds, both reproduced independently by Builder: the whole-MB
+rounding makes the sentence **refute itself** for any size in
+100,000,001–100,500,000 (*"Yoto's limit is 100 MB, and this one is 100 MB"*),
+which is the *modal* near-miss case; and its recovery clause points at
+**duration**, which `app.py:263` has already clamped to 50 minutes, while the
+remedy that would work — `📁 Save the files to a folder`, which converts a WAV
+to ~72 MB — sits on the same screen and is not mentioned. See
+**⛔ Blocker — item 20** below. **Plan §8's live probe was NOT run** (it needs
+the maintainer's authenticated Yoto account); item 21 stays open pending it.
 
 Previously: 2026-09-06 by Planner — **item 19's follow-ups exist now: rows
 22, 23 and 24. The fourth finding was a stale mockup and is fixed here, not
@@ -77,9 +152,14 @@ so the file's precedence banner now covers ordering as well as strings — it
 previously only claimed authority over copy, which is exactly why an ordering
 drift walked past it.
 
-**Item 20 is in flight** — claimed on `fix/send-path-size-limit`, so its row
-below still reads 📋 until that PR lands. Items 22 and 24 are queued behind it;
-item 23 is not Builder-eligible until Designer has ruled.
+**Item 20 is in flight** — claimed on `fix/send-path-size-limit`. *(Builder,
+same day: it is now ⛔ blocked and its row reads ⛔, not 📋 — PR #27 is open and
+unmerged pending a Designer ruling. See the banner above and the Blocker section
+below.)* *(Builder, later the same day: **it is ✅ done and merged as PR #27** —
+the ruling landed, was implemented verbatim, and both gates cleared it. This
+paragraph is left standing because the two corrections on top of it are the
+record of a single item going 📋 → 🚀 → ⛔ → ✅ in one day.)* Items 22 and 24 are
+queued behind it; item 23 is not Builder-eligible until Designer has ruled.
 
 Previously: 2026-09-06 by Builder — **item 19 MERGED as
 [PR #24](https://github.com/mmackelprang/yoto-maker/pull/24) (`7574d0d`).**
@@ -370,13 +450,14 @@ day because these two states shared one word.
 | 16 | ⛔ | **Client-only XHR upload-progress for short files (ADR PR C)** — replace `fetch` with `XMLHttpRequest` in `uploadOneFile` (seam S1) for `upload.onprogress`, fed through `setAddProgress` (seam S3) | [ADR §3.3](architecture/decisions/2026-07-21-file-upload-on-job-system.md) | _needs go/no-go, then plan_ | **14 (PR A); 13; maintainer go/no-go** | **DEFERRABLE cut-line — needs an explicit maintainer go/no-go before it is planned** (ADR open question 1). Open product question: for **under-50-min files the whole wait is the upload leg**, which **only the browser can measure**, so A+B alone leave short files with a differently-fake bar (ADR §1.4, §7.4–7.5). The arc is coherent with A + B alone. See arc briefing. |
 | 18 | ✅ | **Repair existing cards' declared `format` (mp3 → opus) IN PLACE** — a CLI utility (`python -m yoto_maker.repair --card-id … [--apply]`) that reads a card via `GET /card/{id}`, probes each track's served artifact for Ogg Opus, and rewrites **only** each track's `format` via `POST /content` with `cardId` — preserving the physical NFC link, icons, keys, order and every other field. Dry-run by default; backup-before-write; all-or-nothing per card; verify-after; idempotent | [ADR](architecture/decisions/2026-07-21-repair-existing-cards.md) (design basis; committed by this PR) | [plan](superpowers/plans/2026-07-21-repair-existing-cards.md) | 17 (PR #18) + 13 (PR #19) — both on main | **MERGED as [PR #20](https://github.com/mmackelprang/yoto-maker/pull/20); also in the Shipped table. The live 3-card `--apply` run is the coordinator's next step (staged rollout).** New `yoto/repair.py` (pure corrector + orchestration + CLI) + 4 small `client.py` methods + a `yoto_maker/repair.py` shim + `tests/test_repair.py` + `tests/fixtures/card_sample.json`. **`format` is the only field ever written.** **Step-0 pinning found the real body is wrapped `{"card":…,"ownership":…}` and the artifact URL is `trackUrl` itself** (adapted from the plan's assumptions). **No version bump.** The live 3-card `--apply` run is the coordinator's post-merge step — this PR does not write. 6 tasks. |
 | 19 | ✅ | **Save the files to a folder** — a second, user-chosen way to finish one card. The app writes the finished audio, the pictures and a self-contained `What to do next.html` into `<Documents>\Yoto Maker\<card name>\`; the user uploads them by hand on `my.yotoplay.com`. **Needs no sign-in at all.** One `.btn` + one `.tiny` caption appended to step 3 after `#connectWarn`, six `.hidden` regions beneath it (planned as five; see the ruling in the notes), three new routes, a new `yoto_maker/export/` package. The signed-in send path is untouched | [`specs/2026-09-05-export-only-mode-design.md`](superpowers/specs/2026-09-05-export-only-mode-design.md) + [`design-handoffs/export-only-mode/`](design-handoffs/export-only-mode/) | [`plans/2026-09-05-export-only-mode.md`](superpowers/plans/2026-09-05-export-only-mode.md) | — (13, 17, 18 all on `main`) | **MERGED to `main` as [PR #24](https://github.com/mmackelprang/yoto-maker/pull/24) (`7574d0d`, v0.1.13); also recorded in the Shipped table.** Shipped **six** `.hidden` regions, not five — Designer's 2026-09-05 ruling added `#exportOpenError` so a reveal failure stops destroying the partial-save notice. Spec approved 2026-09-05. 10 tasks, one PR, shipped as v0.1.13 — this PR owned the bump. Extends the `configuration-surface/` handoff; deviates from nothing. **Zero new CSS, zero new tokens, `styles.css` unmodified** — a diff that touches it means something in spec §2 was reinterpreted and goes back to Designer. `copy.md` is the authority on every string, and **no user-visible string may contain "export"**. Read the briefing notes — five constraints in this feature read as arbitrary and are not. |
-| 20 | 📋 | **The send path's 413 names the wrong ceiling, and the audio PUT holds the whole track in RAM** — `client.py:481-482` maps every 413 to *"That audio file is too big for Yoto (max 5 hours per card)"*, the **card-level** limit, at the moment the user has hit the **per-track** one; and `client.py:237` sends `content=fh.read()`, ~529 MB resident for a 50-minute WAV | — (decision recorded in the plan §0; no separate spec) | [`plans/2026-09-05-per-track-size-limit.md`](superpowers/plans/2026-09-05-per-track-size-limit.md) | — (independent of 19 in both directions) | **MEDIUM. Planned 2026-09-05. 6 tasks, one PR, branch `fix/send-path-size-limit` off `main`. NO version bump** — backend-only, no served static asset, and item 19 owns v0.1.13. **The Planner pass answered the open scoping question: advise, do not act.** No byte-split (it leaves the card over the 500 MB ceiling and multiplies the uploads) and no send-path transcode (Yoto already transcodes server-side, so converting adds a *second* lossy generation — a strictly worse trade than the export path's, where conversion is forced). What ships is only what is certain regardless of Yoto's published numbers. **The advisory surface itself is now item 21**, because `copy.md` §5.9's strings are **not** verbatim-reusable here (plan §1.4). Read plan §0 first — it is the decision the maintainer is actually reviewing. |
+| 20 | ✅ | **The send path's 413 named the wrong ceiling, and its audio PUT held the whole track in RAM** — **MERGED to `main` as [PR #27](https://github.com/mmackelprang/yoto-maker/pull/27); also in the Shipped table.** `_friendly_http` mapped *every* 413 to the **card-level** *"max 5 hours per card"* at the moment the user had hit the **per-track** limit; and `_put_audio` did `content=fh.read()`, ~529 MB resident for a 50-minute WAV. Both fixed. The per-track string was **blocked on a Designer ruling** mid-cycle and shipped as ruled: [`copy.md` §10](design-handoffs/export-only-mode/copy.md) + [`interactions.md` §4b](design-handoffs/export-only-mode/interactions.md) | Decision in plan §0; the two strings are ruled in [`copy.md`](design-handoffs/export-only-mode/copy.md) §10 (rendering: `interactions.md` §4b) | [`plans/2026-09-05-per-track-size-limit.md`](superpowers/plans/2026-09-05-per-track-size-limit.md) — **§7 is superseded by §10 and now says so** | — | **Shipped 2026-09-06 at 400 tests. NO version bump** — zero files under `server/static/` on the whole branch. **The ruling closed ground 1 subtractively: no number is printed at all**, so nothing is rounded and no byte comparison was introduced — plan §2 stands untouched, and the string survives plan §8's unrun probe whatever it finds. Ground 2 closed by pointing at `📁 Save the files to a folder`, which **promises nothing** (an oversized file already in the copy-as-is set is copied untouched, `export/rules.py:46-47`) and is **deliberately not conditioned on file type**. **The one lesson worth carrying forward:** the pre-existing MEDIUM's guard asserted `"100 MB" not in msg`, and the ruling deleted that number — so the guard would have gone **vacuous and still passed**. A string change can silently disarm the test that guarded the string; assert on what the new string *contains*. The copy gate's own MEDIUM became **item 27**. **Item 21 stays open** on the unrun probe. |
 | 21 | 📋 | **The send path never warns that a track is over Yoto's limits until a long upload fails** — the app knows every track's size the moment it is added, and says nothing. A `.msg-box info` on step 3 above `🚀 Send to Yoto`, naming the per-track and card-level ceilings | _needs Designer pass_ | _needs Designer pass, then Planner_ | **20**, + a Designer ruling on copy, + the live probe in [item 20's plan §8](superpowers/plans/2026-09-05-per-track-size-limit.md) | **LOW-MEDIUM, and it may correctly turn out NOT to ship.** Item 20's plan §8 specifies a cheap, non-destructive live probe (get an upload URL, PUT a ~120 MB file, never call `/content` — no card is created) that settles whether the 100 MB figure binds the **API** path at all. If it does not, an advisory naming it is a false alarm on the shipped path and **this row closes unshipped**. **`copy.md` §5.9's approved strings cannot be reused verbatim** — they name *"Yoto's website"*, which is false on this path, and their `{list}` format is justified by a file dialog that does not exist here (plan §1.4). Touches `index.html` → **needs a version bump.** |
 | 22 | 📋 | **`copy.md` §9's send-path string — written, approved, and deliberately unshipped** — when a status poll fails *after* `POST /api/send` has already returned a job id, `#sendError` still renders today's generic transport line, which ends *"…then try again."* The approved replacement is three paragraphs: the app cannot tell her whether the card went through, nothing on the card has changed, look in the Yoto app on her phone — and if it isn't there, press `🚀 Send to Yoto` **once** | [`design-handoffs/export-only-mode/copy.md`](design-handoffs/export-only-mode/copy.md) §9 (+ §9.1–9.3) — **the copy already exists; this row ships it, it does not author it** | _needs Planner pass_ | — (19 on `main`) · **a live authenticated send against a real Yoto account**, which is the whole reason this is not already shipped | **MEDIUM, and Designer's ranking is why it is not LOW: the send path's current instruction is the *more dangerous of the two*.** It ends *"then try again"*, and pressing `🚀 Send to Yoto` while the first send is still uploading puts **a second card in her Yoto account** — on a website this app does not control, which she must then find and delete. The save path's identical mistake produces `Bedtime Stories (2)` in Documents, which `copy.md` §5.8 says needs no explanation at all. **Until this lands, the duplicate-card protection is what is given up**, on the path where the duplicate is hardest to undo — knowingly, per the maintainer's 2026-09-05 ruling (§9.1's stated fallback, taken). Held for a **verification** reason, not a design one. `#sendError` gains **no `role` and no `tabindex`** (§9.3, deliberate); the YouTube add path still does not opt in (§9.3). The retry is **opt-in per call site** — see briefing. Touches `app.js` → **needs a version bump.** |
 | 23 | 📋 | **`#startOver` leaves `#exportBtn` disabled** — "Start a new card" pressed during a save disowns the running job (`app.js:2675`) and clears all six regions, but never re-enables the save button. It returns only when the disowned run's `finally` (`app.js:2420-2424`) eventually executes — for a large save, the rest of the write plus up to the 12s poll-retry window. `#exportProgress` is hidden by then, so nothing on screen explains why the button is dead | _needs Designer pass_ | _needs Designer pass_ | — (19 on `main`) | **MEDIUM. Pre-existing; deferred from item 19's pre-merge review. `_needs Designer pass_` is not a formality here — the obvious fix causes a worse bug, which is why this row must not be scheduled as a quick win.** Adding `$("#exportBtn").disabled = false` to the `#startOver` handler re-arms a second save while the first is **still writing server-side** (`jobs.py` has no cancellation — that is item 15 / [ADR §3.2](architecture/decisions/2026-07-21-file-upload-on-job-system.md)), and the disowned run's `finally` is **not generation-guarded** the way its `catch` and its progress callback are: when it finally fires it hides the *second* run's `#exportProgress` and re-enables the button mid-run. The one-liner trades a stuck button for a dead progress bar on a live save. Designer owes the question underneath it first: what does the save button *mean* while a disowned job is still writing a discarded card's folder? See briefing. |
 | 24 | 📋 | **A `BaseException` in a worker thread strands `job.status` at "running" forever** — `jobs.py:70` catches `Exception`, so a `SystemExit` / `KeyboardInterrupt` escaping a job target leaves the `Job` in its **non-terminal** state with no error, no timeout and no eviction. The client keeps receiving a *successful* `running` answer, so `pollJob`'s retry window never engages: the bar freezes at its last percent, the button that started it stays disabled, and only a page reload gets out. Live on **both** shipped job paths — the YouTube add and item 19's save | — · [ADR](architecture/decisions/2026-07-21-file-upload-on-job-system.md) is the arc this sits beside, **not** this row's design basis | _needs Planner pass_ | — · **but read the fold-in rule against 14 in the notes before scheduling either** | **LOW-MEDIUM — rare trigger, unbounded consequence, ~3-line fix.** Pre-existing; deferred from item 19's pre-merge review, which was explicitly constrained not to touch `jobs.py`. **Checked against item 14 before filing, and it is not work 14 already owns:** 14 owns moving `POST /api/tracks/file` onto the job system, and its `jobs.py` work is the *client contract* (`reason` / `retryable`, the 404 → *"Yoto Maker restarted"* mapping); the ADR's terminal-state material — §3.2's `cancelled` state, §5.2's list of newly-possible failure modes — covers a job that finishes badly and a job whose **process** died and now 404s (§5.2.3), and **never contemplates a live process still cheerfully answering `running` for a job that is already dead**. It is also not foldable *now*: **14 is ⛔ on an ADR still marked `proposed`**, and blocking a three-line correctness fix that is live on two shipped paths behind an unapproved architecture decision is the wrong trade. **The one real overlap is `tests/test_jobs.py`** — item 14's row calls for it, and `jobs.py` still has **zero coverage** (confirmed 2026-09-06: no such file exists). Rule, both directions: **whichever lands first creates the file and the other adds cases; if 14 is claimed while this row is still 📋, fold this in as a task in 14's plan and retire this row rather than shipping both.** |
 | 25 | 📋 | **`#sendError` has no `role` and no `tabindex`, and it now holds the app's only cross-path recovery pointer** — `index.html:195` is a bare `<div id="sendError" class="msg-box err hidden">`. Nothing is announced and focus never moves, so a screen-reader user who hits a send failure is told nothing about it — including, once item 20 lands, that pressing `📁 Save the files to a folder` is the way to finish the card Yoto just refused | [`interactions.md` §11 item 3](design-handoffs/export-only-mode/interactions.md) (**re-weighted** 2026-09-06, not reopened) + §4b.5 · [`copy.md` §10.5](design-handoffs/export-only-mode/copy.md) + §9.3 — **all four state the question and record the decline; none of them answers it** | _needs Planner pass_ | — **not blocked and not waiting on anything.** The gap is live on `main` today; item 20 / [PR #27](https://github.com/mmackelprang/yoto-maker/pull/27) is what raises its cost, not what enables the fix. **A screen reader that actually speaks** is the one real dependency — see briefing | **MEDIUM, and the trigger-rarity argument is why it is neither LOW nor HIGH.** Designer's own framing is the argument: **_"a pointer that is never announced does not point"_** (`interactions.md` §4b.5). This **got worse rather than newly appearing** — §9.3's decline was right on its own terms when the region held only transport lines whose recovery was already on screen; §10 changed what the region carries without changing the region. **Deliberately not folded into item 20's string fix:** adding a live region changes announcement behaviour for **every** shipped send failure — the expired sign-in, the 5xx, the timeout and the fallback, not just the 413 — so it needs its own pass and its own UAT. **It is not a two-attribute change and must not be scheduled as one.** **Why not LOW:** the oversized-track gate binds the *pointer*, not the *region* — the same missing `role` silences every 5xx and timeout on the shipped send path, which are ordinary events, and item 4 (modal focus trap, MEDIUM) is the nearest calibration point. **Why not HIGH:** nothing is destroyed or unreachable — every message stays readable, `#exportBtn` stays in the Tab order regardless, and the recovery stays *reachable*, just never *offered*. **The scope question the Planner pass owns:** `#sendError` is one of **four** of the app's eleven `.msg-box err` regions carrying no `role`, so item 12's standing rule (fix the pattern or accept it; do not special-case one control) is live here. See briefing. |
 | 26 | 📋 | **`_friendly_http`'s other four sentences are owned by no handoff package** — with item 20's ruling the **413** branch is ratified in `copy.md` §10. The **401/403**, the **5xx**, the **timeout** and the **fallback** (`client.py:476-490` on `main`) are shipped, user-facing copy with no document behind them, and they are reached from the **card-repair CLI** as well as the send path | _needs Designer pass_ — **an ownership question before it is a copy question** | _needs Designer pass, then Planner only if anything ships_ | **item 20 ([PR #27](https://github.com/mmackelprang/yoto-maker/pull/27)) on `main` first** — `copy.md` §10 is the ratified anchor the rest of the family gets adopted around, and it does not exist on `main` yet | **LOW-MEDIUM. This is a copy-_adoption_ row, not a bug row, and ranking it as a bug row gets it wrong in both directions.** Nothing in the four sentences is known to be wrong. **The defect is that no document is the authority** — which is precisely how the 413 string came to name the card-level *"max 5 hours per card"* ceiling on the **per-track** upload and survive there unchallenged: it dates to `b40c702`, the founding `feat: core pipeline` commit, and is present in `client.py` at **both v0.1.2 and v0.1.12** (checked at both ends), so it shipped in every tagged release this project has cut. Nobody caught it because there was nothing to check it against. **The value here is preventing a recurrence, not fixing a known break** — a pass that reads all four, finds them correct and writes them down unchanged has succeeded. **The first question, and it is not a detail: where does this copy live?** Verified on `main` at `3330f2c` — nine `raise` sites across seven methods with seven distinct `{doing}` phrases, **three of them reachable from `yoto/repair.py`** (`get_card`, `list_my_cards`, and `update_card`, which **only** the repair path calls). A family reached from both the send path and a card-mutating CLI **cannot be adopted into a package scoped to one surface without first deciding where it lives**, and `export-only-mode/` is the wrong home by construction — §10.4 ruled the generic 413 there only because it is the other arm of the same `if`, and says so itself. **Not plain LOW** because `repair.py` mutates live production cards, where a misleading error is read by someone deciding whether a write landed. See briefing. |
+| 27 | 📋 | **`interactions.md` §4b.4's table states an invariant that does not hold** — row 2 says a send that can reach a 413 **cannot coexist with a visible `#connectWarn`**, because an invalid Client ID *"hard-blocks sign-in, which disables `#sendBtn` (`app.js:382`)"*. The two are not coupled: `connected` is **token-presence only** (`auth.py:246`, `_load_tokens() is not None`) and is computed independently of `client_id_verdict` (`auth.py:264`), while `renderConnectWarn()` triggers on **the verdict alone** (`app.js:325`). Sign in successfully, then have `YOTO_CLIENT_ID` become invalid (the `env` tier, which the app cannot unset) with the access token still live → `connected: true` **and** `verdict: "invalid"` → `#connectWarn` renders **between** `#sendError` and `#exportRow` while `#sendBtn` is enabled | _needs Designer pass_ — the claim is Designer's to narrow or to act on | _needs Designer pass, then Planner_ | — (20 on `main`) | **LOW user-facing, MEDIUM as a documentation defect — and the distinction is the whole row.** Found by item 20's copy gate; **confirmed in the live app, not argued**: the state was driven in the browser and `#connectWarn` rendered between the two, with the send button enabled. **The shipped string is NOT wrong and must not be changed for this** — `#exportRow` stays **visible and still below**, so *"below"* remains true; what is falsified is §4b.4's *reasoning*, and its **standing condition** names exactly this (*"`#connectWarn` made reachable during a send"*) as a trigger to revisit the string. **Builder deliberately did not fix it.** Every code fix — hiding `#connectWarn` during a send, gating `connected` on the verdict, moving `#exportRow` — touches the send path's state machine, which **§4b.3 forbids** (*"no control is added, removed, disabled or re-ordered"*), and choosing between *narrow the claim* and *make it true* is a design call. Item 20's test was renamed and narrowed to assert only what it proves, so nothing in the suite now claims this invariant holds. **Cheapest likely outcome: Designer narrows row 2 to "an invalid Client ID blocks a NEW sign-in" and the row closes unshipped.** |
 
 ### Item 25 — briefing notes
 
@@ -660,6 +741,127 @@ day because these two states shared one word.
   `.m4a` is copied as-is. Use `copy.md`. The plan's §Deviations lists seven more
   gaps and judgement calls, including three one-sentence strings it authors
   because nothing in `copy.md` covers them — Designer should confirm those.
+
+### ⛔ Blocker — item 20 *(filed 2026-09-06 by Builder — **RULED and cleared the same day; the ✅ block at the end of this section is the answer**)*
+
+**PR [#27](https://github.com/mmackelprang/yoto-maker/pull/27) is open and green
+but deliberately unmerged.** Everything except one string is done: 390 tests,
+both review gates run, UAT passing where it can run. **Planner reconciles this;
+Builder does not unblock its own items.**
+
+*(It was reconciled by **Designer**, not Planner, and that is the right lane
+rather than a shortcut: the blocking question was a **cross-path pointer** —
+whether a send failure may re-frame itself as *use the other button* — which is
+copy plus a rule about what two controls mean to each other, not a plan. The
+rest of this section is the diagnosis as Builder filed it, kept verbatim because
+the ruling is only legible against it.)*
+
+**What is blocked, precisely:** the per-track 413 string plan §7.1 authored
+rather than routing through Designer. The copy gate returned **NEEDS A REAL
+DESIGNER PASS**; Builder reproduced both grounds rather than relaying them.
+
+1. **It refutes itself in the most likely case.** `int(round(size/1_000_000))`
+   means every size in **100,000,001–100,500,000** renders *"Yoto's limit is
+   100 MB, and this one is 100 MB"* — immediately after asserting the file is
+   bigger than the limit. A file just over a ceiling is the *modal* refusal.
+   `copy.md` §5.9's whole-MB rule is safe only because it prints the size in a
+   **list parenthetical**, several words from the ceiling; §7.1 borrowed the
+   rule into a single comparative clause, a construction §5.9 never ratified.
+2. **Its recovery clause names the wrong variable.** *"If you have a shorter
+   recording of it"* aims at duration, but `app.py:263` splits every source at
+   `MAX_TRACK_SECONDS` (50 min) unconditionally, so duration cannot be the
+   cause. The population hitting this message is a 10–50 minute WAV or FLAC
+   (CD-quality stereo WAV crosses 100 MB at ~9.5 min). The remedy that *would*
+   work is `📁 Save the files to a folder` on the same screen, which converts
+   `.wav`/`.flac` to 192k MP3 (~72 MB) — and the string does not mention it.
+
+**Why Designer and not Planner or Builder:** `export-only-mode/copy.md` §5.7
+ratifies the cross-path pointer in one direction (*save → send*). The mirror
+image (*send → save*) has **no ratified string in either handoff package**, and
+re-framing a send failure as *use the other button* is state-machine-adjacent,
+not a wording tweak. Note also §5.9's strings remain **not** verbatim-reusable
+here (plan §1.4) — that finding stands.
+
+**Also flagged, non-blocking (MEDIUM):** the generic 413 string *"Yoto wouldn't
+take that — it was too big to send."* is the only dead-end sentence in the app's
+error vocabulary; every other `_friendly_http` branch ends in an action.
+`configuration-surface/copy.md` §4d's *"tell whoever set Yoto Maker up for you"*
+is the ratified pattern. Verdict was SHIP WITH NIT — fold it into the same pass.
+
+**The smallest honest unblock, if a full Designer pass is not wanted:** drop
+string 1's third sentence. That removes the wrong-axis advice, leaves the
+factually-correct correction in place, and does not pre-empt the ruling. It does
+**not** fix ground 1. **Builder did not take that option unilaterally** — it is
+still a copy change on a shipped user-facing path.
+
+**Do not fix ground 1 by comparing bytes against the figure.** Plan §2 forbids a
+comparison in `client.py` and calls that absence the design. The pre-merge
+reviewer independently reached the same conclusion and labelled it
+DEVIATES-FROM-PLAN. This is the natural companion to plan §8's live probe, which
+was **not run** — it needs the maintainer's authenticated Yoto account and was
+not authorised. Item 21 stays open pending it, and per §8 may close unshipped.
+
+### ✅ RULED — Designer, 2026-09-06. The design blocker is cleared.
+
+**The ruling is in the handoff, not here.**
+[`design-handoffs/export-only-mode/copy.md`](design-handoffs/export-only-mode/copy.md)
+**§10** is the authority on both strings;
+[`interactions.md`](design-handoffs/export-only-mode/interactions.md) **§4b** is
+the rendering contract; `mockups/step-3.md` §3 is redrawn to match. Builder
+implements from §10 verbatim, re-runs the copy gate against it, and merges.
+**Nothing below replaces §10 — it is a summary for the reader of this file.**
+
+**The two strings, as ruled:**
+
+| Where | String |
+| --- | --- |
+| 413 from the track PUT | `Yoto wouldn’t take “{title}” — it’s bigger than Yoto allows for a single track. No card was made in your Yoto account. There’s another way to finish this card: press “📁 Save the files to a folder” below.` |
+| No title available | `Yoto wouldn’t take one of your tracks — it’s bigger than Yoto allows for a single track. No card was made in your Yoto account. There’s another way to finish this card: press “📁 Save the files to a folder” below.` |
+| 413 from anywhere else | `Yoto wouldn’t take that — it was too big to send. Tell whoever set Yoto Maker up for you.` |
+
+**Ground 1 is fixed by printing no number at all** — not Yoto's ceiling and not
+the file's size. The rounding never has to be right because nothing is rounded,
+**and no byte comparison is introduced, so plan §2 stands untouched.** Three
+reasons in `copy.md` §10.2; the one that matters most for this queue is the
+third: **the refusal is observed, the 100 MB figure is not.** The string now
+survives plan §8's probe whatever it finds, which is what *"if a live test
+disagrees, the test wins"* looks like when applied before the test runs.
+
+**Ground 2 is fixed by pointing at `📁 Save the files to a folder`**, which is
+the cross-path pointer this was escalated for. It is ratified in
+`export-only-mode/` because it quotes that package's button label and depends on
+that package's placement — so a future relabel finds it. `copy.md` §10.3 carries
+why it does not contradict §1, and why it **promises nothing**: an oversized file
+already in the copy-as-is set is copied untouched (`export/rules.py:46-47`), and
+for that minority §5.9's advisory fires on the other side naming her exact file.
+**The pointer is deliberately not conditioned on file type.**
+
+**Also ruled, closing the MEDIUM nit:** the generic 413 gains
+`Tell whoever set Yoto Maker up for you.` — configuration-surface `copy.md` §4d's
+ratified pattern, already shipped in `app.js:2267`. No retry hedge, and `{doing}`
+is deliberately not interpolated (`copy.md` §10.4).
+
+**Three things Builder must not do**, each of which would look like an
+improvement:
+
+1. **Do not print the size, in any rounding.** Ground 1 is closed by absence.
+2. **Do not touch `#exportRow`** — no highlight, no scroll, no focus move, no
+   state on `#exportBtn` (`copy.md` §10.5, `interactions.md` §4b.3).
+3. **Do not give `#sendError` a `role` or a `tabindex`.** `copy.md` §9.3's
+   decline stands; `interactions.md` §4b.5 records that it now costs more and
+   §11 item 3 is re-weighted, not reopened.
+
+**The existing tests will need updating, and one is a design assertion.**
+`tests/test_send_size_limits.py:189`
+(`test_track_too_big_message_names_the_track_the_limit_and_the_size`) asserts the
+number this ruling removes. **Do not weaken it into nothing** — replace it with
+the inverse guard: the message names the track and contains **no** MB figure and
+**no** *"100"*. That is the assertion that stops the number coming back.
+
+**Left blocked deliberately:** nothing in item 20. Item 21 is untouched by this
+ruling and stays blocked on the live probe. `_friendly_http`'s other four
+sentences remain **unowned by any handoff package** — recorded in `copy.md`
+§10.4 and worth a Planner row, not fixed here.
 
 ### Item 20 — briefing notes
 
@@ -1080,6 +1282,7 @@ the `POST /api/tracks/file` contract that PR B builds against.
 | 17 | **Transcoded `format` propagation** — the card advertises Yoto's true transcoded format (Ogg Opus) instead of a hardcoded `"mp3"`; best-effort, degrades to the local probe if `transcodedInfo` is absent. Live-verified shape; `fileSize`/`duration`/`channels` deliberately left as-is (Yoto self-corrects them) | brief in plan §The defect | [`superpowers/plans/2026-07-21-transcoded-metadata-propagation.md`](superpowers/plans/2026-07-21-transcoded-metadata-propagation.md) | [#18](https://github.com/mmackelprang/yoto-maker/pull/18) | ✅ 2026-07-21 | ⏳ next cut |
 | 19 | **Save the files to a folder** — a second, user-chosen way to finish one card, needing **no sign-in at all**. Writes the audio, the pictures and a self-contained `What to do next.html` into `<Documents>\Yoto Maker\<card name>\` for hand-upload on `my.yotoplay.com`. Ships **six** `.hidden` regions (Designer's 2026-09-05 ruling added `#exportOpenError`, so a reveal failure no longer destroys the partial-save notice), and the app stops claiming an outcome it does not have when a status poll drops — `copy.md` §5.10 replaces §5.7 only when a job id already existed. `styles.css` and `jobs.py` absent from the diff. **`copy.md` §9's send-path string is written and deliberately unshipped** — §9.1's fallback, taken; follow-up row needed | [`specs/2026-09-05-export-only-mode-design.md`](superpowers/specs/2026-09-05-export-only-mode-design.md) + [`design-handoffs/export-only-mode/`](design-handoffs/export-only-mode/) | [`superpowers/plans/2026-09-05-export-only-mode.md`](superpowers/plans/2026-09-05-export-only-mode.md) | [#24](https://github.com/mmackelprang/yoto-maker/pull/24) (`7574d0d`) | ✅ 2026-09-06 | ⏳ next cut (v0.1.13) — **and a green merge means the save path works as designed, NOT that the offline-download defect is fixed. A card playing in the phone app is not evidence of a fix.** |
 | 18 | **Repair existing cards' declared `format` (mp3 → opus) IN PLACE** — CLI utility `python -m yoto_maker.repair`; dry-run by default, backup-before-write, all-or-nothing per card, verify-after, idempotent. Step-0 pinning found the real `GET /card` body is wrapped and the artifact URL is `trackUrl` itself. `format` is the only field written. No version bump | [ADR](architecture/decisions/2026-07-21-repair-existing-cards.md) | [`superpowers/plans/2026-07-21-repair-existing-cards.md`](superpowers/plans/2026-07-21-repair-existing-cards.md) | [#20](https://github.com/mmackelprang/yoto-maker/pull/20) | ✅ 2026-07-22 | n/a (maintainer tooling; the live 3-card `--apply` run is a separate coordinator step) |
+| 20 | **The send path's 413 named the wrong ceiling, and its audio PUT held the whole track in RAM** — `_friendly_http` mapped every 413 to the card-level *"max 5 hours per card"* at the moment the **per-track** limit was hit; `_put_audio` held the whole track as one `bytes` (~529 MB for a 50-minute WAV) and now streams the open file, wire form unchanged (explicit `Content-Length`, never chunked — a pre-signed PUT depends on it). The per-track string was blocked mid-cycle on a **Designer ruling** and shipped as ruled: **no number at all**, and a cross-path pointer at `📁 Save the files to a folder`. The generic 413 gained §4d's recovery sentence, closing the app's only dead-end error. **No version bump** — no served static asset touched. Plan §8's live probe **not run**; item 21 still open, item 27 filed | Decision in plan §0 + [`design-handoffs/export-only-mode/copy.md`](design-handoffs/export-only-mode/copy.md) §10 / [`interactions.md`](design-handoffs/export-only-mode/interactions.md) §4b | [`superpowers/plans/2026-09-05-per-track-size-limit.md`](superpowers/plans/2026-09-05-per-track-size-limit.md) | [#27](https://github.com/mmackelprang/yoto-maker/pull/27) | ✅ 2026-09-06 | ⏳ next cut |
 
 Item 1 shipped all 12 tasks as one PR, as planned. Its Builder briefing notes
 were consumed and removed; the spec and plan above remain the durable record.
