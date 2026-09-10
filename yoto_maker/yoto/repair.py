@@ -555,12 +555,36 @@ def overlay_label_edits(body: dict) -> tuple[ChangeSet, dict[str, list[str]]]:
     for ci, chapter in enumerate(_find_chapters(body)):
         if not isinstance(chapter, dict):
             continue
-        tracks = [t for t in (chapter.get("tracks") or []) if isinstance(t, dict)]
+        # ⚠ RAW indices, carried alongside each track. `iter_tracks` (:351-368) and
+        # `format_edits` walk the UNFILTERED list and `continue` past a non-dict entry,
+        # so a raw index is what `TrackDecision.ref.key` and every other positional key
+        # in this module mean. Filtering first and re-enumerating would renumber the
+        # survivors: on `tracks=[None, {...}]` it would address `tracks[0]` - the None -
+        # for what is really `tracks[1]`, `plan_card` would decode the key as "ci.0",
+        # fail to find it in `by_key` (which holds "ci.1"), and silently DROP the edit.
+        # The schema-required label would then go unwritten with nothing in the report
+        # to say so. Found by pre-merge review.
+        tracks = [(ti, t) for ti, t in enumerate(chapter.get("tracks") or [])
+                  if isinstance(t, dict)]
+        if not tracks:
+            # ⚠ Declined, NOT labelled. A chapter with no tracks has nothing that can
+            # carry the schema-REQUIRED track-level `overlayLabel`, so writing the
+            # chapter label alone is exactly the partial-job-that-hides-itself the
+            # multi-track case is declined for. It also keeps `CardPlan.outcome`'s
+            # `empty` branch honest: `empty` is checked BEFORE `change_set`, so a card
+            # whose every chapter is track-less would otherwise carry pending
+            # chapter-level writes and still report "no tracks found - nothing to do",
+            # losing them silently. That is blocker 1's shape all over again. Found by
+            # pre-merge review.
+            notes.setdefault(f"c{ci}", []).append(
+                "declined: chapter has no tracks; nothing can carry the required "
+                "track-level overlayLabel - skipped")
+            continue
         if len(tracks) > 1:
             note = (f"chapter has {len(tracks)} tracks; overlayLabel numbering "
                     "convention unknown - skipped")
             notes.setdefault(f"c{ci}", []).append(f"declined: {note}")
-            for ti in range(len(tracks)):
+            for ti, _tr in tracks:
                 notes.setdefault(f"{ci}.{ti}", []).append(f"declined: {note}")
             continue
 
@@ -577,7 +601,7 @@ def overlay_label_edits(body: dict) -> tuple[ChangeSet, dict[str, list[str]]]:
                 reason=f"chapter overlayLabel absent -> {expected!r}"))
             notes.setdefault(f"c{ci}", []).append(f"planned: chapter overlayLabel -> {expected!r}")
 
-        for ti, tr in enumerate(tracks):
+        for ti, tr in tracks:          # ti is the RAW index - see the note above
             if _is_set(tr.get("overlayLabel")):
                 notes.setdefault(f"{ci}.{ti}", []).append(
                     f"already: overlayLabel {tr['overlayLabel']!r} - left alone")
@@ -1141,14 +1165,14 @@ def _make_console_safe() -> None:
     """Never let a card's own text crash the CLI. Call this FIRST in `main`.
 
     Card and track titles come straight out of Yoto's JSON (`iter_tracks` at :363,
-    `_card_title` via :900 and :1044), and `_diff_paths` (:707-725) `repr()`s
+    `_card_title` via :924 and :1068), and `_diff_paths` (:731-749) `repr()`s
     arbitrary card field values into the problem strings - and Python 3's `repr()`
     does NOT escape printable non-ASCII, so `{a!r}` is no protection. When stdout is
     a pipe, a file, or a legacy Windows console, its codec is the locale's (cp1252
     on the maintainer's box) and the write raises UnicodeEncodeError.
 
-    THIS IS NOT COSMETIC. `main` prints each card's result at :1264, AFTER
-    `repair_card` has already POSTed at :970. A crash here means the write landed
+    THIS IS NOT COSMETIC. `main` prints each card's result at :1288, AFTER
+    `repair_card` has already POSTed at :994. A crash here means the write landed
     and the operator cannot tell whether it verified, whether a backup was written,
     or which card to roll back. Wild Robot (1WCvI) carries U+1F916 in all five
     track titles (issue #31).

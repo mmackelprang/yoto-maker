@@ -613,6 +613,79 @@ def test_a_multi_track_chapter_declines_both_levels_and_keeps_the_format_fix(tmp
     assert any("numbering convention unknown" in n for d in res.plan.decisions for n in d.notes)
 
 
+def test_label_edits_use_the_same_raw_track_indices_as_iter_tracks():
+    """⚠ PRE-MERGE REVIEW MEDIUM #1. `iter_tracks` and `format_edits` walk the
+    UNFILTERED `tracks` list and skip non-dict entries while KEEPING their raw index,
+    so a raw index is what every positional "ci.ti" key in this module means.
+
+    `overlay_label_edits` originally filtered the list and re-enumerated the
+    survivors, which RENUMBERS them. On `tracks=[None, {...}]` it addressed
+    `tracks[0]` - the `None` - for what is really `tracks[1]`; `plan_card` decoded
+    that as key "0.0", failed to find it in `by_key` (which holds "0.1"), and
+    SILENTLY DROPPED the edit. The schema-required label went unwritten with nothing
+    in the report to say why.
+    """
+    body = {"cardId": "C1", "title": "T", "content": {"chapters": [
+        {"key": "01", "tracks": [None, {"key": "01", "title": "Real", "format": "opus",
+                                        "trackUrl": "yoto:#SHA1"}]}]}}
+    from yoto_maker.yoto.repair import _key_of_track_path
+
+    assert [r.key for r in iter_tracks(body)] == ["0.1"]     # the walker says index 1
+    edits, _notes = overlay_label_edits(body)
+    track_edits = [e for e in edits if _key_of_track_path(e.path) is not None]
+    assert len(track_edits) == 1
+    assert _key_of_track_path(track_edits[0].path) == "0.1"  # and so must the edit
+    assert track_edits[0].path == ("content", "chapters", 0, "tracks", 1, "overlayLabel")
+
+    # End to end: the edit must SURVIVE plan_card rather than be dropped as unmatched.
+    plan = plan_card(FakeClient(body), body, "C1")
+    assert plan.blocked == []
+    assert [e.path for e in plan.change_set if _key_of_track_path(e.path)] == [
+        ("content", "chapters", 0, "tracks", 1, "overlayLabel")]
+
+
+def test_a_track_less_chapter_is_declined_so_outcome_empty_loses_nothing(tmp_path):
+    """⚠ PRE-MERGE REVIEW MEDIUM #2, and it is blocker 1's shape a second time.
+
+    `CardPlan.outcome` checks `empty` (no decisions) BEFORE `change_set`. A card whose
+    every chapter is track-less produces no decisions, so if the label intent still
+    declared chapter-level edits for those chapters, the plan would carry pending
+    writes and `outcome` would report `empty` - "no tracks found, nothing to do" -
+    throwing them away silently. Exactly the silent no-op the second decision axis
+    exists to abolish.
+
+    Fixed at the source rather than by reordering `outcome`: a chapter with no tracks
+    has nothing that can carry the schema-REQUIRED track-level label, so labelling the
+    chapter alone is the same partial-job-that-hides-itself the multi-track case is
+    declined for. Reordering `outcome` instead would have made the tool WRITE to a body
+    it had just reported it could not parse.
+    """
+    body = {"cardId": "C1", "title": "T", "content": {"chapters": [
+        {"key": "01", "title": "Ch1", "tracks": []},
+        {"key": "02", "title": "Ch2", "tracks": []}]}}
+    edits, notes = overlay_label_edits(body)
+    assert edits == []                                   # nothing declared...
+    assert all("declined" in n for ns in notes.values() for n in ns)   # ...and it SAYS so
+
+    fake = FakeClient(body)
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+    assert res.outcome == "empty"
+    assert res.plan.change_set == []                     # nothing pending to lose
+    assert fake.posts == []
+
+    # A track-less chapter ALONGSIDE a real one: the real one is still labelled.
+    mixed = _card("C1", ("opus",), overlay_labels=False)
+    mixed["content"]["chapters"].append({"key": "02", "title": "Empty", "tracks": [],
+                                         "display": mixed["content"]["chapters"][0]["display"]})
+    fake2 = FakeClient(mixed)
+    res2 = repair_card(fake2, "C1", apply=True, backup_dir=tmp_path / "b2")
+    assert res2.outcome == "applied"
+    posted = fake2.posts[0]
+    assert posted["content"]["chapters"][0]["overlayLabel"] == "1"
+    assert posted["content"]["chapters"][0]["tracks"][0]["overlayLabel"] == "1"
+    assert "overlayLabel" not in posted["content"]["chapters"][1]      # declined
+
+
 def test_the_create_path_and_the_repair_path_agree_by_round_trip(tmp_path):
     """⚠ THE agreement test (plan A5, ADR §4.1 REQUIRED) — and it has TWO halves,
     because the obvious one-half version CANNOT FAIL.
