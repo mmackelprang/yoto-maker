@@ -23,6 +23,11 @@ def test_build_content_payload_basic():
     # icon only where provided
     assert chapters[0]["display"]["icon16x16"] == "yoto:#i1"
     assert "display" not in chapters[1]
+    # `overlayLabel` is present at both levels regardless of whether an icon is
+    # (issue #31) - the two are independent, which is why the line above still holds.
+    assert chapters[1]["overlayLabel"] == "2"
+    assert chapters[1]["tracks"][0]["overlayLabel"] == "2"
+    assert [c["key"] for c in chapters] == ["01", "02"]      # padded, unchanged
     # aggregate metadata sums durations/sizes
     assert p["metadata"]["media"]["duration"] == 631
     assert p["metadata"]["media"]["fileSize"] == 3000
@@ -32,6 +37,81 @@ def test_build_content_payload_empty():
     p = build_content_payload("Empty", [])
     assert p["content"]["chapters"] == []
     assert p["metadata"]["media"]["duration"] == 0
+
+
+def test_build_content_payload_pins_one_full_chapter_and_track_exactly():
+    """EXACT equality on a whole chapter and its whole track. Every key spelled out.
+
+    WHY THIS TEST EXISTS, and why it must stay an `==` and never soften into `in`
+    checks: `overlayLabel` is REQUIRED by Yoto's published track schema, and this
+    app never sent it for the entire life of the project - the player's knob brought
+    up no chapter list on any card it ever made (issue #31). Nothing caught it,
+    because every other assertion in the suite indexes into keys it already expects
+    to be there, and a missing key is invisible to that.
+
+    The two near-misses, so nobody thinks this duplicates them. `test_repair.py`'s
+    `test_corrector_sets_only_format_everything_else_byte_identical` does compare a
+    whole card body, but against a deepcopy of its OWN INPUT plus one known delta -
+    it pins the corrector's narrowness and is structurally blind to a field its
+    fixture never had. `test_get_card_unwraps_card_envelope` is an absolute equality,
+    but against an EMPTY chapter list. This is the suite's only absolute equality
+    against a POPULATED chapter and track.
+
+    Consequence, deliberately: any future field added to or removed from the
+    create-path payload must be STATED here. A payload change that cannot be stated
+    here is a payload change nobody reviewed.
+    """
+    p = build_content_payload("My Card", [
+        TrackMeta("Intro", "sha1", 30.4, 1000, icon_ref="yoto:#i1"),
+    ])
+    assert p["content"]["chapters"][0] == {
+        "key": "01",
+        "overlayLabel": "1",
+        "title": "Intro",
+        "display": {"icon16x16": "yoto:#i1"},
+        "tracks": [
+            {
+                "key": "01",
+                "overlayLabel": "1",
+                "title": "Intro",
+                "trackUrl": "yoto:#sha1",
+                "type": "audio",
+                "format": "mp3",
+                "duration": 30,
+                "fileSize": 1000,
+                "channels": "stereo",
+                "display": {"icon16x16": "yoto:#i1"},
+            }
+        ],
+    }
+
+
+def test_build_content_payload_pins_the_top_level_shape():
+    """No test pinned the POST body's TOP-LEVEL keys either - `test_yoto_client.py`
+    and the test above both index into `["content"]["chapters"]` - so a create-path
+    change could add or drop a top-level key and ship green.
+
+    `content` carries `chapters` and nothing else. Yoto ADDS `playbackType`,
+    `version`, `activity`, `availability`, `cover` and `config` server-side (ADR
+    2026-09-10 §1.4, measured against the real gzP2B body); we must not start
+    sending them.
+    """
+    p = build_content_payload("My Card", [TrackMeta("Intro", "sha1", 30.4, 1000)])
+    assert set(p) == {"title", "content", "metadata"}
+    assert set(p["content"]) == {"chapters"}
+    assert set(p["metadata"]) == {"media"}
+    assert set(p["metadata"]["media"]) == {"duration", "fileSize"}
+
+
+def test_overlay_label_is_one_based_and_unpadded():
+    """Pin the VALUE as well as the plumbing. A shared helper stops the create and
+    repair paths disagreeing; it does not stop both being wrong. N > 9 is the case
+    that distinguishes unpadded from padded."""
+    from yoto_maker.yoto.models import overlay_label
+    assert overlay_label(1) == "1"
+    assert overlay_label(9) == "9"
+    assert overlay_label(10) == "10"
+    assert overlay_label(18) == "18"
 
 
 def test_client_id_resolution_order(temp_config, monkeypatch):
