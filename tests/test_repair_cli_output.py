@@ -217,3 +217,38 @@ def test_a_yoto_error_from_repair_card_does_not_crash_the_error_line(monkeypatch
     assert "wouldn\u2019t take that \u2014 it was too big" in written   # glyphs, not escapes
     assert ROBOT not in written
     assert "\\U0001f916" in written
+
+
+# --------------------------------------------------------------------------- #
+# Source-level pins. `tests/test_static_cache.py:114-127` is this repo's own
+# precedent for pairing a behavioural encoding test with a source assertion.
+# --------------------------------------------------------------------------- #
+def test_main_calls_the_console_guard_before_anything_can_print():
+    """The behavioural tests above force cp1252, so they hold on any machine - but
+    they call `_make_console_safe()` themselves. This asserts `main` does too, and
+    that it does so FIRST, since argparse prints `--help` and `parser.error` before
+    any of our own output.
+
+    Assert on the CALL, not on a substring: `_make_console_safe`'s own docstring
+    contains `errors=`, `backslashreplace` and `PYTHONUTF8` as prose, so a bare
+    substring check would pass on the documentation with the call deleted - the
+    exact trap `tests/test_static_cache.py:114-127` records hitting.
+    """
+    fn = ast.parse(textwrap.dedent(inspect.getsource(repair_mod.main))).body[0]
+    first = fn.body[0]
+    if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)):
+        first = fn.body[1]          # tolerate a docstring being added later
+    assert isinstance(first, ast.Expr) and isinstance(first.value, ast.Call), (
+        f"main's first statement is {ast.dump(first)[:80]}, not a call")
+    assert getattr(first.value.func, "id", None) == "_make_console_safe"
+
+
+def test_the_guard_sets_only_the_error_handler_and_not_the_encoding():
+    """Forcing `encoding="utf-8"` would also stop the crash but can turn a real OEM
+    console's correct output into mojibake. The `errors`-only form cannot make any
+    working output worse. Pin the choice, or a future 'improvement' silently widens
+    the blast radius of a tool that mutates live cards."""
+    src = inspect.getsource(repair_mod._make_console_safe)
+    assert 'reconfigure(errors="backslashreplace")' in src
+    assert 'reconfigure(encoding=' not in src
