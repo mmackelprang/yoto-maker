@@ -15,18 +15,22 @@ import pytest
 from yoto_maker.yoto import auth
 from yoto_maker.yoto.client import ArtifactProbe, CardSummary, YotoClient, YotoError
 from yoto_maker.yoto.repair import (
+    _ABSENT,
     _extract_media_id,
+    FieldEdit,
+    apply_change_set,
     apply_format_corrections,
     build_repair_payload,
     canonical_icon,
     canonical_track_url,
     canonicalize_body_media_refs,
+    format_edits,
     icon_problems,
     iter_tracks,
     plan_card,
     repair_card,
     resolve_targets,
-    verify_only_format_changed,
+    verify_only_declared_changed,
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "card_sample.json"
@@ -181,19 +185,36 @@ def _icon_url(card_id, i, prefix="POLICY"):
     return f"https://card-content.example/{prefix}{card_id}~/{_mid(card_id, i)}"
 
 
-def _card(card_id="C1", formats=("mp3", "mp3"), with_urls=True, title="Test Card"):
+def _card(card_id="C1", formats=("mp3", "mp3"), with_urls=True, title="Test Card",
+          overlay_labels=True):
     """A GET /card body in the UNWRAPPED (inner-card) shape — one track per
     chapter, with icons, keys, durations, sizes, channels: everything the verify
     must preserve. `trackUrl` is the RESOLVED, pre-signed https artifact URL when
     Yoto has served the card (reality), or an unresolved `yoto:#sha` ref when it
     can't be probed (with_urls=False). Icons are RESOLVED card-content URLs (the real
-    shape) at BOTH chapter- and track-level, as the live GET /card returns them."""
+    shape) at BOTH chapter- and track-level, as the live GET /card returns them.
+
+    `overlay_labels` switches the `overlayLabel` field at BOTH levels, because after
+    issue #31 both states are fixtures rather than one being "the" card:
+
+      * True  - a card that has been labelled (by this tool, or created after the
+        `overlay_label` create-path fix). Its label intent is satisfied, so it is
+        `already` for that intent.
+      * False - a real card as this app has made them for its whole life, and as all
+        ten GET bodies in %LOCALAPPDATA%\\YotoMaker\\repair-backups\\ actually are.
+        Its label intent is `planned`, so an all-`opus` card in this state is `apply`,
+        NOT `already` - which is blocker 1 (ADR §1.3), the silent no-op this arc fixes.
+
+    The value is the chapter's 1-based ordinal as a STRING, unpadded, matching
+    `models.overlay_label` - deliberately NOT the padded `key` beside it.
+    """
     chapters = []
     for i, fmt in enumerate(formats, start=1):
         key = f"{i:02d}"
         icon = _icon_url(card_id, i)
+        label = {"overlayLabel": str(i)} if overlay_labels else {}
         track = {
-            "key": key, "title": f"Track {i}", "type": "audio", "format": fmt,
+            "key": key, **label, "title": f"Track {i}", "type": "audio", "format": fmt,
             "duration": 100 + i, "fileSize": 1000 + i, "channels": "stereo",
             "display": {"icon16x16": icon},
             "trackUrl": (
@@ -201,7 +222,7 @@ def _card(card_id="C1", formats=("mp3", "mp3"), with_urls=True, title="Test Card
                 if with_urls else f"yoto:#SHA{i}"
             ),
         }
-        chapters.append({"key": key, "title": f"Track {i}", "tracks": [track],
+        chapters.append({"key": key, **label, "title": f"Track {i}", "tracks": [track],
                          "display": {"icon16x16": icon}})
     return {"cardId": card_id, "title": title,
             "content": {"chapters": chapters},
@@ -256,6 +277,88 @@ def test_corrector_sets_only_format_everything_else_byte_identical():
 
     assert out == expected                                   # ONLY format changed, everywhere
     assert before["content"]["chapters"][0]["tracks"][0]["format"] == "mp3"  # input untouched
+
+
+def test_apply_change_set_creates_a_missing_leaf_and_touches_nothing_else():
+    """The declared change-set's core promise: exactly the declared paths are set, a
+    missing LEAF is created (which is the point - `overlayLabel` is absent on every
+    card this app has made), and the input body is never mutated."""
+    before = _card("C1", ("mp3", "mp3"), overlay_labels=False)
+    expected = copy.deepcopy(before)
+    expected["content"]["chapters"][0]["tracks"][0]["overlayLabel"] = "1"
+    edits = [FieldEdit(("content", "chapters", 0, "tracks", 0, "overlayLabel"),
+                       _ABSENT, "1", "overlay-label", "absent -> '1'")]
+    out = apply_change_set(before, edits)
+    assert out == expected
+    assert "overlayLabel" not in before["content"]["chapters"][0]["tracks"][0]  # input untouched
+
+
+def test_apply_change_set_refuses_to_create_an_intermediate_container():
+    """Guessing a container shape is how a corrector silently writes the wrong thing
+    into a live card. A path whose parent is absent is a PLANNING bug and must raise.
+
+    BOTH refusal branches of `_descend` are pinned, because they are different code
+    and only one of them was in the plan. ⚠ The plan's literal test asserted
+    `match="does not exist"` against an EMPTY chapter list - but index 0 of an empty
+    list takes the LIST branch, whose message is "out of range", so the plan's own
+    test contradicted the plan's own implementation. Pinning one message and calling
+    it "refuses to create a container" would have left the other branch unasserted.
+    """
+    # (a) a missing LIST INDEX - chapter 0 of an empty chapter list
+    with pytest.raises(ValueError, match="out of range"):
+        apply_change_set({"content": {"chapters": []}},
+                         [FieldEdit(("content", "chapters", 0, "tracks", 0, "overlayLabel"),
+                                    _ABSENT, "1", "overlay-label", "x")])
+    # (b) a missing DICT KEY - a chapter that exists but carries no `tracks` container
+    with pytest.raises(ValueError, match="does not exist"):
+        apply_change_set({"content": {"chapters": [{"key": "01"}]}},
+                         [FieldEdit(("content", "chapters", 0, "tracks", 0, "overlayLabel"),
+                                    _ABSENT, "1", "overlay-label", "x")])
+
+
+def test_apply_change_set_refuses_two_edits_for_one_path():
+    """Two edits for one path would make the POST body depend on list order while the
+    verify's expectation depended on it identically - so it would PASS while writing
+    something nobody declared twice over."""
+    path = ("content", "chapters", 0, "tracks", 0, "format")
+    with pytest.raises(ValueError, match="two edits"):
+        apply_change_set(_card("C1", ("mp3",)), [
+            FieldEdit(path, "mp3", "opus", "format", "a"),
+            FieldEdit(path, "mp3", "aac", "format", "b"),
+        ])
+
+
+def test_change_set_addresses_a_still_wrapped_body_at_its_real_path():
+    """`_find_chapters` tolerates three shapes; an edit must address the one THIS body
+    actually uses, or apply_change_set raises on a body the walker handles fine. This
+    is why `_chapters_path` exists rather than a hard-coded ("content","chapters")."""
+    wrapped = {"card": {"content": {"chapters": [{"tracks": [{"format": "mp3"}]}]}}}
+    out = apply_change_set(wrapped, format_edits(wrapped, {"0.0"}))
+    assert out["card"]["content"]["chapters"][0]["tracks"][0]["format"] == "opus"
+
+
+def test_verify_catches_a_declared_write_the_server_silently_dropped():
+    """⚠ THE branch this whole refactor exists for, and the one ADR §1.4 says is most
+    likely in the field. Under format-only this case reported `applied` while the fix
+    had NOT landed - the silent half of blocker 2. It must now be LOUD."""
+    before = _card("C1", ("mp3", "mp3"), overlay_labels=False)
+    after = _card("C1", ("opus", "opus"), overlay_labels=False)   # server dropped the label
+    edits = format_edits(before, {"0.0", "1.0"}) + [
+        FieldEdit(("content", "chapters", 0, "tracks", 0, "overlayLabel"),
+                  _ABSENT, "1", "overlay-label", "absent -> '1'")]
+    problems = verify_only_declared_changed(before, after, edits)
+    assert any("overlayLabel" in p and "REMOVED" in p for p in problems)
+
+
+def test_verify_still_catches_an_undeclared_addition():
+    """The `k not in a` branch must stay armed for fields we did NOT declare -
+    otherwise the change-set would have bought narrowness by giving up coverage."""
+    before = _card("C1", ("mp3",))
+    after = copy.deepcopy(before)
+    after["content"]["chapters"][0]["tracks"][0]["format"] = "opus"
+    after["content"]["chapters"][0]["tracks"][0]["somethingYotoInvented"] = "x"
+    problems = verify_only_declared_changed(before, after, format_edits(before, {"0.0"}))
+    assert any("somethingYotoInvented" in p and "ADDED" in p for p in problems)
 
 
 def test_unprobeable_or_non_opus_track_skips_whole_card_no_post(tmp_path):
@@ -755,7 +858,7 @@ def test_real_fixture_canonicalizes_track_and_icon():
     assert icon_problems(inner) == []      # the real card is fully resolvable
 
     # end-to-end: the POST body built from the real fixture carries ONLY yoto:# refs
-    posted = build_repair_payload(inner, {"0.0"}, {"0.0": canon})
+    posted = build_repair_payload(inner, format_edits(inner, {"0.0"}), {"0.0": canon})
     dumped = json.dumps(posted)
     assert "card-content.yotoplay.com" not in dumped
     assert "secure-media.yotoplay.com" not in dumped

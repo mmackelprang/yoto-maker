@@ -65,21 +65,59 @@ CORRECT_FORMAT = "opus"
 # --------------------------------------------------------------------------- #
 # Body shape (PINNED to the real GET /card body - plan §Ground truth, Task 1/0)
 # --------------------------------------------------------------------------- #
-def _find_chapters(body: dict) -> list[dict]:
-    """The chapter list inside a (unwrapped) GET /card body. Confirmed path first.
+_CHAPTER_PATHS = (("content", "chapters"), ("card", "content", "chapters"), ("chapters",))
 
-    ``client.get_card`` already unwraps the ``{"card": ...}`` envelope, so the
-    confirmed path is ``content.chapters``. The ``card.content.chapters`` and
-    bare ``chapters`` fallbacks stay so this survives an un-unwrapped body."""
-    for path in (("content", "chapters"), ("card", "content", "chapters"), ("chapters",)):
+
+def _chapters_path(body: dict) -> tuple:
+    """The path at which THIS body's chapter list actually lives - the same three
+    candidates, in the same order, that ``_find_chapters`` has always tried. ``()``
+    when there is no chapter list.
+
+    A ``FieldEdit.path`` must be built from this, never from the confirmed
+    ``("content","chapters")`` path alone: ``apply_change_set`` refuses to create a
+    missing intermediate container, so a hard-coded path would RAISE on exactly the
+    un-unwrapped bodies the three-candidate fallback exists to tolerate."""
+    for path in _CHAPTER_PATHS:
         node: object = body
         for key in path:
             node = node.get(key) if isinstance(node, dict) else None
             if node is None:
                 break
         if isinstance(node, list):
-            return node
-    return []
+            return path
+    return ()
+
+
+def _find_chapters(body: dict) -> list[dict]:
+    """The chapter list inside a (unwrapped) GET /card body. Confirmed path first.
+
+    ``client.get_card`` already unwraps the ``{"card": ...}`` envelope, so the
+    confirmed path is ``content.chapters``. The ``card.content.chapters`` and
+    bare ``chapters`` fallbacks stay so this survives an un-unwrapped body."""
+    path = _chapters_path(body)
+    node: object = body
+    for key in path:
+        node = node[key]
+    return node if isinstance(node, list) else []
+
+
+def _chapter_path(body: dict, ci: int) -> tuple:
+    """The FieldEdit path addressing chapter ``ci`` in THIS body's real shape."""
+    return _chapters_path(body) + (ci,)
+
+
+def _track_path(body: dict, ci: int, ti: int) -> tuple:
+    """The FieldEdit path addressing chapter ``ci``'s track ``ti`` in THIS body."""
+    return _chapters_path(body) + (ci, "tracks", ti)
+
+
+def _key_of_track_path(path: tuple) -> str | None:
+    """The positional 'cid.tid' key a track-level FieldEdit path addresses, or None
+    for a chapter-level one. Paths are built by ``_track_path`` / ``_chapter_path``,
+    so the tail is ("tracks", ti, <field>) exactly when it is track-level."""
+    if len(path) >= 4 and path[-3] == "tracks" and isinstance(path[-2], int):
+        return f"{path[-4]}.{path[-2]}"
+    return None
 
 
 # Track keys that carry the RESOLVED pre-signed artifact URL. PINNED: the real
@@ -323,38 +361,160 @@ def iter_tracks(body: dict) -> list[TrackRef]:
 
 
 # --------------------------------------------------------------------------- #
-# The safety-critical correctors: deep-copy, overwrite ONLY the intended fields.
+# The declared change-set: the safety invariant, expressed as data.
+#
+# "after == before + the declared change-set, and NOTHING else."
+#
+# Before 2026-09-10 the invariant was "only `format` changed", and it was strong
+# because it was narrow - narrow because the intent was hard-coded into the shape of
+# the corrector. Generalising the intent into DATA keeps the narrowness while allowing
+# more than one intent: the POST body and the round-trip verify's expectation are both
+# derived from the SAME list, so an intent cannot be added to one and forgotten in the
+# other. ADR 2026-09-10 §3.1.
 # --------------------------------------------------------------------------- #
-def apply_format_corrections(body: dict, correct_keys: set[str], fmt: str = CORRECT_FORMAT) -> dict:
-    """Return a NEW body (input untouched) with `format = fmt` set ONLY on the
-    tracks named in `correct_keys` (positional 'cid.tid'). Nothing else changes -
-    not title/trackUrl/duration/fileSize/channels/keys/display/order, not the
-    card-level metadata or media aggregates.
+class _Absent:
+    """Sentinel for 'this key was not present in the GET body'. A real `None` is a
+    value Yoto could legitimately have sent, so it cannot stand in for absence."""
 
-    This is the FORMAT-ONLY view used by the round-trip verify (the 'intended'
-    result is `before` + this flip, so trackUrls stay in `before`'s resolved form
-    and compare cleanly against the re-GET). The POST body is built separately by
-    `build_repair_payload`, which ALSO canonicalizes trackUrls."""
+    def __repr__(self) -> str:
+        return "<absent>"
+
+
+_ABSENT = _Absent()
+
+
+@dataclass(frozen=True)
+class FieldEdit:
+    """One declared field write.
+
+    `old` is carried for the CLI report and is DELIBERATELY NOT CHECKED by
+    `apply_change_set`: `plan_card` and `repair_card` read the body once and plan
+    from that same object, so `old` cannot have gone stale between planning and
+    applying. It is documentation of why the edit was declared, not a guard - do not
+    add a caller that assumes it is one.
+    """
+
+    path: tuple            # ("content","chapters",0,"tracks",0,"overlayLabel")
+    old: object            # value observed in the GET body; _ABSENT if the key was missing
+    new: object            # the value to write
+    intent: str            # "format" | "overlay-label" - groups the report
+    reason: str            # printed per-track in the CLI report
+
+
+ChangeSet = list          # list[FieldEdit]; ordered, at most one edit per path (asserted)
+
+
+def _assert_one_edit_per_path(edits: ChangeSet) -> None:
+    """Two edits for one path would make the POST body depend on list order while the
+    verify's expectation depended on it identically - so it would pass while writing
+    something nobody declared twice over. Refuse instead."""
+    seen: set = set()
+    for e in edits:
+        if e.path in seen:
+            raise ValueError(f"change-set declares two edits for the same path: {e.path}")
+        seen.add(e.path)
+
+
+def _descend(node: object, step, so_far: tuple) -> object:
+    """One step along a FieldEdit path. RAISES rather than creating a container."""
+    if isinstance(node, dict):
+        if not isinstance(step, str) or step not in node:
+            raise ValueError(
+                f"FieldEdit path {so_far} does not exist in the body; apply_change_set "
+                "never creates an intermediate container (guessing a container shape is "
+                "how a corrector silently writes the wrong thing into a live card)")
+        return node[step]
+    if isinstance(node, list):
+        if not isinstance(step, int) or not 0 <= step < len(node):
+            raise ValueError(f"FieldEdit path {so_far} is out of range for a list of {len(node)}")
+        return node[step]
+    raise ValueError(f"FieldEdit path {so_far} descends into a {type(node).__name__}")
+
+
+def apply_change_set(body: dict, edits: ChangeSet) -> dict:
+    """Return a NEW body (input untouched) with EXACTLY the declared paths set.
+
+    Nothing else changes - not title/trackUrl/duration/fileSize/channels/keys/
+    display/order, not the card-level metadata or media aggregates.
+
+    A missing LEAF key is CREATED: that is the point, since `overlayLabel` is absent
+    on every card this app has ever made (verified against all ten real GET bodies in
+    %LOCALAPPDATA%\\YotoMaker\\repair-backups\\). A missing INTERMEDIATE container
+    RAISES - see `_descend`.
+
+    This is the single source of truth `verify_only_declared_changed` derives its
+    expectation from, which is what closes the silent half of the old design: a
+    declared write that Yoto DROPS shows up as `unexpectedly REMOVED` instead of
+    passing as `applied`."""
+    _assert_one_edit_per_path(edits)
     out = copy.deepcopy(body)
-    for ci, chapter in enumerate(_find_chapters(out)):
-        tracks = chapter.get("tracks") if isinstance(chapter, dict) else None
-        for ti, tr in enumerate(tracks or []):
-            if isinstance(tr, dict) and f"{ci}.{ti}" in correct_keys:
-                tr["format"] = fmt
+    for e in edits:
+        if not e.path:
+            raise ValueError("FieldEdit with an empty path")
+        node: object = out
+        for i, step in enumerate(e.path[:-1]):
+            node = _descend(node, step, e.path[: i + 1])
+        leaf = e.path[-1]
+        if isinstance(node, dict):
+            if not isinstance(leaf, str):
+                raise ValueError(f"dict at {e.path[:-1]} addressed with non-str key {leaf!r}")
+            node[leaf] = e.new
+        elif isinstance(node, list):
+            if not isinstance(leaf, int) or not 0 <= leaf < len(node):
+                raise ValueError(f"list at {e.path[:-1]} has no index {leaf!r}")
+            node[leaf] = e.new
+        else:
+            raise ValueError(f"cannot set {leaf!r} on a {type(node).__name__} at {e.path[:-1]}")
     return out
 
 
-def build_repair_payload(body: dict, correct_keys: set[str], canonical_urls: dict[str, str],
-                         fmt: str = CORRECT_FORMAT) -> dict:
-    """Return the NEW body to POST (input untouched): `format = fmt` on the corrected
-    tracks, every track's `trackUrl` rewritten to its CANONICAL `yoto:#<sha>` ref (from
-    `canonical_urls`, keyed 'cid.tid'), AND every `display.icon16x16` (chapter- and
-    track-level) rewritten to its canonical `yoto:#<mediaId>` ref. This removes BOTH
-    the resolved/expiring signed trackUrl AND the resolved icon URL from the POST body
-    (POST /content rejects either) - the body carries only `yoto:#...` references,
-    exactly the reference form the card was created with. Nothing else changes
-    (keys/duration/fileSize/channels/order/metadata all survive verbatim)."""
-    out = copy.deepcopy(body)
+# --------------------------------------------------------------------------- #
+# The safety-critical correctors: deep-copy, overwrite ONLY the intended fields.
+# --------------------------------------------------------------------------- #
+def format_edits(body: dict, correct_keys: set[str], fmt: str = CORRECT_FORMAT) -> ChangeSet:
+    """The `format` intent as declared edits, for the tracks named in `correct_keys`
+    (positional 'cid.tid', exactly as before)."""
+    edits: ChangeSet = []
+    for ci, chapter in enumerate(_find_chapters(body)):
+        tracks = chapter.get("tracks") if isinstance(chapter, dict) else None
+        for ti, tr in enumerate(tracks or []):
+            if isinstance(tr, dict) and f"{ci}.{ti}" in correct_keys:
+                edits.append(FieldEdit(
+                    path=_track_path(body, ci, ti) + ("format",),
+                    old=tr.get("format", _ABSENT),
+                    new=fmt,
+                    intent="format",
+                    reason=f"{tr.get('format') or '?'} -> {fmt}",
+                ))
+    return edits
+
+
+def apply_format_corrections(body: dict, correct_keys: set[str], fmt: str = CORRECT_FORMAT) -> dict:
+    """BACK-COMPAT WRAPPER, kept on purpose. `format` is now one intent on the
+    declared change-set (ADR 2026-09-10 §3.1); this is the one-intent special case,
+    and it stays so the format-only safety tests keep a target and commit 2 can be
+    PROVED behaviour-neutral rather than argued to be.
+
+    Return a NEW body (input untouched) with `format = fmt` set ONLY on the tracks
+    named in `correct_keys` (positional 'cid.tid'). Nothing else changes - not
+    title/trackUrl/duration/fileSize/channels/keys/display/order, not the card-level
+    metadata or media aggregates."""
+    return apply_change_set(body, format_edits(body, correct_keys, fmt))
+
+
+def build_repair_payload(body: dict, edits: ChangeSet, canonical_urls: dict[str, str]) -> dict:
+    """The NEW body to POST (input untouched): the declared change-set applied, PLUS
+    the media-reference canonicalization - every `trackUrl` rewritten to its canonical
+    `yoto:#<sha>` and every `display.icon16x16` (chapter- AND track-level) to its
+    `yoto:#<mediaId>`, because POST /content rejects a resolved form of either.
+
+    THE CANONICALIZATION IS DELIBERATELY NOT IN THE CHANGE-SET, and folding it in
+    would break the verify (ADR 2026-09-10 §3.1's stated boundary). The verify
+    neutralises media refs on BOTH sides via `_normalize_url`, because the re-GET
+    returns a freshly RESOLVED URL and not the canonical ref we posted. Declaring
+    canonicalization as edits would make `intended` canonical while `after` is
+    resolved, and the existing normalize-then-compare would have to be undone."""
+    out = apply_change_set(body, edits)
     for ci, chapter in enumerate(_find_chapters(out)):
         if isinstance(chapter, dict):
             _canonicalize_display_icon(chapter.get("display"))       # chapter-level icon
@@ -363,12 +523,9 @@ def build_repair_payload(body: dict, correct_keys: set[str], canonical_urls: dic
             if not isinstance(tr, dict):
                 continue
             _canonicalize_display_icon(tr.get("display"))            # track-level icon
-            key = f"{ci}.{ti}"
-            canon = canonical_urls.get(key)
+            canon = canonical_urls.get(f"{ci}.{ti}")
             if canon is not None:
                 tr["trackUrl"] = canon
-            if key in correct_keys:
-                tr["format"] = fmt
     return out
 
 
@@ -478,22 +635,34 @@ def _diff_paths(a: object, b: object, path: str = "") -> list[str]:
     return problems
 
 
-def verify_only_format_changed(before: dict, after: dict, correct_keys: set[str]) -> list[str]:
+def verify_only_declared_changed(before: dict, after: dict, edits: ChangeSet) -> list[str]:
     """Return UNEXPECTED differences between `after` (the re-GET) and the intended
-    result (`before` + the format corrections). [] == verified.
+    result (`before` + the DECLARED change-set). [] == verified.
 
-    The re-GET RE-RESOLVES every `trackUrl` to a fresh pre-signed URL (new signature,
-    new `<policy>~` prefix), so trackUrls are compared by their extracted SHA, never
-    by the raw string - a naive compare would always differ. Concretely: the sha in
-    `after`'s re-resolved trackUrl must equal the sha in `before`'s (artifact
-    unchanged), `format` must now be 'opus' on the corrected tracks, and EVERYTHING
-    else - title, duration, fileSize, channels, icons (by their stable mediaId), keys,
-    order - must be byte-identical. Volatile server fields (updatedAt, content.version)
-    are ignored on both sides. Any residual difference - a changed title, a dropped
-    icon, a reordered track, a corrected track that did NOT become 'opus', a track now
-    pointing at a DIFFERENT sha - is returned as a problem string. A non-empty result
-    means the write did something we did not sanction: STOP and review / roll back."""
-    intended = _strip_volatile(apply_format_corrections(before, correct_keys))
+    Renamed from `verify_only_format_changed`: the guarantee is no longer
+    format-shaped, and leaving the old name on a function that tolerates a second
+    intent would be the most misleading identifier in the file.
+
+    Unchanged: the re-GET RE-RESOLVES every `trackUrl` to a fresh pre-signed URL (new
+    signature, new `<policy>~` prefix), so media refs are compared by their extracted
+    sha / mediaId and never by the raw string - a naive compare would always differ.
+    Volatile server fields (`updatedAt`, `content.version`) are ignored on both sides;
+    everything else - title, duration, fileSize, channels, icons, keys, order - must be
+    identical. Any residual difference is returned as a problem string, and a non-empty
+    result means the write did something we did not sanction: STOP and review / roll back.
+
+    What the change-set buys, and it is a net SAFETY GAIN over format-only:
+
+      * A DECLARED addition is already in `intended`, so `_diff_paths`' `k not in a`
+        branch does not fire on it - no `_VOLATILE_TOP_KEYS` widening, which would
+        have blinded the verify to the very field it exists to control.
+      * An UNDECLARED addition still fires. The guarantee stays field-level.
+      * ⚠ A declared write that Yoto SILENTLY DROPS now fires `unexpectedly REMOVED`
+        -> `verify-failed`. Under format-only that case reported `applied` and the fix
+        had not landed. Given that POST /content demonstrably enriches and derives (it
+        adds 16 keys we never send - ADR §1.4), this is the branch most likely to fire
+        in the field."""
+    intended = _strip_volatile(apply_change_set(before, edits))
     got = _strip_volatile(after)
     return _diff_paths(intended, got)
 
@@ -635,10 +804,15 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
         return CardResult(card_id, plan.title, "dry-run", plan)
 
     backup_path = _write_backup(backup_dir, card_id, body, now)   # BEFORE any write
-    # Build the POST body: format flip on the corrected tracks AND every trackUrl
-    # canonicalized to `yoto:#<sha>`, so no resolved/expiring signed URL is written
-    # back (pre-merge review HIGH #1). The backup above holds the verbatim original.
-    corrected = build_repair_payload(body, plan.correct_keys, plan.canonical_urls)
+    # ONE change-set list, computed once, handed to BOTH the payload build and the
+    # verify below. That shared value IS the invariant: deriving it twice would
+    # reintroduce exactly the hand-kept agreement between two functions that made
+    # blocker 2 possible (ADR 2026-09-10 §3.1).
+    edits = format_edits(body, plan.correct_keys)
+    # Build the POST body: the declared change-set AND every trackUrl canonicalized
+    # to `yoto:#<sha>`, so no resolved/expiring signed URL is written back
+    # (pre-merge review HIGH #1). The backup above holds the verbatim original.
+    corrected = build_repair_payload(body, edits, plan.canonical_urls)
     # The backup is now durably on disk. If the POST or the verify re-GET raises
     # (a transient timeout is plausible on a live run), we must NOT let a bare error
     # escape as if nothing happened - the write may already have landed. Report it
@@ -653,7 +827,7 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
             [f"POST or verify re-GET failed AFTER the backup was written: {exc}. "
              "The write MAY already have landed - re-run (it is idempotent) to confirm, "
              f"or roll back with --rollback {backup_path}."])
-    problems = verify_only_format_changed(body, after, plan.correct_keys)
+    problems = verify_only_declared_changed(body, after, edits)    # the SAME list
     outcome = "applied" if not problems else "verify-failed"
     return CardResult(card_id, plan.title, outcome, plan, backup_path, problems)
 
