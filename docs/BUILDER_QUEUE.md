@@ -3,9 +3,16 @@
 **Last updated:** 2026-09-10 by Builder — **item 29 is MERGED as
 [PR #34](https://github.com/mmackelprang/yoto-maker/pull/34) (`47829d4`): `overlayLabel`
 is now sent on the create path and written by the repair path on a declared change-set.
-Suite 411 → 437.** ⚠ **The v0.1.14 RELEASE IS NOT CUT** — the version is bumped on `main`
-but no tag, build or publish has happened. It is held deliberately, pending the
-maintainer's call on the `7FcVe` anomaly below.
+Suite 411 → 437.** ⚠ **The v0.1.14 RELEASE IS PARTIALLY CUT.** The version is bumped on `main`, the tag
+**`v0.1.14` exists and is pushed** (→ `a09c656`), and the frozen build exists and was
+verified to report **its own** version `0.1.14` from `/api/status` of the running `.exe`
+(127,022,603 bytes, sha256 `720fede6…c9b8cc4d`) — not inferred from the source string,
+which is the v0.1.12 trap. **`gh release create` was REFUSED by the permission system, so
+the release is NOT published and `/releases/latest` still returns v0.1.13.** The
+update-path verification that needs a published asset — a v0.1.13 client offered v0.1.14
+with a working download URL, and the v0.1.14 negative control — is therefore **NOT DONE**.
+⚠ **Do not substitute `YOTO_LATEST_VERSION` for it**: that override short-circuits the
+API call at `updater.py:80` and tests the override instead of the release.
 
 **All three live cards were applied, and two of the three are healthy and confirmed.**
 `gzP2B` → `made 2 change(s); POST ok; verify ok`; `1WCvI` → `10 change(s)`, verify ok;
@@ -46,6 +53,21 @@ and report, and that is what happened.** The facts, separated from the inference
   a `cardId` the API now 404s could plausibly **create a new card** — a duplicate in the
   account, the one outcome this whole design exists to avoid. The backup is safe on disk,
   so the maintainer keeps every option. **This needs a decision, not a guess.**
+
+✅ **THE `7FcVe` MYSTERY IS SOLVED, AND THE CORRECTION IS RECORDED HERE BECAUSE THE
+STALE ID CAME FROM UNTRACKED PROSE.** **The BFG card is `ezeaM`** — titled *"BFG Maybe
+Fixed"*, 18 chapters, created **2026-07-22T13:25:23Z**, which is *hours after* the July
+repair runs at 08:54–08:56. **`7FcVe` is a dead pre-re-make card**: abandoned that same
+afternoon, absent from `GET /content/mine`, and now 404 on `GET /card`. It was never a
+live card at any point in this arc.
+
+⚠ **The stale ID propagated through all four agents on this arc because it lived only in
+untracked `SESSION_STATE.md`**, written before the re-make and never updated — so nothing
+reviewed it, no clone carried it, and every document downstream inherited it: the ADR, the
+plan, the queue rows and this Builder's briefing all name `7FcVe`. **This is the second
+time in two items that untracked prose has caused a real defect** (the first was Plan Task
+1.5's `PYTHONUTF8` note). **The BFG's repair is therefore still OUTSTANDING** — `ezeaM`
+dry-runs as `WOULD make 36 change(s) across 18 track(s)`.
 
 ✅ **ADR open question 3 is CLOSED, and it was answered for free by the rollback proof:
 `POST /content` REPLACES, it does not merge.** The rollback on `gzP2B` was driven end to
