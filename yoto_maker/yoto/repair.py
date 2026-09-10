@@ -7,11 +7,18 @@ repairs the ones already sitting in the account.
 
 Safe by construction: account-first (real cardId, never a local draft); update
 IN PLACE (POST /content WITH cardId -> NFC link survives, no duplicate);
-FORMAT-ONLY correction (fileSize/duration self-correct server-side, channels
-already right) with CANONICAL references (see below); confirm-before-correct (set
-"opus" only after the served artifact is PROVEN Opus); all-or-nothing per card;
-backup-then-write (the rollback path); verify-after (only format changed);
-idempotent; DRY-RUN BY DEFAULT.
+DECLARED-CHANGE-SET correction: every write is an explicit `FieldEdit` naming its
+path, its observed value and its intended value, and the round-trip verify's
+expectation is derived from that SAME list - so "only what we declared changed"
+holds however many intents there are. Two intents today: `format` (mp3 -> opus,
+confirmed by probing the served artifact) and `overlay-label` (the missing,
+schema-REQUIRED `overlayLabel`, written only where absent or empty).
+fileSize/duration self-correct server-side and channels was already right, so
+neither is ever written. With CANONICAL references (see below);
+confirm-before-correct (set "opus" only after the served artifact is PROVEN
+Opus); all-or-nothing per card; backup-then-write (the rollback path);
+verify-after (only the declared change-set changed); idempotent; DRY-RUN BY
+DEFAULT.
 
 CANONICALIZE-BEFORE-POST (pre-merge review HIGH #1, hardened here). GET /card
 RESOLVES each track's ``trackUrl`` to a short-lived, pre-signed https URL. Posting
@@ -58,6 +65,7 @@ from pathlib import Path
 from ..config import get_config
 from ..logging_setup import setup_logging
 from .client import YotoClient, YotoError
+from .models import overlay_label
 
 CORRECT_FORMAT = "opus"
 
@@ -502,6 +510,88 @@ def apply_format_corrections(body: dict, correct_keys: set[str], fmt: str = CORR
     return apply_change_set(body, format_edits(body, correct_keys, fmt))
 
 
+def _is_set(value: object) -> bool:
+    """An `overlayLabel` we must leave alone: a non-empty string. Absent, None, "" and
+    "   " all mean the field needs writing."""
+    return isinstance(value, str) and value.strip() != ""
+
+
+def overlay_label_edits(body: dict) -> tuple[ChangeSet, dict[str, list[str]]]:
+    """The `overlay-label` intent: declare the missing `overlayLabel` at chapter AND
+    track level, keyed on POSITION.
+
+    Returns `(edits, notes)` where `notes` maps a positional key - "c{ci}" for a
+    chapter, "{ci}.{ti}" for a track - to this intent's per-object notes.
+
+    IDEMPOTENT BY CONSTRUCTION, with no "was this card labelled?" bookkeeping:
+
+      1. The expected value is a pure function of POSITION, through the one shared
+         helper `models.overlay_label`. Run 2 computes the same value, finds it
+         equal, declares zero edits, and `outcome` is "already" - so no POST.
+      2. ⚠ The value is NEVER derived from the card's own `key` field. `key` is "01"
+         and the label is "1"; a path that read `key` and a path that computed from
+         the index would disagree, and two runs could flip-flop forever.
+      3. An existing NON-EMPTY `overlayLabel` is never overwritten - reported
+         `already` and left alone. That is not only idempotency: it stops this tool
+         flip-flopping against ANOTHER editor. A user who sets "Chapter 1" in the
+         Yoto app would otherwise have it reset to "1" on every run, forever. It
+         also means our edit is always absent-or-empty -> value, never a clobber,
+         which is what keeps both the verify and the rollback story simple.
+
+    MULTI-TRACK CHAPTERS ARE DECLINED, NOT GUESSED - and BOTH levels are declined.
+    All three live cards are 1 chapter : 1 track (5x1, 18x1, 1x1 - read from the real
+    bodies) and `build_content_payload` emits one track per chapter by construction,
+    so this never fires on a card this app made. For a hand-assembled card we have
+    ZERO evidence for the within-chapter numbering convention, and this path mutates
+    live data. Declining the CHAPTER label too (not just the tracks) is deliberate:
+    writing it alone would leave the schema-REQUIRED track field missing while making
+    a later run's idempotency check see a labelled chapter and skip - a partial job
+    that permanently hides itself. The `format` intent proceeds unaffected, which is
+    the entire reason `declined` is not `blocked`: an unprobeable artifact is a
+    correctness hazard and must stop the card; a label we cannot confidently number
+    is not, and must never cost a card the PROVEN format fix."""
+    edits: ChangeSet = []
+    notes: dict[str, list[str]] = {}
+    for ci, chapter in enumerate(_find_chapters(body)):
+        if not isinstance(chapter, dict):
+            continue
+        tracks = [t for t in (chapter.get("tracks") or []) if isinstance(t, dict)]
+        if len(tracks) > 1:
+            note = (f"chapter has {len(tracks)} tracks; overlayLabel numbering "
+                    "convention unknown - skipped")
+            notes.setdefault(f"c{ci}", []).append(f"declined: {note}")
+            for ti in range(len(tracks)):
+                notes.setdefault(f"{ci}.{ti}", []).append(f"declined: {note}")
+            continue
+
+        expected = overlay_label(ci + 1)
+        if _is_set(chapter.get("overlayLabel")):
+            notes.setdefault(f"c{ci}", []).append(
+                f"already: chapter overlayLabel {chapter['overlayLabel']!r} - left alone")
+        else:
+            edits.append(FieldEdit(
+                path=_chapter_path(body, ci) + ("overlayLabel",),
+                old=chapter.get("overlayLabel", _ABSENT),
+                new=expected,
+                intent="overlay-label",
+                reason=f"chapter overlayLabel absent -> {expected!r}"))
+            notes.setdefault(f"c{ci}", []).append(f"planned: chapter overlayLabel -> {expected!r}")
+
+        for ti, tr in enumerate(tracks):
+            if _is_set(tr.get("overlayLabel")):
+                notes.setdefault(f"{ci}.{ti}", []).append(
+                    f"already: overlayLabel {tr['overlayLabel']!r} - left alone")
+                continue
+            edits.append(FieldEdit(
+                path=_track_path(body, ci, ti) + ("overlayLabel",),
+                old=tr.get("overlayLabel", _ABSENT),
+                new=expected,
+                intent="overlay-label",
+                reason=f"overlayLabel absent -> {expected!r}"))
+            notes.setdefault(f"{ci}.{ti}", []).append(f"planned: overlayLabel -> {expected!r}")
+    return edits, notes
+
+
 def build_repair_payload(body: dict, edits: ChangeSet, canonical_urls: dict[str, str]) -> dict:
     """The NEW body to POST (input untouched): the declared change-set applied, PLUS
     the media-reference canonicalization - every `trackUrl` rewritten to its canonical
@@ -673,8 +763,9 @@ def verify_only_declared_changed(before: dict, after: dict, edits: ChangeSet) ->
 @dataclass
 class TrackDecision:
     ref: TrackRef
-    status: str              # "already" | "correct" | "blocked"
-    reason: str
+    edits: ChangeSet = field(default_factory=list)   # 0, 1 or 2 declared writes for THIS track
+    blocked_reason: str | None = None                # card-fatal (all-or-nothing) when set
+    notes: list[str] = field(default_factory=list)   # one per intent: already / planned / declined
 
 
 @dataclass
@@ -683,15 +774,25 @@ class CardPlan:
     title: str
     decisions: list[TrackDecision]
     canonical_urls: dict[str, str] = field(default_factory=dict)  # key -> "yoto:#<sha>" for the POST body
+    card_edits: ChangeSet = field(default_factory=list)           # chapter-level writes
     card_problems: list[str] = field(default_factory=list)        # card-level blockers (e.g. signed icons)
+    card_notes: list[str] = field(default_factory=list)
 
     @property
-    def correct_keys(self) -> set[str]:
-        return {d.ref.key for d in self.decisions if d.status == "correct"}
+    def change_set(self) -> ChangeSet:
+        """The ONE list from which both the POST body and the verify's expectation are
+        derived. `CardPlan.correct_keys` is RETIRED (ADR §3.2): a card can now need a
+        write with no format corrections at all, so any surviving `correct_keys`
+        caller would be a latent 'writes nothing' bug - which is exactly blocker 1."""
+        return [e for d in self.decisions for e in d.edits] + self.card_edits
 
     @property
     def blocked(self) -> list[TrackDecision]:
-        return [d for d in self.decisions if d.status == "blocked"]
+        return [d for d in self.decisions if d.blocked_reason]
+
+    @property
+    def tracks_changed(self) -> int:
+        return sum(1 for d in self.decisions if d.edits)
 
     @property
     def outcome(self) -> str:
@@ -702,57 +803,104 @@ class CardPlan:
             return "blocked"
         if not self.decisions:
             return "empty"
-        if self.correct_keys:
+        if self.change_set:                      # <-- the SECOND DECISION AXIS lives here
             return "apply"
-        return "already"            # every track already 'opus' -> idempotent no-op
+        # ⚠ `already` now means EVERY DECLARED INTENT is satisfied, not "every track is
+        # already 'opus'". Before the second axis existed, a card that was already
+        # `opus` but unlabelled returned here and wrote NOTHING - a silent no-op on
+        # every card that needed the label (blocker 1, ADR §1.3).
+        return "already"
 
 
-def plan_card(client, body: dict, card_id: str) -> CardPlan:
-    """Diagnose one card: canonicalize every track's trackUrl, probe every track that
-    isn't already 'opus', and decide correct / already / blocked. Probing is the ONLY
-    place we decide a track is Opus - we never infer it from the declared value.
+def plan_card(client, body: dict, card_id: str, *, overlay_labels: bool = True) -> CardPlan:
+    """Diagnose one card against every declared intent and decide what to write.
 
     Canonicalization runs FIRST and blocks the whole card (all-or-nothing) if ANY
     track's resolved trackUrl can't be reduced to a validated `yoto:#<sha>` ref - we
-    must never re-POST an expiring signed URL, and we never guess a sha."""
+    must never re-POST an expiring signed URL, and we never guess a sha. Probing
+    remains the ONLY place we decide a track is Opus; we never infer it from the
+    declared value.
+
+    TWO INTENTS, and only ONE of them can block (ADR 2026-09-10 §3.2):
+      * `format`        - already / planned / BLOCKED. An unprobeable or non-Opus
+                          artifact is a correctness hazard and must stop the card.
+      * `overlay-label` - already / planned / DECLINED, and it NEVER blocks. A label
+                          we cannot confidently number is not a correctness hazard,
+                          and it must never cost a card the PROVEN format fix. That
+                          inversion is the whole reason `declined` exists.
+    """
     decisions: list[TrackDecision] = []
     canonical: dict[str, str] = {}
     for ref in iter_tracks(body):
         # 1) Canonicalize the trackUrl we'd POST back. A failure blocks the card.
         canon, err = canonical_track_url(ref.track_url_raw)
         if err:
-            decisions.append(TrackDecision(ref, "blocked", err))
+            decisions.append(TrackDecision(ref, blocked_reason=err))
             continue
         if canon is None and ref.artifact_url and ref.artifact_url.startswith("http"):
             # A resolved (expiring) artifact URL exists but is not on the rewritable
             # top-level `trackUrl` field - refuse rather than re-POST it verbatim.
             decisions.append(TrackDecision(
-                ref, "blocked", "resolved artifact URL is not on the top-level trackUrl field; "
-                                "cannot canonicalize it safely"))
+                ref, blocked_reason="resolved artifact URL is not on the top-level "
+                                    "trackUrl field; cannot canonicalize it safely"))
             continue
         if canon is not None:
             canonical[ref.key] = canon
 
-        # 2) Decide the format correction (unchanged logic).
+        # 2) The `format` intent. Decision logic byte-for-byte as before; only the
+        #    recording shape changed.
         if ref.declared_format == CORRECT_FORMAT:
-            decisions.append(TrackDecision(ref, "already", f"already '{CORRECT_FORMAT}'"))
+            decisions.append(TrackDecision(ref, notes=[f"already: '{CORRECT_FORMAT}'"]))
             continue
         if not ref.artifact_url:
-            decisions.append(TrackDecision(ref, "blocked", "no resolvable artifact URL on the card"))
+            decisions.append(TrackDecision(
+                ref, blocked_reason="no resolvable artifact URL on the card"))
             continue
         probe = client.probe_artifact(ref.artifact_url)
-        if probe.is_opus:
+        if not probe.is_opus:
             decisions.append(TrackDecision(
-                ref, "correct",
-                f"{ref.declared_format or '?'} -> {CORRECT_FORMAT} ({probe.detail}); trackUrl -> {canon}"))
-        else:
-            decisions.append(TrackDecision(ref, "blocked", f"artifact not confirmed Opus: {probe.detail}"))
-    # Card-level guard: POST /content requires canonical yoto:#<mediaId> icons. Any
-    # icon whose 43-char mediaId can't be extracted/validated blocks the whole card
-    # (all-or-nothing) - the normal case (resolvable icons) is canonicalized in build.
+                ref, blocked_reason=f"artifact not confirmed Opus: {probe.detail}"))
+            continue
+        decisions.append(TrackDecision(ref, edits=[FieldEdit(
+            path=_track_path(body, ref.cid, ref.tid) + ("format",),
+            old=ref.declared_format if ref.declared_format is not None else _ABSENT,
+            new=CORRECT_FORMAT,
+            intent="format",
+            reason=f"{ref.declared_format or '?'} -> {CORRECT_FORMAT} ({probe.detail})",
+        )], notes=[f"planned: {ref.declared_format or '?'} -> {CORRECT_FORMAT} "
+                   f"({probe.detail}); trackUrl -> {canon}"]))
+
+    # 3) The `overlay-label` intent, off the SAME positional walk. Never blocks.
+    card_edits: ChangeSet = []
+    card_notes: list[str] = []
+    if overlay_labels:
+        label_edits, label_notes = overlay_label_edits(body)
+        by_key = {d.ref.key: d for d in decisions}
+        # Track-level label edits attach to their own TrackDecision so the CLI report
+        # groups by track; chapter-level ones are card_edits.
+        for e in label_edits:
+            key = _key_of_track_path(e.path)       # None for a chapter-level path
+            if key is None:
+                card_edits.append(e)
+            elif key in by_key and not by_key[key].blocked_reason:
+                by_key[key].edits.append(e)
+            # else: a BLOCKED (or unwalked) track - drop the edit. The card will not
+            # be written at all (all-or-nothing), and carrying it would both
+            # misreport the intent and smuggle a track write into card_edits.
+        for key, notes in label_notes.items():
+            if key in by_key:
+                by_key[key].notes.extend(notes)
+            else:
+                card_notes.extend(f"chapter {key[1:]}: {n}" for n in notes)
+
+    # 4) Card-level guard: POST /content requires canonical yoto:#<mediaId> icons. Any
+    #    icon whose 43-char mediaId can't be extracted/validated blocks the whole card
+    #    (all-or-nothing) - the normal case is canonicalized in build.
     card_problems = icon_problems(body)
     return CardPlan(card_id=card_id, title=str(_card_title(body) or card_id),
-                    decisions=decisions, canonical_urls=canonical, card_problems=card_problems)
+                    decisions=decisions, canonical_urls=canonical,
+                    card_edits=card_edits, card_problems=card_problems,
+                    card_notes=card_notes)
 
 
 # --------------------------------------------------------------------------- #
@@ -782,7 +930,7 @@ def _write_backup(backup_dir: Path, card_id: str, body: dict, now: datetime | No
 
 
 def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
-                now: datetime | None = None) -> CardResult:
+                now: datetime | None = None, overlay_labels: bool = True) -> CardResult:
     """Diagnose one card and, if apply and fully repairable, correct it in place.
 
     Order of operations in apply mode is load-bearing:
@@ -790,7 +938,7 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
     The backup is on disk before the POST; a blocked card never reaches the POST.
     """
     body = client.get_card(card_id)
-    plan = plan_card(client, body, card_id)
+    plan = plan_card(client, body, card_id, overlay_labels=overlay_labels)
 
     if plan.outcome in ("already", "empty"):
         # Pass the outcome through: "empty" (no tracks found) is reported distinctly
@@ -807,8 +955,8 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
     # ONE change-set list, computed once, handed to BOTH the payload build and the
     # verify below. That shared value IS the invariant: deriving it twice would
     # reintroduce exactly the hand-kept agreement between two functions that made
-    # blocker 2 possible (ADR 2026-09-10 §3.1).
-    edits = format_edits(body, plan.correct_keys)
+    # blocker 2 possible (ADR 2026-09-10 §3.1). This is the line where it lands.
+    edits = plan.change_set
     # Build the POST body: the declared change-set AND every trackUrl canonicalized
     # to `yoto:#<sha>`, so no resolved/expiring signed URL is written back
     # (pre-merge review HIGH #1). The backup above holds the verbatim original.
@@ -832,6 +980,43 @@ def repair_card(client, card_id: str, *, apply: bool, backup_dir: Path,
     return CardResult(card_id, plan.title, outcome, plan, backup_path, problems)
 
 
+_OVERLAY_RESIDUE = (
+    "the card still carries overlayLabel; Yoto's POST /content does not delete keys "
+    "omitted from the body. Everything else is restored.")
+
+
+def _tolerate_overlay_residue(problems: list[str]) -> tuple[list[str], bool]:
+    """Re-report a RESIDUAL `overlayLabel` after a restore as explanation, not failure.
+
+    ⚠ THIS IS NOT THE `_VOLATILE_TOP_KEYS` TRAP, and the difference is structural:
+    it lives ONLY in the rollback path and never in `verify_only_declared_changed`;
+    it is scoped to ONE field; it tolerates only residual PRESENCE and never a
+    changed VALUE; and it changes a REPORT LINE, not the diff the repair path acts
+    on. `_VOLATILE_TOP_KEYS` would have blinded the verify to the field in BOTH
+    bodies, including a value Yoto changed on its own. Do not cite this as a
+    precedent for widening that tuple (ADR §1.3, §4.2.1).
+
+    The cost, stated: a restore can no longer distinguish OUR residual label from a
+    label Yoto wrote itself. Accepted, because `canonicalize_body_media_refs`
+    already establishes that a restore never blocks - a restore is a recovery action,
+    and a rollback that cries wolf is worse than one that under-reports a field the
+    operator is deliberately abandoning.
+
+    DO NOT "fix" this by posting `overlayLabel: null` to clear it. Track-level
+    `overlayLabel` is `z.string()`, not `.nullable()` - a null would fail validation
+    and take the whole restore down with it. `overlayLabelOverride` is the nullable
+    one, and we never write it.
+    """
+    kept, tolerated = [], False
+    for p in problems:
+        if "/overlayLabel:" in p and "unexpectedly ADDED" in p:
+            tolerated = True
+            kept.append(f"{p.split(':')[0]}: {_OVERLAY_RESIDUE}")
+        else:
+            kept.append(p)
+    return kept, tolerated
+
+
 def rollback_from_backup(client, backup_path: Path) -> CardResult:
     """Restore a card in place from a backup JSON (re-POST it with its cardId).
 
@@ -848,8 +1033,16 @@ def rollback_from_backup(client, backup_path: Path) -> CardResult:
     client.update_card(card_id, canonicalize_body_media_refs(body))
     after = client.get_card(card_id)
     problems = _diff_paths(_strip_volatile(body), _strip_volatile(after))
+    # A backup predates `overlayLabel`, so restoring one POSTs a body without it -
+    # correct and deliberate (ADR §3.5). But if POST /content MERGES rather than
+    # REPLACES, `after` still carries the label the backup lacks, and the restore
+    # would report `verify-failed` on a card that is in fact fine - a false alarm at
+    # the worst possible moment. Residual PRESENCE is re-reported as explanation; a
+    # changed VALUE still fails.
+    problems, _tolerated = _tolerate_overlay_residue(problems)
+    real = [p for p in problems if _OVERLAY_RESIDUE not in p]
     title = str(_card_title(body) or card_id)
-    return CardResult(card_id, title, "restored" if not problems else "verify-failed",
+    return CardResult(card_id, title, "restored" if not real else "verify-failed",
                       CardPlan(card_id, title, []), Path(backup_path), problems)
 
 
@@ -915,13 +1108,20 @@ def _print_card_result(res: CardResult) -> None:
     if res.backup_path:
         print(f"  backup: {res.backup_path}")
     for d in res.plan.decisions:
-        mark = {"already": "=", "correct": ">", "blocked": "x"}.get(d.status, " ")
-        print(f'  [{mark}] track {d.ref.key} "{d.ref.title}": {d.reason}')
+        mark = "x" if d.blocked_reason else (">" if d.edits else "=")
+        detail = d.blocked_reason or "; ".join(d.notes) or "nothing to change"
+        print(f'  [{mark}] track {d.ref.key} "{d.ref.title}": {detail}')
+    for note in res.plan.card_notes:
+        print(f"  [-] {note}")
     summary = {
-        "already": f"already correct (all {n} track(s) '{CORRECT_FORMAT}') - nothing to do",
+        # `already` now means EVERY DECLARED INTENT is satisfied, not "every track is
+        # 'opus'". The old string would have printed "already correct (all 18 tracks
+        # 'opus')" AND THEN WRITTEN on a card that was opus but unlabelled.
+        "already": f"already correct ({n} track(s), nothing to change) - nothing to do",
         "empty": "no tracks found on this card - nothing to do",
-        "dry-run": f"WOULD correct {len(res.plan.correct_keys)} track(s) - re-run with --apply to write",
-        "applied": f"corrected {len(res.plan.correct_keys)} track(s); POST ok; verify ok",
+        "dry-run": (f"WOULD make {len(res.plan.change_set)} change(s) across "
+                    f"{res.plan.tracks_changed} track(s) - re-run with --apply to write"),
+        "applied": f"made {len(res.plan.change_set)} change(s); POST ok; verify ok",
         "blocked": (f"SKIPPED - {len(res.plan.blocked)} track(s) blocked"
                     + (f" + {len(res.plan.card_problems)} card-level issue(s)" if res.plan.card_problems else "")
                     + "; card left untouched (all-or-nothing) - see below"),
@@ -940,15 +1140,15 @@ def _print_card_result(res: CardResult) -> None:
 def _make_console_safe() -> None:
     """Never let a card's own text crash the CLI. Call this FIRST in `main`.
 
-    Card and track titles come straight out of Yoto's JSON (`iter_tracks` at :317,
-    `_card_title` via :585 and :677), and `_diff_paths` (:460-478) `repr()`s
+    Card and track titles come straight out of Yoto's JSON (`iter_tracks` at :363,
+    `_card_title` via :900 and :1044), and `_diff_paths` (:707-725) `repr()`s
     arbitrary card field values into the problem strings - and Python 3's `repr()`
     does NOT escape printable non-ASCII, so `{a!r}` is no protection. When stdout is
     a pipe, a file, or a legacy Windows console, its codec is the locale's (cp1252
     on the maintainer's box) and the write raises UnicodeEncodeError.
 
-    THIS IS NOT COSMETIC. `main` prints each card's result at :831, AFTER
-    `repair_card` has already POSTed at :648. A crash here means the write landed
+    THIS IS NOT COSMETIC. `main` prints each card's result at :1264, AFTER
+    `repair_card` has already POSTed at :970. A crash here means the write landed
     and the operator cannot tell whether it verified, whether a backup was written,
     or which card to roll back. Wild Robot (1WCvI) carries U+1F916 in all five
     track titles (issue #31).
@@ -997,6 +1197,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="Card title to match (repeatable). Prefer --card-id; a colloquial name may not match the real title.")
     parser.add_argument("--apply", action="store_true", help="Actually write the fix. WITHOUT this flag it is a DRY RUN.")
     parser.add_argument("--dry-run", action="store_true", help="Force a dry run (the default; wins over --apply if both are given).")
+    parser.add_argument("--no-overlay-labels", action="store_true",
+                        help="Do not write the missing overlayLabel; correct only the "
+                             "declared format. The label fix is the unproven half "
+                             "(issue #31) - this is how it backs out without a revert.")
     parser.add_argument("--rollback", default="", help="Path to a backup JSON to restore in place, then exit.")
     parser.add_argument("--list", action="store_true", help="List the account's cards and exit.")
     args = parser.parse_args(argv)
@@ -1010,7 +1214,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.rollback:
         res = rollback_from_backup(client, Path(args.rollback))
         _print_card_result(res)
-        return 0 if not res.problems else 1
+        # Keyed on the OUTCOME, not on `problems`: a tolerated residual overlayLabel
+        # leaves an explanatory problem LINE on a restore that genuinely succeeded,
+        # and keying on `problems` here would turn that explanation back into a
+        # failure exit code - undoing `_tolerate_overlay_residue` at the last step.
+        return 0 if res.outcome == "restored" else 1
 
     if args.list:
         for s in client.list_my_cards():
@@ -1047,7 +1255,8 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = 0
     for card_id, _label in targets:
         try:
-            res = repair_card(client, card_id, apply=apply, backup_dir=_backup_dir())
+            res = repair_card(client, card_id, apply=apply, backup_dir=_backup_dir(),
+                              overlay_labels=not args.no_overlay_labels)
         except YotoError as exc:
             print(f"{card_id}: ERROR - {exc}\n")
             exit_code = 1

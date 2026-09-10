@@ -17,6 +17,8 @@ from yoto_maker.yoto.client import ArtifactProbe, CardSummary, YotoClient, YotoE
 from yoto_maker.yoto.repair import (
     _ABSENT,
     _extract_media_id,
+    CardPlan,
+    CardResult,
     FieldEdit,
     apply_change_set,
     apply_format_corrections,
@@ -27,6 +29,7 @@ from yoto_maker.yoto.repair import (
     format_edits,
     icon_problems,
     iter_tracks,
+    overlay_label_edits,
     plan_card,
     repair_card,
     resolve_targets,
@@ -384,24 +387,307 @@ def test_unresolvable_artifact_url_blocks_card(tmp_path):
     res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
     assert res.outcome == "blocked"
     assert fake.posts == []
-    assert all("no resolvable artifact URL" in d.reason for d in res.plan.blocked)
+    assert all("no resolvable artifact URL" in d.blocked_reason for d in res.plan.blocked)
 
 
 def test_dry_run_issues_no_post(tmp_path):
-    """T3."""
+    """T3.
+
+    `CardPlan.correct_keys` is RETIRED (ADR §3.2), so this asserts on the declared
+    change-set instead. Re-expressed, NOT weakened: it still pins that both tracks
+    are to be corrected and that the intent is `format`, which `correct_keys` could
+    say only by implication.
+    """
     fake = FakeClient(_card("C1", ("mp3", "mp3")))
     res = repair_card(fake, "C1", apply=False, backup_dir=tmp_path / "b")
     assert res.outcome == "dry-run"
-    assert res.plan.correct_keys == {"0.0", "1.0"}
+    fmt = [e for e in res.plan.change_set if e.intent == "format"]
+    # path is (..., "chapters", ci, "tracks", ti, "format"), so ci is path[-4].
+    assert {e.path[-4] for e in fmt} == {0, 1}            # both chapters' tracks
+    assert all(e.path[-1] == "format" and e.new == "opus" for e in fmt)
+    assert res.plan.tracks_changed == 2
     assert fake.posts == []
 
 
-def test_idempotent_already_opus_no_post(tmp_path):
-    """T4."""
-    fake = FakeClient(_card("C1", ("opus", "opus")))
+def test_idempotent_already_opus_and_already_labelled_no_post(tmp_path):
+    """T4, first half. EVERY declared intent satisfied -> `already`, no POST.
+
+    Split from the original `test_idempotent_already_opus_no_post`, whose premise
+    INVERTED: being `opus` is no longer sufficient for `already`. The labelled
+    fixture is what makes this half still true.
+    """
+    fake = FakeClient(_card("C1", ("opus", "opus"), overlay_labels=True))
     res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
     assert res.outcome == "already"
     assert fake.posts == []
+
+
+def test_already_opus_but_unlabelled_does_apply_and_posts_exactly_once(tmp_path):
+    """T4, second half - and this is BLOCKER 1'S REGRESSION GUARD.
+
+    ⚠ This is the test that proves the silent no-op is gone, and it is the single
+    most important test in this commit. Before the second decision axis existed,
+    `CardPlan.outcome` returned `already` whenever no track needed a FORMAT fix, and
+    `repair_card` then returned before the backup and before the POST. So a card
+    needing only a label WROTE NOTHING and cheerfully reported
+    "already correct - nothing to do".
+
+    That is not hypothetical: on 2026-09-10 all three of the maintainer's live cards
+    were already `opus` and all three were unlabelled, so the widened repair would
+    have been a silent no-op on exactly the three cards that can test the hypothesis.
+    """
+    fake = FakeClient(_card("C1", ("opus", "opus"), overlay_labels=False))
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "applied"
+    assert len(fake.posts) == 1                   # it really wrote, exactly once
+    # Zero format edits - the whole change-set is the label intent.
+    assert [e.intent for e in res.plan.change_set] == ["overlay-label"] * 4
+    posted = fake.posts[0]
+    for i, ch in enumerate(posted["content"]["chapters"], start=1):
+        assert ch["overlayLabel"] == str(i)
+        assert ch["tracks"][0]["overlayLabel"] == str(i)
+        assert ch["tracks"][0]["format"] == "opus"          # untouched, already right
+
+
+def test_no_overlay_labels_flag_turns_the_unproven_half_off(tmp_path):
+    """ADR §8 lever 1 - the IN-CODE backout, which is why it ships WITH the intent
+    rather than being added later if needed.
+
+    Same unlabelled all-`opus` card as the test above: with the flag it is `already`
+    and writes NOTHING; without it, it writes. That pair is the whole lever.
+    """
+    body = _card("C1", ("opus", "opus"), overlay_labels=False)
+
+    off = FakeClient(body)
+    res_off = repair_card(off, "C1", apply=True, backup_dir=tmp_path / "b",
+                          overlay_labels=False)
+    assert res_off.outcome == "already"
+    assert off.posts == []
+
+    on = FakeClient(body)
+    res_on = repair_card(on, "C1", apply=True, backup_dir=tmp_path / "b2")
+    assert res_on.outcome == "applied"            # default is labels ON
+    assert len(on.posts) == 1
+
+
+def test_the_cli_flag_actually_reaches_repair_card(monkeypatch):
+    """⚠ FOUND BY MUTATION, and it is the gap that mattered most in this commit.
+
+    The test above calls `repair_card(..., overlay_labels=False)` DIRECTLY, so it
+    proves the parameter works and proves NOTHING about the CLI. Deleting the
+    `overlay_labels=not args.no_overlay_labels` threading in `main` left the entire
+    suite green: the flag would have parsed, printed in `--help`, and silently done
+    nothing.
+
+    That is unacceptable for this flag specifically. `--no-overlay-labels` is ADR §8
+    LEVER 1 - the in-code backout for the unproven half of this arc, the thing an
+    operator reaches for when a live card has regressed. A backout lever that is
+    wired to nothing is worse than no lever, because it reports success.
+    """
+    from yoto_maker.yoto import repair as repair_mod
+
+    seen: list[bool] = []
+
+    def _record(client, card_id, *, apply, backup_dir, overlay_labels=True, **k):
+        seen.append(overlay_labels)
+        return CardResult(card_id, card_id, "already", CardPlan(card_id, card_id, []))
+
+    monkeypatch.setattr(repair_mod, "setup_logging", lambda *a, **k: None)
+    monkeypatch.setattr(repair_mod, "YotoClient", lambda *a, **k: FakeClient(_card()))
+    monkeypatch.setattr(repair_mod, "repair_card", _record)
+
+    repair_mod.main(["--card-id", "C1"])
+    assert seen == [True]                       # default: labels ON
+
+    repair_mod.main(["--card-id", "C1", "--no-overlay-labels"])
+    assert seen == [True, False]                # the flag is threaded through
+
+
+def test_a_blocked_tracks_label_edit_is_dropped_not_smuggled(tmp_path):
+    """⚠ ALSO FOUND BY MUTATION. The `not by_key[key].blocked_reason` guard in
+    `plan_card` was asserted by nothing: removing it left the suite green.
+
+    A blocked card is never written (all-or-nothing), so the consequence is a
+    MISREPORTED plan rather than a bad write - the CLI would print `[x]` for a track
+    while its decision carried a pending edit, and `change_set` would count a write
+    that can never happen. On the one channel that tells an operator what a live
+    write did, that is not cosmetic.
+    """
+    def probe(url):
+        return (ArtifactProbe(False, "not Opus", "audio/mpeg") if "EPHEMERAL2" in url
+                else ArtifactProbe(True, "OggS/OpusHead", "audio/ogg"))
+    body = _card("C1", ("mp3", "mp3"), overlay_labels=False)
+    res = repair_card(FakeClient(body, probe=probe), "C1", apply=True,
+                      backup_dir=tmp_path / "b")
+
+    assert res.outcome == "blocked"
+    blocked = [d for d in res.plan.decisions if d.blocked_reason]
+    assert len(blocked) == 1
+    assert blocked[0].edits == []               # no label edit rode along on it
+    assert blocked[0].ref.key == "1.0"
+
+
+def test_a_second_run_writes_nothing_and_never_overwrites_an_existing_label(tmp_path):
+    """Idempotency on live-shaped data, both halves (plan A6).
+
+    Half 1: run `repair_card` twice against a client whose `get_card` returns the
+    POSTED body after a write. The second run declares zero edits, reports `already`,
+    and `len(posts)` stays at 1.
+
+    Half 2: a pre-existing NON-EMPTY label is never overwritten. This is not only
+    idempotency - it stops the tool flip-flopping against ANOTHER editor. A user who
+    types "Chapter 1" in the Yoto app would otherwise have it reset to "1" on every
+    run, forever.
+    """
+    fake = FakeClient(_card("C1", ("mp3", "mp3"), overlay_labels=False))
+    first = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+    assert first.outcome == "applied"
+    assert len(fake.posts) == 1
+
+    second = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+    assert second.outcome == "already"
+    assert second.plan.change_set == []
+    assert len(fake.posts) == 1                   # the second run wrote NOTHING
+
+    # Half 2: a human-authored label survives untouched.
+    hand = _card("C1", ("opus", "opus"), overlay_labels=False)
+    hand["content"]["chapters"][0]["overlayLabel"] = "Chapter 1"
+    hand["content"]["chapters"][0]["tracks"][0]["overlayLabel"] = "Chapter 1"
+    keeper = FakeClient(hand)
+    res = repair_card(keeper, "C1", apply=True, backup_dir=tmp_path / "b3")
+    # Chapter 2 is still unlabelled, so the card DOES write - which is what makes
+    # this a real test that chapter 1 is left alone rather than a no-op.
+    assert res.outcome == "applied"
+    posted = keeper.posts[0]
+    assert posted["content"]["chapters"][0]["overlayLabel"] == "Chapter 1"
+    assert posted["content"]["chapters"][0]["tracks"][0]["overlayLabel"] == "Chapter 1"
+    assert posted["content"]["chapters"][1]["overlayLabel"] == "2"
+    assert any("left alone" in n for d in res.plan.decisions for n in d.notes)
+
+
+def test_an_empty_or_whitespace_label_is_treated_as_absent(tmp_path):
+    """`_is_set`: absent, None, "" and "   " all mean the field needs writing. Only a
+    non-empty string is a label a human could have meant."""
+    for placeholder in ("", "   ", None):
+        body = _card("C1", ("opus",), overlay_labels=False)
+        body["content"]["chapters"][0]["tracks"][0]["overlayLabel"] = placeholder
+        fake = FakeClient(body)
+        res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / f"b{placeholder!r}")
+        assert res.outcome == "applied", placeholder
+        assert fake.posts[0]["content"]["chapters"][0]["tracks"][0]["overlayLabel"] == "1"
+
+
+def test_a_multi_track_chapter_declines_both_levels_and_keeps_the_format_fix(tmp_path):
+    """⚠ `declined` must NEVER cost a card the PROVEN fix (plan A8, ADR §3.2).
+
+    An unprobeable artifact is a correctness hazard and blocks the card; a label we
+    cannot confidently number is not, and must not. Without `declined`, an
+    unusually-shaped card would lose access to the proven format fix because of the
+    unproven label one - the exact inversion this row exists to prevent.
+
+    BOTH levels are declined, not just the tracks: writing the chapter label alone
+    would leave the schema-REQUIRED track field missing while making a later run's
+    idempotency check see a labelled chapter and skip it - a partial job that
+    permanently hides itself.
+    """
+    body = _card("C1", ("mp3",), overlay_labels=False)
+    chapter = body["content"]["chapters"][0]
+    second = copy.deepcopy(chapter["tracks"][0])
+    second["trackUrl"] = (
+        "https://secure-media.example/C1/2?Expires=1&Signature=EPHEMERAL2#sha256=SHA2")
+    chapter["tracks"].append(second)               # now a 2-track chapter
+
+    fake = FakeClient(body)
+    res = repair_card(fake, "C1", apply=True, backup_dir=tmp_path / "b")
+
+    assert res.outcome == "applied"                 # NOT blocked
+    assert len(fake.posts) == 1
+    # The format fix landed on both tracks...
+    posted = fake.posts[0]
+    assert [t["format"] for t in posted["content"]["chapters"][0]["tracks"]] == ["opus", "opus"]
+    # ...and NOT ONE overlayLabel was written, at either level.
+    assert "overlayLabel" not in posted["content"]["chapters"][0]
+    assert all("overlayLabel" not in t for t in posted["content"]["chapters"][0]["tracks"])
+    assert [e.intent for e in res.plan.change_set] == ["format", "format"]
+    assert any("numbering convention unknown" in n for d in res.plan.decisions for n in d.notes)
+
+
+def test_the_create_path_and_the_repair_path_agree_by_round_trip(tmp_path):
+    """⚠ THE agreement test (plan A5, ADR §4.1 REQUIRED) — and it has TWO halves,
+    because the obvious one-half version CANNOT FAIL.
+
+    ⚠ THE TRAP, recorded because the first draft of this test fell into it and a
+    review caught it. Feeding a create-path body straight to `overlay_label_edits`
+    and asserting `== []` proves NOTHING about agreement: the create path always
+    writes a non-empty label, so `_is_set` is true at every position and the helper
+    returns via its "already - left alone" branch WITHOUT EVER COMPUTING `expected`.
+    Verified by mutation: making the repair side zero-pad (`f"{ci+1:02d}"`, the exact
+    padding disagreement this test names in its own docstring) left that assertion
+    GREEN. An off-by-one and a chapter/track nesting swap were equally invisible,
+    for the same reason.
+
+    So:
+
+      * HALF 1 (idempotency at N = 12) - a create-path body satisfies the label
+        intent, so zero edits and `already`. Worth keeping; just not "agreement".
+      * HALF 2 (the real agreement) - STRIP every label, forcing the repair path to
+        COMPUTE each one, then require the recomputed value at every position to
+        equal what the create path actually wrote there. Compared as whole dicts
+        keyed by FieldEdit path, so it catches an off-by-one in EITHER direction, a
+        padding disagreement, and a chapter/track nesting swap - none of which two
+        literal value assertions would catch.
+
+    N = 12 is the point: N > 9 is where padded and unpadded diverge, and half 2 is
+    the only place in the suite that drives the repair side's own computation past 9.
+    """
+    from yoto_maker.yoto.models import TrackMeta, build_content_payload
+
+    # fmt="opus" deliberately. ⚠ With the default "mp3" these tracks would each BLOCK
+    # (a `yoto:#sha` trackUrl is not probeable), and `plan_card` DROPS a label edit
+    # belonging to a blocked track - so the change-set assertion below would have
+    # passed for the wrong reason and could never have failed. Making every track
+    # already-`opus` keeps the format intent quiet and leaves the label intent as the
+    # only thing under test.
+    payload = build_content_payload("Twelve", [
+        TrackMeta(f"Track {i}", f"sha{i}", 10.0, 100, fmt="opus") for i in range(1, 13)])
+    # Shape it as a GET /card body: the create path's chapters, with a cardId.
+    body = {"cardId": "C1", "title": "Twelve", "content": payload["content"]}
+    assert len(body["content"]["chapters"]) == 12
+
+    # ---- HALF 1: the create path already satisfies the intent (idempotency, N=12).
+    label_edits, _notes = overlay_label_edits(body)
+    assert label_edits == [], f"create and repair disagree: {[e.path for e in label_edits]}"
+
+    plan = plan_card(FakeClient(body), body, "C1")
+    assert plan.blocked == [], [d.blocked_reason for d in plan.blocked]   # not vacuous
+    assert plan.outcome == "already"
+    assert plan.change_set == []
+
+    # ---- HALF 2: what the CREATE path wrote, keyed by the path a FieldEdit would use.
+    created: dict[tuple, str] = {}
+    for ci, ch in enumerate(body["content"]["chapters"]):
+        created[("content", "chapters", ci, "overlayLabel")] = ch["overlayLabel"]
+        for ti, tr in enumerate(ch["tracks"]):
+            created[("content", "chapters", ci, "tracks", ti, "overlayLabel")] = tr["overlayLabel"]
+    assert len(created) == 24                      # 12 chapters + 12 tracks
+
+    # Strip them, so the REPAIR path must compute every value itself.
+    stripped = copy.deepcopy(body)
+    for ch in stripped["content"]["chapters"]:
+        del ch["overlayLabel"]
+        for tr in ch["tracks"]:
+            del tr["overlayLabel"]
+
+    recomputed_edits, _ = overlay_label_edits(stripped)
+    recomputed = {e.path: e.new for e in recomputed_edits}
+    assert recomputed == created, (
+        "the create path and the repair path compute different labels: "
+        f"{ {k: (created[k], recomputed.get(k)) for k in created if created.get(k) != recomputed.get(k)} }")
+
+    # And the double-digit end specifically, spelled out so a failure reads clearly.
+    assert created[("content", "chapters", 11, "overlayLabel")] == "12"
+    assert body["content"]["chapters"][11]["key"] == "12"     # padded key, unpadded label
 
 
 def test_backup_written_before_any_post(tmp_path):
@@ -542,6 +828,118 @@ def test_resolve_targets_matches_exact_title():
 # --------------------------------------------------------------------------- #
 # Rollback
 # --------------------------------------------------------------------------- #
+def test_report_strings_describe_changes_not_formats(tmp_path, capsys):
+    """⚠ Assert on what the new strings CONTAIN, never on what they lack. A negative
+    guard goes vacuous the moment the thing it negates is deleted, and still passes -
+    item 20's `"100 MB" not in msg` did exactly that, in this same repo.
+
+    `already` here means EVERY DECLARED INTENT is satisfied, not "every track is
+    opus". A card that is already opus but unlabelled must NOT print `already`: the
+    old string would have said "already correct (all 2 track(s) 'opus')" AND THEN
+    WRITTEN, a report that contradicts itself.
+    """
+    from yoto_maker.yoto.repair import _print_card_result
+
+    labelled = _card("C1", ("opus", "opus"), overlay_labels=True)
+    res = repair_card(FakeClient(labelled), "C1", apply=True, backup_dir=tmp_path / "b")
+    assert res.outcome == "already"
+    _print_card_result(res)
+    out = capsys.readouterr().out
+    assert "already correct (2 track(s), nothing to change)" in out
+
+    unlabelled = _card("C1", ("opus", "opus"), overlay_labels=False)
+    res = repair_card(FakeClient(unlabelled), "C1", apply=False, backup_dir=tmp_path / "b")
+    assert res.outcome == "dry-run"
+    _print_card_result(res)
+    out = capsys.readouterr().out
+    # 2 chapter labels + 2 track labels = 4 changes across 2 tracks.
+    assert "WOULD make 4 change(s) across 2 track(s)" in out
+
+    mp3 = _card("C1", ("mp3", "mp3"), overlay_labels=False)
+    res = repair_card(FakeClient(mp3), "C1", apply=True, backup_dir=tmp_path / "b4")
+    assert res.outcome == "applied"
+    _print_card_result(res)
+    out = capsys.readouterr().out
+    # 2 format + 2 chapter labels + 2 track labels = 6.
+    assert "made 6 change(s); POST ok; verify ok" in out
+
+
+def test_a_blocked_track_prints_its_reason_and_a_changed_one_prints_its_notes(tmp_path, capsys):
+    """The per-track mark and detail now come from the decision's own state
+    (`blocked_reason` / `edits` / `notes`) rather than a `status` string. Pin all
+    three marks, because this is the operator's only window into a tool that mutates
+    live cards."""
+    from yoto_maker.yoto.repair import _print_card_result
+
+    def probe(url):
+        return (ArtifactProbe(False, "Content-Type audio/mpeg - not Opus", "audio/mpeg")
+                if "EPHEMERAL2" in url else ArtifactProbe(True, "OggS/OpusHead", "audio/ogg"))
+    res = repair_card(FakeClient(_card("C1", ("mp3", "mp3")), probe=probe), "C1",
+                      apply=True, backup_dir=tmp_path / "b")
+    assert res.outcome == "blocked"
+    _print_card_result(res)
+    out = capsys.readouterr().out
+    assert '[>] track 0.0' in out                       # an edit is planned
+    assert '[x] track 1.0' in out                       # blocked
+    assert "not confirmed Opus" in out                  # the blocked_reason is printed
+
+    res = repair_card(FakeClient(_card("C1", ("opus",), overlay_labels=True)), "C1",
+                      apply=False, backup_dir=tmp_path / "b2")
+    _print_card_result(res)
+    out = capsys.readouterr().out
+    assert "[=] track 0.0" in out                       # nothing to change
+    assert "already: 'opus'" in out
+
+
+def test_a_declined_chapter_note_is_printed(tmp_path, capsys):
+    """A `declined` label on a multi-track chapter must be VISIBLE. It is the one
+    note an operator could otherwise mistake for 'the label was written'."""
+    from yoto_maker.yoto.repair import _print_card_result
+
+    body = _card("C1", ("mp3",), overlay_labels=False)
+    chapter = body["content"]["chapters"][0]
+    second = copy.deepcopy(chapter["tracks"][0])
+    second["trackUrl"] = (
+        "https://secure-media.example/C1/2?Expires=1&Signature=EPHEMERAL2#sha256=SHA2")
+    chapter["tracks"].append(second)
+
+    res = repair_card(FakeClient(body), "C1", apply=False, backup_dir=tmp_path / "b")
+    _print_card_result(res)
+    out = capsys.readouterr().out
+    assert "declined" in out and "numbering convention unknown" in out
+
+
+def test_the_real_fixture_is_unlabelled_and_the_repair_path_declares_both_levels():
+    """The real GET /card/gzP2B body has NO `overlayLabel` anywhere - which is the
+    bug, observed on real data rather than asserted from a fixture we invented.
+
+    The labelled SIBLING is built here by deep-copying the real body and adding the
+    labels, rather than committing a second large JSON file: a duplicated real body
+    is a drift hazard, and the point is that the two states differ by exactly this
+    field. The original stays untouched, so the fixture-pinning test above keeps
+    pointing at a genuinely unlabelled card.
+    """
+    inner = json.loads(FIXTURE.read_text(encoding="utf-8"))["card"]
+    assert "overlayLabel" not in json.dumps(inner)        # the bug, on real data
+
+    edits, notes = overlay_label_edits(inner)
+    assert [e.path[-1] for e in edits] == ["overlayLabel", "overlayLabel"]
+    assert [e.new for e in edits] == ["1", "1"]           # chapter and its one track
+    assert [e.old for e in edits] == [_ABSENT, _ABSENT]
+    assert all(e.intent == "overlay-label" for e in edits)
+    # chapter-level first, then the track - and both at the body's REAL path
+    assert edits[0].path == ("content", "chapters", 0, "overlayLabel")
+    assert edits[1].path == ("content", "chapters", 0, "tracks", 0, "overlayLabel")
+    assert any("planned" in n for ns in notes.values() for n in ns)
+
+    # The labelled sibling: the same real body after this tool has run on it.
+    labelled = apply_change_set(inner, edits)
+    assert overlay_label_edits(labelled) == ([], {
+        "c0": ["already: chapter overlayLabel '1' - left alone"],
+        "0.0": ["already: overlayLabel '1' - left alone"],
+    })
+
+
 def test_rollback_reposts_backup_in_place(tmp_path):
     """--rollback re-POSTs a backup body with its cardId and verifies the re-GET."""
     original = _card("C1", ("mp3", "mp3"))
@@ -578,6 +976,61 @@ def test_rollback_posts_canonical_refs_not_resolved_urls(tmp_path):
     for ch in posted["content"]["chapters"]:
         assert ch["display"]["icon16x16"].startswith("yoto:#")
         assert ch["tracks"][0]["display"]["icon16x16"].startswith("yoto:#")
+
+
+def test_rollback_tolerates_a_residual_overlay_label_as_explanation_not_failure(tmp_path):
+    """ADR §3.5. A backup PREDATES `overlayLabel`, so restoring one POSTs a body
+    without the field - correct and deliberate: a rollback that preserved an unproven
+    field we had just added would not be a rollback.
+
+    But if `POST /content` MERGES rather than REPLACES, `after` still carries the
+    label the backup lacks, `_diff_paths` emits `unexpectedly ADDED`, and the restore
+    would report `verify-failed` ON A CARD THAT IS IN FACT FINE - turning a recovery
+    action into a false alarm at the worst possible moment.
+    """
+    original = _card("C1", ("mp3", "mp3"), overlay_labels=False)   # a real pre-label backup
+    backup = tmp_path / "C1-backup.json"
+    backup.write_text(json.dumps(original), encoding="utf-8")
+    # The server MERGED: it kept the label we had written, which the backup lacks.
+    merged = _card("C1", ("mp3", "mp3"), overlay_labels=True)
+    fake = FakeClient(original, after=merged)
+    from yoto_maker.yoto.repair import rollback_from_backup
+
+    res = rollback_from_backup(fake, backup)
+
+    assert res.outcome == "restored"                  # NOT verify-failed
+    assert any("still carries overlayLabel" in p for p in res.problems)   # explained
+    assert any("Everything else is restored" in p for p in res.problems)
+
+
+def test_rollback_still_fails_on_a_changed_overlay_label_value(tmp_path):
+    """The tolerance is PRESENCE-only and one-directional. A label whose VALUE the
+    server changed is a real difference and must still fail - otherwise the tolerance
+    would be the `_VOLATILE_TOP_KEYS` blind spot by another name."""
+    original = _card("C1", ("mp3", "mp3"), overlay_labels=True)
+    backup = tmp_path / "C1-backup.json"
+    backup.write_text(json.dumps(original), encoding="utf-8")
+    changed = _card("C1", ("mp3", "mp3"), overlay_labels=True)
+    changed["content"]["chapters"][0]["tracks"][0]["overlayLabel"] = "99"
+    fake = FakeClient(original, after=changed)
+    from yoto_maker.yoto.repair import rollback_from_backup
+
+    res = rollback_from_backup(fake, backup)
+
+    assert res.outcome == "verify-failed"
+    assert any("overlayLabel" in p and "99" in p for p in res.problems)
+
+
+def test_rollback_tolerance_does_not_leak_into_the_repair_verify():
+    """⚠ The structural difference from the `_VOLATILE_TOP_KEYS` trap: the tolerance
+    lives ONLY in the rollback path. The repair path's verify must still fail loudly
+    on an UNDECLARED `overlayLabel` the server invented, because that is a field
+    appearing on a live card that nobody asked for."""
+    before = _card("C1", ("mp3",), overlay_labels=False)
+    after = _card("C1", ("opus",), overlay_labels=False)
+    after["content"]["chapters"][0]["tracks"][0]["overlayLabel"] = "7"   # undeclared
+    problems = verify_only_declared_changed(before, after, format_edits(before, {"0.0"}))
+    assert any("overlayLabel" in p and "ADDED" in p for p in problems)
 
 
 def test_canonicalize_body_media_refs_rewrites_tracks_and_icons():
@@ -646,7 +1099,7 @@ def test_unextractable_sha_blocks_whole_card_no_post(tmp_path):
 
     assert res.outcome == "blocked"
     assert fake.posts == []
-    assert any("sha" in d.reason.lower() for d in res.plan.blocked)
+    assert any("sha" in d.blocked_reason.lower() for d in res.plan.blocked)
 
 
 def test_post_body_uses_canonical_refs_not_resolved_urls(tmp_path):
@@ -754,23 +1207,33 @@ def test_icon_problems_flags_only_unextractable():
     assert len(problems) == 1 and "chapter 0" in problems[0]
 
 
-def _real_shaped_card(formats, *, prefix, sig):
+def _real_shaped_card(formats, *, prefix, sig, overlay_labels=True):
     """A card whose URLs use the REAL '<policy>~/<key>' shape (trackUrl also carries a
     '#sha256=<key>' fragment), so a test can rotate the policy prefix AND the signature
-    (as a real re-GET does). mediaId is a real 43-char token."""
+    (as a real re-GET does). mediaId is a real 43-char token.
+
+    ⚠ `overlay_labels` defaults True and that is LOAD-BEARING, though neither the plan
+    nor the ADR's breaks-by-design table mentions this helper at all. Leaving it
+    unlabelled would make `intended` (= before + the declared label edits) differ from
+    an unlabelled `after` on EVERY round trip, so the two
+    `test_verify_fails_when_*_changes` tests below would have gone on passing because
+    of a MISSING LABEL rather than because of the sha / mediaId change they claim to
+    test - green, and no longer testing their own subject.
+    """
     chapters = []
     for i, fmt in enumerate(formats, start=1):
         sha = f"AUDIOsha{i}base64token"
         mid = _mid("RS", i)                                # 43-char mediaId
         icon = f"https://card-content.example/{prefix}~/{mid}"
+        label = {"overlayLabel": str(i)} if overlay_labels else {}
         track = {
-            "key": f"{i:02d}", "title": f"Track {i}", "type": "audio", "format": fmt,
+            "key": f"{i:02d}", **label, "title": f"Track {i}", "type": "audio", "format": fmt,
             "duration": 100 + i, "fileSize": 1000 + i, "channels": "stereo",
             "display": {"icon16x16": icon},
             "trackUrl": (f"https://secure-media.example/{prefix}~/{sha}?"
                          f"Expires=9&Signature={sig}&Key-Pair-Id=K#sha256={sha}"),
         }
-        chapters.append({"key": f"{i:02d}", "title": f"Track {i}", "tracks": [track],
+        chapters.append({"key": f"{i:02d}", **label, "title": f"Track {i}", "tracks": [track],
                          "display": {"icon16x16": icon}})
     return {"cardId": "C1", "title": "Real Shaped", "content": {"chapters": chapters},
             "updatedAt": "2026-07-22T00:00:00Z"}

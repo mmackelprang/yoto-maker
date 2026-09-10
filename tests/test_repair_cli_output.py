@@ -82,7 +82,9 @@ def _result(outcome="already", *, title=TITLE, card_title="Wild Robot", problems
             backup_path=None):
     ref = TrackRef(cid=0, tid=0, key="0.0", title=title,
                    declared_format="opus", artifact_url="https://x/a")
-    decision = TrackDecision(ref, "already", "already 'opus'")
+    # `TrackDecision` was reshaped by the declared-change-set refactor: the single
+    # `status`/`reason` pair became `edits` / `blocked_reason` / `notes`.
+    decision = TrackDecision(ref, notes=["already: 'opus'"])
     plan = CardPlan(card_id="1WCvI", title=card_title, decisions=[decision])
     return CardResult("1WCvI", card_title, outcome, plan, backup_path, list(problems))
 
@@ -100,7 +102,7 @@ def test_print_card_result_survives_a_track_title_the_console_cannot_encode(monk
     repair_mod._print_card_result(_result(card_title=f"Wild Robot {ROBOT}"))
 
     raw, written = _read(out)
-    assert "already 'opus'" in written          # the line was really emitted
+    assert "already: 'opus'" in written         # the line was really emitted
     assert "Wild Robot" in written
     assert ROBOT_UTF8 not in raw                # not smuggled through as utf-8 bytes
     assert "\\U0001f916" in written             # escaped losslessly, not dropped to '?'

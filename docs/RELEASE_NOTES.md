@@ -1,7 +1,43 @@
-# Yoto Maker v0.1.13
+# Yoto Maker v0.1.14
 
 Turn audio into a Yoto card and print a matching label, from one simple screen.
 Built to be usable by someone with little computer knowledge.
+
+### 🆕 New in v0.1.14
+
+- **New cards now carry the chapter numbers Yoto's own player software expects.**
+  Every card Yoto Maker has ever made was missing a small numbering label that
+  Yoto's published description of a card lists as **required** on every track.
+  Yoto Maker now includes it, numbered **1, 2, 3…** down your list of tracks.
+  **Please read the note below about what this does and does not fix.**
+- **Cards you already made can be brought up to date without being re-made.**
+  The repair tool that whoever set this up for you can run now adds the missing
+  numbering to a card that is already in your Yoto account, in place — the card
+  keeps working with the same physical card you already tapped, and nothing else
+  about it is touched. It writes a backup of the card first, checks afterwards
+  that only what it meant to change actually changed, and does nothing at all if
+  the card is already correct.
+
+### ⚠️ About the missing chapter numbers, honestly
+
+**Twisting the button on the player to bring up a chapter list is the problem
+this is aimed at, and nobody has yet confirmed it is cured.** What is certain is
+narrower, and worth stating exactly:
+
+- Yoto's published description of a card marks this numbering label **required**,
+  and Yoto Maker was not sending it. That was a real mistake and it is now fixed.
+- Yoto's own example code sends it, at both levels this release sends it at.
+- **Whether that label is what makes the player's chapter list appear is an
+  informed guess, not a known fact.** No Yoto document says so. Yoto's own
+  description of the field says it is used *in the app*, for numbering tracks —
+  it does not mention the player or the button at all.
+
+So: this release **sends a field that was missing and should have been there**.
+It does **not** come with a demonstration that the chapter list now works,
+because that needs a physical Yoto player and there is not one here. If you have
+a player, twisting the button on a card made or repaired by this version is the
+thing worth trying — and if it still shows nothing, that is worth reporting,
+because it rules this explanation out rather than leaving it hanging.
 
 ### 🆕 New in v0.1.13
 
@@ -255,6 +291,33 @@ Adding audio, pictures, and printing labels all work without it.
   library, per-track icons, and label PDF are all verified end-to-end.
 - The Yoto upload flow is implemented against Yoto's documented API and covered
   by tests with mocked responses; live upload needs your Client ID (above).
+
+## ❓ Not verified in v0.1.14
+
+- **Whether the missing chapter numbering is what stops the player's button from
+  bringing up a chapter list. This is the headline of the release and it is
+  UNVERIFIED.** The field Yoto's published description marks as required is now
+  sent, at both levels Yoto's own example sends it at, and that part is covered by
+  tests and has been applied to real cards. **None of that is evidence that the
+  chapter list appears**, because no Yoto document says this field controls it and
+  Yoto's own description of the field mentions the *app*, not the *player*. It
+  takes a physical Yoto player to settle, and there is not one here. Read this
+  release as *"a required field that was missing is now sent"* — **not** as
+  *"twisting the button now brings up your chapter list."*
+- **⚠️ A card that plays in the Yoto phone app still proves nothing about this**,
+  for the same reason as in v0.1.13 below: streaming works even on a card a player
+  cannot download. The questions that matter are whether the **download for
+  offline finishes** and whether the chapter list appears **on the player**.
+- **Whether `1` or `01` is what Yoto wants to show.** The numbering is sent
+  unpadded — `1`, `2`, … `18` — on the strength of Yoto's own example code, which
+  puts `1` beside the padded `01` it uses for its internal name of the same track.
+  Nobody has seen it rendered on a player screen. If it ever looks wrong there,
+  it is a one-line change.
+- **Whether Yoto keeps or discards a field left out of an update.** This matters
+  only to undoing a repair: a backup taken before this release does not contain
+  the new numbering, so restoring one asks Yoto to put the card back without it.
+  The repair tool reports that case as *restored, and the numbering is still
+  there* rather than as a failure, so an undo cannot cry wolf either way.
 
 ## ❓ Not verified in v0.1.13
 
