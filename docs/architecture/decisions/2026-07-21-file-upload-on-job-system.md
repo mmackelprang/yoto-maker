@@ -559,5 +559,3 @@ implementation:
    `yt_dlp`'s cancellability needs its own look. **Mark decides.**
 4. **Job reattachment after a tab reload** (§5.2.2). Out of scope; worth a queue
    row of its own if it is ever observed in practice.
-</content>
-</invoke>

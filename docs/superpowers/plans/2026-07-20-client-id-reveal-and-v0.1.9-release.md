@@ -1007,5 +1007,3 @@ Back both up before you start, and restore them at the end.
 **Scope check.** Nothing here implements queue items 2–6. No copy button, no clipboard, no `builtin` value, no reveal endpoint, no change to `mask_client_id()` or the two client-id routes. The `.setting*` CSS block is untouched. Part B modifies no source at all.
 
 **Ambiguity check.** The five handoff/code disagreements are resolved above with the resolution stated, not left to Builder's judgement. The two that would produce real defects — where the reveal-reset is *set* (#1) and which of `submitClientId()`'s two `closeClientIdConfirm()` call sites owns reset #2 (#2) — each have an explicit code site and a Test Plan step (§E.1, §E.4) that fails if they are placed wrong.
-</content>
-</invoke>
