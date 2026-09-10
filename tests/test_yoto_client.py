@@ -110,6 +110,9 @@ def test_create_card_happy_path(sample_mp3, temp_config):
     # The card advertises Yoto's TRUE transcoded format ("opus"), not the local
     # MP3 — this is the entire behavioural delta of this change.
     assert track["format"] == "opus"
+    # `overlayLabel` rides the same end-to-end create path (issue #31): the field
+    # Yoto's schema marks REQUIRED at track level, which this app never sent.
+    assert track["overlayLabel"] == "1"
     # channels stays the app's existing "stereo"/"mono" STRING (this change must
     # not turn it into an int); the sample is mono, so it's "mono" here.
     assert track["channels"] in ("stereo", "mono")
@@ -157,6 +160,10 @@ def test_icon_upload_best_effort(sample_mp3, temp_config):
     assert result.content_id == "CARD123"
     chapters = yc._client.last_content["content"]["chapters"]
     assert "display" not in chapters[0]
+    # An icon upload that failed must not take `overlayLabel` with it - the two are
+    # independent, which is why the line above still holds (issue #31).
+    assert chapters[0]["overlayLabel"] == "1"                # survives a failed icon
+    assert chapters[0]["tracks"][0]["overlayLabel"] == "1"
 
 
 # -- transcoded format propagation (the format-only fix) ---------------------

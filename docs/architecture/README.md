@@ -36,5 +36,5 @@ conflicts with one, surface the conflict rather than quietly overriding it.
 | Date | Decision | Status |
 | --- | --- | --- |
 | 2026-07-21 | [Move `/api/tracks/file` onto the background job system](decisions/2026-07-21-file-upload-on-job-system.md) | proposed |
-| 2026-07-21 | ["Repair my cards": fix declared track metadata on existing MYO cards](decisions/2026-07-21-repair-existing-cards.md) | proposed (shipped as PR #20; status line is stale) |
-| 2026-09-10 | [`overlayLabel`: widening `repair.py` past format-only, on a declared change-set](decisions/2026-09-10-overlay-labels-and-the-declared-change-set.md) | proposed — **amends** 2026-07-21-repair-existing-cards |
+| 2026-07-21 | ["Repair my cards": fix declared track metadata on existing MYO cards](decisions/2026-07-21-repair-existing-cards.md) | accepted (shipped as PR #20; amended 2026-09-10) |
+| 2026-09-10 | [`overlayLabel`: widening `repair.py` past format-only, on a declared change-set](decisions/2026-09-10-overlay-labels-and-the-declared-change-set.md) | accepted — **amends** 2026-07-21-repair-existing-cards |

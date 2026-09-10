@@ -91,7 +91,7 @@ API key is present. Initial real-world use is explicitly *without* AI.
 
 - **Auth:** OAuth2 Authorization-Code + PKCE, loopback redirect. One "Connect" click → browser sign-in → refresh token cached (silent thereafter). A public **Client ID** (registered once at dashboard.yoto.dev) ships with the app; PKCE means no secret.
   - Endpoints: `https://login.yotoplay.com/authorize`, `https://login.yotoplay.com/oauth/token`. Scopes: `user:content:manage offline_access`.
-- **Upload:** `GET /media/transcode/audio/uploadUrl` → `PUT` file → poll `GET /media/upload/{id}/transcoded` until `transcodedSha256` → `POST /content` (chapters/tracks referencing `yoto:#<sha>`, per-track `display.icon16x16`).
+- **Upload:** `GET /media/transcode/audio/uploadUrl` → `PUT` file → poll `GET /media/upload/{id}/transcoded` until `transcodedSha256` → `POST /content` (chapters/tracks referencing `yoto:#<sha>`, per-track `display.icon16x16`, and `overlayLabel` at both levels — the label the player's knob browses).
 - **Card binding caveat:** content lands in her account automatically. Binding a *brand-new blank card* the first time may need one tap in the Yoto app (guided step). Updating an already-linked card is fully automated. We attempt to minimize/eliminate the tap during implementation.
 
 ## 7. Label generator

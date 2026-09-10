@@ -1,7 +1,8 @@
 # ADR — "Repair my cards": fix declared track metadata on already-created MYO cards
 
 **Date:** 2026-07-21
-**Status:** proposed — needs Mark's approval before Planner picks it up
+**Status:** accepted — shipped as PR #20 (2026-07-22); amended 2026-09-10 by
+[`2026-09-10-overlay-labels-and-the-declared-change-set.md`](2026-09-10-overlay-labels-and-the-declared-change-set.md)
 **Depends on:** queue **item 17** ("transcoded-metadata propagation" —
 `_poll_transcode` returns `transcodedInfo`; `build_content_payload` emits it).
 This feature reuses item 17's plumbing; it must not duplicate it.
@@ -556,3 +557,26 @@ Implementation: `yoto_maker/yoto/repair.py` (+ `yoto_maker/yoto/client.py`
 additions: `list_my_cards` / `get_card` / `update_card` / `probe_artifact` + a
 `yoto_maker/repair.py` CLI shim). Plan:
 `docs/superpowers/plans/2026-07-21-repair-existing-cards.md`. Queue item 18.
+
+---
+
+## Addendum 2 — 2026-09-10: format is no longer the only field written
+
+**Amended by [`2026-09-10-overlay-labels-and-the-declared-change-set.md`](2026-09-10-overlay-labels-and-the-declared-change-set.md).**
+
+The first Addendum's *"`format` is the only field that needed correcting"* (§above) was
+true of what shipped in PR #20, and is **no longer the scope of `repair.py`**. GitHub
+issue #31 found that the app has never sent `overlayLabel`, which Yoto's published schema
+marks **required** at track level. Repairing the three existing cards means writing a
+second field.
+
+**What changed:** the safety invariant. *"Only `format` changed"* is replaced by *"only
+what we **declared** changed"* — an explicit ordered change-set of addressed field writes,
+from which **both** the POST body and the round-trip verify's expectation are derived. The
+narrowness that made format-only valuable is preserved, because the intent now lives in
+data rather than in the shape of the corrector.
+
+**What did not change:** every other principle this ADR established. Account-first
+discovery, update-in-place with `cardId`, all-or-nothing per card,
+deep-copy-and-overwrite-only, backup-then-write, verify-after, dry-run-by-default, honest
+per-card reporting — all retained, and all now expressed over the change-set.

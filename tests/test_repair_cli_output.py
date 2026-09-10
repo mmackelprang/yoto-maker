@@ -8,16 +8,16 @@ even a capture test against it would not have exercised a non-ASCII title.
 
 Issue #31's report: `python -m yoto_maker.repair --card-id 1WCvI --dry-run` raises
 UnicodeEncodeError at `_print_card_result`, because Wild Robot's five track titles
-each carry U+1F916 ROBOT FACE and they arrive from Yoto's JSON (`repair.py:317`).
-In APPLY mode that print happens at `main`'s `:881`, AFTER `repair_card` POSTed at
-`:648` - so the operator is left unable to tell whether the write landed.
+each carry U+1F916 ROBOT FACE and they arrive from Yoto's JSON (`repair.py:363`).
+In APPLY mode that print happens at `main`'s `:1288`, AFTER `repair_card` POSTed at
+`:994` - so the operator is left unable to tell whether the write landed.
 
 ⚠ LINE CITATIONS IN THIS FILE POINT AT `repair.py` AFTER the guard was inserted.
 Adding `_make_console_safe` pushed everything inside `main` down by 50 lines, and the
 first draft of this file shipped the pre-insertion numbers - two of which landed
 inside the very docstring that had invalidated them. If you move code in `main`,
-re-check every `:NNN` here. The emit sites themselves (`:740`, `:742`, `:745`, `:760`,
-`:762`) sit above the insertion point and did not move.
+re-check every `:NNN` here. The emit sites are now `:1131` (card title), `:1133` (backup path),
+`:1137` (track title), `:1158` (summary) and `:1160` (problems).
 """
 from __future__ import annotations
 
@@ -82,7 +82,9 @@ def _result(outcome="already", *, title=TITLE, card_title="Wild Robot", problems
             backup_path=None):
     ref = TrackRef(cid=0, tid=0, key="0.0", title=title,
                    declared_format="opus", artifact_url="https://x/a")
-    decision = TrackDecision(ref, "already", "already 'opus'")
+    # `TrackDecision` was reshaped by the declared-change-set refactor: the single
+    # `status`/`reason` pair became `edits` / `blocked_reason` / `notes`.
+    decision = TrackDecision(ref, notes=["already: 'opus'"])
     plan = CardPlan(card_id="1WCvI", title=card_title, decisions=[decision])
     return CardResult("1WCvI", card_title, outcome, plan, backup_path, list(problems))
 
@@ -91,23 +93,25 @@ def test_print_card_result_survives_a_track_title_the_console_cannot_encode(monk
     """THE issue #31 crash. Must not raise, and must not silently print nothing.
 
     `card_title` carries the ROBOT too, so this one test covers BOTH title emit
-    sites: `res.title` at `repair.py:740` and `d.ref.title` at `:745`. The plan's
-    Task 1.3 table says `:740` folds in here; its Task 1.1 snippet left the card
-    title ASCII, which would have left `:740` unexercised by any test in the file.
+    sites: `res.title` at `repair.py:1131` and `d.ref.title` at `:1137`. The plan's
+    Task 1.3 table calls the first of those `:740` - its own pre-item-28 numbering,
+    not a line that exists today - and says it folds in here; but its Task 1.1
+    snippet left the card title ASCII, which would have left that site unexercised
+    by any test in the file.
     """
     out, _ = _force_cp1252_streams(monkeypatch)
     repair_mod._make_console_safe()
     repair_mod._print_card_result(_result(card_title=f"Wild Robot {ROBOT}"))
 
     raw, written = _read(out)
-    assert "already 'opus'" in written          # the line was really emitted
+    assert "already: 'opus'" in written         # the line was really emitted
     assert "Wild Robot" in written
     assert ROBOT_UTF8 not in raw                # not smuggled through as utf-8 bytes
     assert "\\U0001f916" in written             # escaped losslessly, not dropped to '?'
 
 
 def test_the_backup_path_line_survives_a_username_the_console_cannot_encode(monkeypatch):
-    """`repair.py:742` - `print(f"  backup: {res.backup_path}")`.
+    """`repair.py:1133` - `print(f"  backup: {res.backup_path}")`.
 
     The backup path is built from `get_config().data_dir`, i.e. it contains the
     Windows account name, which is outside this project's control entirely. This
@@ -126,7 +130,7 @@ def test_the_backup_path_line_survives_a_username_the_console_cannot_encode(monk
 
 
 def test_a_problem_string_built_by_repr_survives(monkeypatch):
-    """`repair.py:762` - THE WIDEST HOLE. `res.problems` is built by `_diff_paths`
+    """`repair.py:1160` - THE WIDEST HOLE. `res.problems` is built by `_diff_paths`
     as `f"{path}: {a!r} -> {b!r}"` over ARBITRARY card field values, so any string
     Yoto ever puts in any field reaches this print.
 
@@ -150,8 +154,8 @@ def test_a_problem_string_built_by_repr_survives(monkeypatch):
 # The `main`-driving rows. `main` calls `_make_console_safe()` itself, so these
 # also prove the call is wired up and not merely present.
 #
-# `setup_logging` (`repair.py:830`) and `YotoClient` (`:831`) are monkeypatched, so
-# nothing here touches the network or the real log file. `_backup_dir` (`:876`) is
+# `setup_logging` (`repair.py:1232`) and `YotoClient` (`:1233`) are monkeypatched, so
+# nothing here touches the network or the real log file. `_backup_dir` (`:1282`) is
 # NOT patched and does not need to be: `tests/conftest.py`'s autouse `temp_config`
 # fixture already points `get_config().data_dir` at a tmp_path, so the real
 # %LOCALAPPDATA%\YotoMaker\repair-backups tree is unreachable from any test.
@@ -183,9 +187,9 @@ def _drive_main(monkeypatch, argv, *, summaries=(), repair_card=None):
 
 
 def test_list_survives_a_card_title_the_console_cannot_encode(monkeypatch):
-    """`repair.py:843` - `--list` prints `s.title` straight from GET /content/mine.
+    """`repair.py:1249` - `--list` prints `s.title` straight from GET /content/mine.
 
-    `--list` is the command the CLI's own error at `:716` tells the operator to run
+    `--list` is the command the CLI's own error at `:1107` tells the operator to run
     ("Try --list, or pass --card-id"), so a crash here is a dead end: the recovery
     path for one failure would be the second failure.
     """
@@ -201,8 +205,8 @@ def test_list_survives_a_card_title_the_console_cannot_encode(monkeypatch):
 
 
 def test_an_ambiguous_title_reports_every_candidate_without_crashing(monkeypatch):
-    """`repair.py:854` - `print(str(exc))` for a `resolve_targets` failure. The
-    ambiguous-title raise at `:723` interpolates EVERY candidate's `m.title`, so one
+    """`repair.py:1260` - `print(str(exc))` for a `resolve_targets` failure. The
+    ambiguous-title raise at `:1114` interpolates EVERY candidate's `m.title`, so one
     unencodable card in the account breaks disambiguation for all of them.
 
     This is a refuse-to-guess path - the CLI will never auto-pick a card to mutate -
@@ -222,7 +226,7 @@ def test_an_ambiguous_title_reports_every_candidate_without_crashing(monkeypatch
 
 
 def test_a_yoto_error_from_repair_card_does_not_crash_the_error_line(monkeypatch):
-    """`repair.py:878` - `print(f"{card_id}: ERROR - {exc}")`. A `YotoError`'s text
+    """`repair.py:1285` - `print(f"{card_id}: ERROR - {exc}")`. A `YotoError`'s text
     is `_friendly_http`'s prose (`client.py:587-590`, `:594-597`), which carries
     U+2019 and U+2014.
 
@@ -262,7 +266,7 @@ def test_stderr_is_guarded_too_so_argparse_can_report_an_unencodable_argument(mo
     """Pins the `sys.stderr` half of the guard - the half nothing else here can see.
 
     argparse writes `unrecognized arguments: ...` to STDERR from `parse_args` at
-    `repair.py:878`, interpolating the offending argument verbatim. Before this test
+    `repair.py:1230`, interpolating the offending argument verbatim. Before this test
     existed, changing the guard to `for stream in (sys.stdout,):` left all of the
     above green, because `_cp1252_stdout()` was only ever bound to `sys.stdout`.
 
