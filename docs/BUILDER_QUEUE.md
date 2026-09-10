@@ -1,6 +1,39 @@
 # Builder queue
 
-**Last updated:** 2026-09-06 by Builder — **v0.1.13 is CUT AND PUBLISHED:
+**Last updated:** 2026-09-10 by Planner — **two rows filed for
+[issue #31](https://github.com/mmackelprang/yoto-maker/issues/31) (the player's knob
+brings up no chapter list): 28 (the repair CLI crashes *after* it has written to a
+live card) and 29 (`overlayLabel` on a declared change-set).** Design basis is the
+approved [ADR `2026-09-10-overlay-labels-and-the-declared-change-set.md`](architecture/decisions/2026-09-10-overlay-labels-and-the-declared-change-set.md);
+the plan is
+[`plans/2026-09-10-overlay-labels-and-the-declared-change-set.md`](superpowers/plans/2026-09-10-overlay-labels-and-the-declared-change-set.md).
+**28 must land before 29's staged rollout** — its crash is at `repair.py:745`, which
+`main` reaches at `:831`, *after* `repair_card` has POSTed at `:648`, and Wild Robot
+(one of the three cards 29 repairs) carries a 🤖 in all five track titles.
+
+⚠ **Two of the ADR's own claims are FALSIFIED, and the plan's §1 corrects them with
+evidence.** §1.1, the opening ⚠ box, open question 1 and §4.2.3 argue the three cards
+are still `mp3`, that no repair write ever landed, and that the feature may be
+**inert**. The live read-only check says **all 24 tracks across all three cards are
+`opus`** — so July's write landed and Yoto **does** persist a client-supplied `format`,
+which is the mechanism `overlayLabel` depends on. The ADR misread a **pre-write**
+backup as the post-write state, and misread the absence of an eleventh backup as
+"nothing ran" when an `already` card returns at `:626` *before* `_write_backup` at
+`:637`. **A Builder who reads the ADR's first screen and stops will build the wrong
+thing.** That same evidence confirms **blocker 1 is real and not defensive**: all three
+cards report *"already correct — nothing to do"*, so without the second decision axis
+the widened repair is a silent no-op on every card that needs it.
+
+**`516cbf7` ("ASCII-safe CLI output", July) did not regress — it was never the right
+fix.** It swept em-dashes out of `repair.py`'s own **literals**; the crashing character
+arrives from Yoto's JSON. **A second literal sweep would not fix it either**, and
+`$env:PYTHONUTF8=1` — the only thing that has kept the tool completing — lives in two
+prose lines and in no code.
+
+**Item 30 filed in passing:** `yoto_maker/main.py:43`/`:74`/`:89` carry the same
+literal exposure at a different entry point. Deliberately not folded into 28.
+
+Previously: 2026-09-06 by Builder — **v0.1.13 is CUT AND PUBLISHED:
 [the release](https://github.com/mmackelprang/yoto-maker/releases/tag/v0.1.13)
 carries items 19 and 20, and both Shipped rows now read 🚢 v0.1.13.** The
 published `YotoMaker.exe` was hash-matched against the local build
@@ -475,6 +508,225 @@ day because these two states shared one word.
 | 25 | 📋 | **`#sendError` has no `role` and no `tabindex`, and it now holds the app's only cross-path recovery pointer** — `index.html:195` is a bare `<div id="sendError" class="msg-box err hidden">`. Nothing is announced and focus never moves, so a screen-reader user who hits a send failure is told nothing about it — including, once item 20 lands, that pressing `📁 Save the files to a folder` is the way to finish the card Yoto just refused | [`interactions.md` §11 item 3](design-handoffs/export-only-mode/interactions.md) (**re-weighted** 2026-09-06, not reopened) + §4b.5 · [`copy.md` §10.5](design-handoffs/export-only-mode/copy.md) + §9.3 — **all four state the question and record the decline; none of them answers it** | _needs Planner pass_ | — **not blocked and not waiting on anything.** The gap is live on `main` today; item 20 / [PR #27](https://github.com/mmackelprang/yoto-maker/pull/27) is what raises its cost, not what enables the fix. **A screen reader that actually speaks** is the one real dependency — see briefing | **MEDIUM, and the trigger-rarity argument is why it is neither LOW nor HIGH.** Designer's own framing is the argument: **_"a pointer that is never announced does not point"_** (`interactions.md` §4b.5). This **got worse rather than newly appearing** — §9.3's decline was right on its own terms when the region held only transport lines whose recovery was already on screen; §10 changed what the region carries without changing the region. **Deliberately not folded into item 20's string fix:** adding a live region changes announcement behaviour for **every** shipped send failure — the expired sign-in, the 5xx, the timeout and the fallback, not just the 413 — so it needs its own pass and its own UAT. **It is not a two-attribute change and must not be scheduled as one.** **Why not LOW:** the oversized-track gate binds the *pointer*, not the *region* — the same missing `role` silences every 5xx and timeout on the shipped send path, which are ordinary events, and item 4 (modal focus trap, MEDIUM) is the nearest calibration point. **Why not HIGH:** nothing is destroyed or unreachable — every message stays readable, `#exportBtn` stays in the Tab order regardless, and the recovery stays *reachable*, just never *offered*. **The scope question the Planner pass owns:** `#sendError` is one of **four** of the app's eleven `.msg-box err` regions carrying no `role`, so item 12's standing rule (fix the pattern or accept it; do not special-case one control) is live here. See briefing. |
 | 26 | 📋 | **`_friendly_http`'s other four sentences are owned by no handoff package** — with item 20's ruling the **413** branch is ratified in `copy.md` §10. The **401/403**, the **5xx**, the **timeout** and the **fallback** (`client.py:476-490` on `main`) are shipped, user-facing copy with no document behind them, and they are reached from the **card-repair CLI** as well as the send path | _needs Designer pass_ — **an ownership question before it is a copy question** | _needs Designer pass, then Planner only if anything ships_ | **item 20 ([PR #27](https://github.com/mmackelprang/yoto-maker/pull/27)) on `main` first** — `copy.md` §10 is the ratified anchor the rest of the family gets adopted around, and it does not exist on `main` yet | **LOW-MEDIUM. This is a copy-_adoption_ row, not a bug row, and ranking it as a bug row gets it wrong in both directions.** Nothing in the four sentences is known to be wrong. **The defect is that no document is the authority** — which is precisely how the 413 string came to name the card-level *"max 5 hours per card"* ceiling on the **per-track** upload and survive there unchallenged: it dates to `b40c702`, the founding `feat: core pipeline` commit, and is present in `client.py` at **both v0.1.2 and v0.1.12** (checked at both ends), so it shipped in every tagged release this project has cut. Nobody caught it because there was nothing to check it against. **The value here is preventing a recurrence, not fixing a known break** — a pass that reads all four, finds them correct and writes them down unchanged has succeeded. **The first question, and it is not a detail: where does this copy live?** Verified on `main` at `3330f2c` — nine `raise` sites across seven methods with seven distinct `{doing}` phrases, **three of them reachable from `yoto/repair.py`** (`get_card`, `list_my_cards`, and `update_card`, which **only** the repair path calls). A family reached from both the send path and a card-mutating CLI **cannot be adopted into a package scoped to one surface without first deciding where it lives**, and `export-only-mode/` is the wrong home by construction — §10.4 ruled the generic 413 there only because it is the other arm of the same `if`, and says so itself. **Not plain LOW** because `repair.py` mutates live production cards, where a misleading error is read by someone deciding whether a write landed. See briefing. |
 | 27 | 📋 | **`interactions.md` §4b.4's table states an invariant that does not hold** — row 2 says a send that can reach a 413 **cannot coexist with a visible `#connectWarn`**, because an invalid Client ID *"hard-blocks sign-in, which disables `#sendBtn` (`app.js:382`)"*. The two are not coupled: `connected` is **token-presence only** (`auth.py:246`, `_load_tokens() is not None`) and is computed independently of `client_id_verdict` (`auth.py:264`), while `renderConnectWarn()` triggers on **the verdict alone** (`app.js:325`). Sign in successfully, then have `YOTO_CLIENT_ID` become invalid (the `env` tier, which the app cannot unset) with the access token still live → `connected: true` **and** `verdict: "invalid"` → `#connectWarn` renders **between** `#sendError` and `#exportRow` while `#sendBtn` is enabled | _needs Designer pass_ — the claim is Designer's to narrow or to act on | _needs Designer pass, then Planner_ | — (20 on `main`) | **LOW user-facing, MEDIUM as a documentation defect — and the distinction is the whole row.** Found by item 20's copy gate; **confirmed in the live app, not argued**: the state was driven in the browser and `#connectWarn` rendered between the two, with the send button enabled. **The shipped string is NOT wrong and must not be changed for this** — `#exportRow` stays **visible and still below**, so *"below"* remains true; what is falsified is §4b.4's *reasoning*, and its **standing condition** names exactly this (*"`#connectWarn` made reachable during a send"*) as a trigger to revisit the string. **Builder deliberately did not fix it.** Every code fix — hiding `#connectWarn` during a send, gating `connected` on the verdict, moving `#exportRow` — touches the send path's state machine, which **§4b.3 forbids** (*"no control is added, removed, disabled or re-ordered"*), and choosing between *narrow the claim* and *make it true* is a design call. Item 20's test was renamed and narrowed to assert only what it proves, so nothing in the suite now claims this invariant holds. **Cheapest likely outcome: Designer narrows row 2 to "an invalid Client ID blocks a NEW sign-in" and the row closes unshipped.** |
+| 28 | 📋 | **The repair CLI crashes *after* it has already written to a live card** — `python -m yoto_maker.repair --card-id 1WCvI --dry-run` raises `UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f916'` at `yoto_maker/yoto/repair.py:745`, because Wild Robot's five track titles each carry a 🤖 and they arrive from Yoto's JSON (`repair.py:317`). `main` prints that line at `:831` — **after** `repair_card` has POSTed at `:648`. So an apply run against Wild Robot today **writes to the live card and then dies before reporting the outcome**, leaving the operator unable to tell whether it succeeded, whether a backup exists, or which card to roll back | Decision in [plan §Commit 0](superpowers/plans/2026-09-10-overlay-labels-and-the-declared-change-set.md) — a **prerequisite this plan adds** to [ADR](architecture/decisions/2026-09-10-overlay-labels-and-the-declared-change-set.md) §3.7's sequence; no ADR section owns it | [plan](superpowers/plans/2026-09-10-overlay-labels-and-the-declared-change-set.md) Tasks 1.1–1.6 | — | **HIGH, and it is a hard prerequisite for item 29's staged rollout — Wild Robot is one of the three cards that arc must repair.** Not a cosmetic output bug: it is a crash on the only channel that reports whether a live write landed. **The July fix did NOT regress — it was never the right fix.** `516cbf7` (*"ASCII-safe CLI output"*, inside PR #20 / item 18) was 26 insertions in one file replacing `—`/`…`/curly quotes in `repair.py`'s **own string literals**; every character it removed *is* encodable in cp1252, so it was fixing OEM-console mojibake, and a literal sweep structurally cannot reach text that arrives over the wire. **A second sweep would not fix this either.** `0240cbb`'s pre-merge review then cleared *"Unicode track titles are safe — the rotating handler pins encoding=utf-8 (logging_setup.py:22)"* — true of the **log file**, and the console `print()` path was never in its scope. That is the exact moment the gap entered the record as a cleared item. **What has actually kept the tool alive is `$env:PYTHONUTF8=1`, which lives in two prose lines** (`SESSION_STATE.md:245` and the 2026-09-10 ADR's own command at `:77`) **and in no code** — the original runbook omits it, which is how the issue was filed. The fix is `sys.stdout.reconfigure(errors="backslashreplace")` on the stream, `errors` **only** and never `encoding` (pinned by a test: forcing UTF-8 also stops the crash but can turn a real OEM console's correct output into mojibake). **Eight emit sites carry card-derived text**, the widest being `:762` — `_diff_paths` builds `f"{path}: {a!r} -> {b!r}"` and Python 3's `repr()` does **not** escape printable non-ASCII, so `!r` is no protection. ⚠ **The CLI output layer has never been executed by a test**: `tests/test_repair.py` has 47 tests and imports neither `_print_card_result` nor `main`, nothing in `tests/` captures stdout, and `card_sample.json` is 100% ASCII — three layers of invisibility. See briefing notes. |
+| 29 | 📋 | **`overlayLabel` — the schema-required field this app has never sent, on a declared change-set** — twisting the player's right-hand knob brings up **no chapter list** on a multi-segment card ([issue #31](https://github.com/mmackelprang/yoto-maker/issues/31)). `git log --all -S overlayLabel` returns **nothing**: the string has never existed in this repository, though Yoto's published schema marks it **required** at track level. Replaces `repair.py`'s **format-only** safety invariant with an explicit **declared change-set** — one ordered `FieldEdit` list from which **both** the POST body and the verify's expectation are derived — then adds `overlayLabel` as a **second intent** on it. Value is unpadded 1-based `str(i)` at chapter **and** track level, from one shared `models.overlay_label()` that the create path and the repair path both call, written **only where absent or empty** | [ADR](architecture/decisions/2026-09-10-overlay-labels-and-the-declared-change-set.md) — **approved 2026-09-10, full declared-change-set variant (§3.1), not the minimal Option 4** | [plan](superpowers/plans/2026-09-10-overlay-labels-and-the-declared-change-set.md) Tasks 2.1–3.9 | **28 must be on `main` first** (its crash lands after a live POST, and this arc's rollout writes to all three cards) | **HIGH. Ships as v0.1.14 — this arc owns the bump, which CORRECTS ADR §3.6's "no version bump"** (right about `__ASSET_V__`, wrong about the release: `updater.py` can only see a tag, and commit 1 changes every card made from here on). **One PR, three commit stacks in order 1 → 2 → 3, and the split IS the backout plan** — 1 = create path (reverts in a few lines), 2 = the behaviour-neutral refactor (**never reverted**; it closes blocker 2's *silent* half and is a net safety gain), 3 = the intent + `--no-overlay-labels` + the report strings + the rollback tolerance. ⚠ **Two ADR claims are FALSIFIED and the plan corrects them:** §1.1 and open question 1 argued the cards are still `mp3` and that the feature might be *inert* — the live read-only check says **all 24 tracks on all three cards are `opus`**, so the July write landed and Yoto **does** persist a client-supplied `format`. The ADR misread a **pre-write** backup as the post-write state, and misread the absence of an eleventh backup as "nothing ran" when an `already` card returns at `:626` **before** `_write_backup` at `:637`. **That also confirms blocker 1 is real, not defensive:** all three report *"already correct — nothing to do"*, so without the second decision axis the widened repair is a **silent no-op on every card that needs it**. **Do NOT restructure the N-chapters × 1-track shape** — it is canonical per Yoto's own examples and is not the bug. **`_VOLATILE_TOP_KEYS` gains no entry in this work** (ADR §1.3/§4.2.1; §3.5's rollback tolerance is not a precedent). ⚠ **The hypothesis is ~75–80% and only a physical player can close it** — nobody here has one; the maintainer's daughter's household does. A card that plays in the phone app is **not** evidence. See briefing notes. |
+| 30 | 📋 | **`yoto_maker/main.py`'s console output has item 28's exposure at a different entry point** — `main.py:43` builds the argparse `description=f"{APP_NAME} — {__version__}"`, so **every `--help` prints an em-dash**, and `:74` and `:89` print `— press Ctrl+C to stop.` `:34` prints `cfg.data_dir`, which carries the Windows username. None of it survives an OEM console (cp437/cp850), and `516cbf7`'s July sweep never looked at this file | — · the reasoning is [item 28's](superpowers/plans/2026-09-10-overlay-labels-and-the-declared-change-set.md) §1.5/§1.9, **not** this row's design basis | _needs Planner pass_ | — · **28 on `main` first**, so the `_make_console_safe` helper exists to reuse rather than be reinvented | **LOW, and the contrast with item 28 is the whole row.** Same character class, **but no card-derived text and no emoji**, so the realistic failure is **mojibake on an OEM console, not a crash** — and crucially **nothing here happens after a live write**, which is the entire reason 28 is HIGH. Filed rather than folded in: 28 gates a live `--apply` run against three real cards and must stay small enough to land fast. **The cheap fix is to call item 28's `_make_console_safe()` at the top of `main.py:main` too**, not to sweep literals — the same argument as 28, and the helper will already exist. `packaging/yoto_maker_launch.py:19` is the only place in the repo that already builds a stream with an explicit `errors=`, and it is a **devnull sink** for windowed frozen builds (`sys.stdout is None`); it never touches a real console and does nothing for either CLI. Worth checking whether the frozen `.exe` path reaches any of these prints at all before spending anything here — it may close unshipped. |
+
+### Item 28 — briefing notes
+
+- **The crash is in the channel that reports whether a live write landed. That is
+  the whole severity argument.** Order of operations in apply mode:
+  `repair_card` POSTs at `repair.py:648`, returns a `CardResult`, and `main`
+  prints it at `:831`. The print is where it dies. So the tool writes to a real
+  card in a real account and then **denies the operator the one sentence that
+  says whether the verify passed, where the backup is, or whether to roll back.**
+  A dry run that crashes is an annoyance; an apply run that crashes here is a
+  write you cannot reason about.
+- **Do not fix this with a literal sweep, and do not fix it with the env var.**
+  Both have been tried. `516cbf7` swept `repair.py`'s own literals — 26 lines,
+  one file — and its message claims *"ASCII-safe CLI output."* It is not, and it
+  never could have been: `d.ref.title` is assigned at `repair.py:317` straight
+  out of Yoto's JSON, and no edit to a Python literal reaches it. The two also do
+  not share a character class — em-dash, en-dash, ellipsis and curly quotes are
+  **all** encodable in cp1252 (`0x97`, `0x96`, `0x85`, `0x91`–`0x94`), so that
+  commit was addressing **OEM-console mojibake** (cp437/cp850), exactly as its
+  message says. `U+1F916` is encodable in **no** single-byte Windows codepage.
+- **The working mitigation lives in prose and in nothing else.**
+  `$env:PYTHONUTF8=1` appears at `SESSION_STATE.md:245` and in the 2026-09-10
+  ADR's own command at `:77`. It appears in **no code**, and the original runbook
+  (`superpowers/plans/2026-07-21-repair-existing-cards.md:1316`) omits it — which
+  is precisely why the command in issue #31's report crashes. A fix that depends
+  on the operator remembering an environment variable is not a fix. **Keep the
+  env var in the runbooks, re-labelled:** after this row it is optional, and the
+  only thing it buys is `🤖` instead of `\U0001f916`.
+- **A reviewer asked exactly the right question and a true answer closed it on the
+  wrong stream.** `0240cbb` (*"chore(release): address pre-merge review"*) lists
+  under **"Reviewed and cleared, not changed"**: *"Unicode track titles are safe -
+  the rotating handler pins encoding="utf-8" (logging_setup.py:22), which matters
+  given this codebase's cp1252 history."* That is correct —
+  `logging_setup.py:22` genuinely pins UTF-8 — and it is about the **log file**.
+  The console `print()` path was never in its scope. Worth remembering as a
+  review failure mode: a true statement about an adjacent artifact can retire a
+  question about the real one.
+- **Eight emit sites, and the widest one is not the reported one.**
+  `repair.py:740` (card title), `:742` (backup path — carries the Windows
+  username), `:745` (the reported crash), `:760` (summary, interpolates the backup
+  path), **`:762` (`res.problems`)**, `:793` (`--list` titles), `:804`
+  (`resolve_targets`' ambiguous-title message, which interpolates **every**
+  candidate's title), `:828` (`YotoError` text, i.e. `_friendly_http`'s
+  sentences). `:762` is the widest because `_diff_paths` (`:460-478`) builds
+  `f"{path}: {a!r} -> {b!r}"` over **arbitrary card field values**, and Python 3's
+  `repr()` does **not** escape printable non-ASCII — so `!r` is no protection at
+  all. Measured directly: `repr()` of a 🤖-bearing title still raises on a cp1252
+  stream.
+- **`client.py`'s non-ASCII copy is reachable from here and must NOT be edited.**
+  `_friendly_http`'s 413 arm (`client.py:587-590`) carries `U+2019` and `U+2014`,
+  and its timeout arm (`:594-597`) carries `U+2014`; both reach the repair console
+  via `:804` and `:828`. They survive cp1252 but fail on an OEM console — the very
+  case `516cbf7` was written for, left untouched in the module next door. **The
+  `errors=` guard makes them safe without touching them**, and this family is
+  item 26's open ownership question. ADR §4.2.5 says not to open a second one.
+  (`client.py:550-554`'s `📁` is **not** reachable from repair — `too_big=` is
+  passed only from `_put_audio`, the send path. A loaded gun pointed elsewhere.)
+- **⚠ The structural finding, and it is the same shape as item 29's.** The CLI
+  output layer **has never been executed by a test.** `tests/test_repair.py` has
+  47 tests and imports 13 names from `yoto_maker.yoto.repair`; **neither
+  `_print_card_result` nor `main` is among them.** There is no `capsys`, `capfd`
+  or `capsysbinary` anywhere in `tests/`. And `tests/fixtures/card_sample.json` is
+  **100% ASCII**, so even adding a capture test against the existing fixture would
+  still not exercise a non-ASCII title. CI could not have caught this on a cp1252
+  runner either, because nothing runs the code.
+- **Force the codec; do not inherit it.** `tests/test_static_cache.py:99-127` is
+  the repo's own precedent and carries the warning to honour: a behavioural
+  encoding test *"cannot fail on a UTF-8-locale machine"*, so it pairs one with a
+  canary plus a **source-level** assertion, and records that a looser source
+  assertion once *"passed on the documentation while the actual argument was
+  gone."* `_make_console_safe`'s docstring names `errors=`, `backslashreplace`
+  and `PYTHONUTF8` as prose, so **a substring test would be vacuous** — assert on
+  the call. Building a real cp1252 `TextIOWrapper` in the test is strictly better
+  than the canary pattern: it fails on Linux CI too.
+- **`yoto_maker/main.py:43`/`:74`/`:89` have the same literal exposure** (and
+  `:34` prints `cfg.data_dir`, which carries the Windows username). Different
+  entry point, no card data, lower stakes. **Filed as item 30 — do not fold it
+  in**; this row gates a live write and must stay small enough to land fast.
+
+### Item 29 — briefing notes
+
+- **Read the plan's §1 before the ADR.** The ADR is approved and is the design
+  authority, but **its own §1.1, its opening ⚠ box, its open question 1, its
+  §4.2.3 and one sentence of its §4.1 are falsified**, and the plan's §1 carries
+  the corrections with the evidence. A Builder who reads the ADR's first screen
+  and stops will believe this feature may be *inert* and that commit 3 *must not
+  be built*. Both are wrong.
+- **What actually happened in July, since the ADR gets it backwards.** Two code
+  facts settle it. **(1)** A backup is the **pre-write** snapshot —
+  `_write_backup` is `repair.py:637`, the POST is `:648` — so the newest backup
+  per card is the state **immediately before the last write that landed**, never
+  after it. **(2)** A repaired card **stops producing backups**: once every track
+  is `opus`, `repair_card` returns at `:626`, before `_write_backup` at `:637`. So
+  *"no backup newer than 2026-07-22 08:56"* is the **signature of success**, not
+  evidence that nothing ran. And the run the ADR called unexplained is explained:
+  `edc3c6d` (the icon-canonicalization fix) was committed **08:42:13**, so the
+  07:50, 07:51 **and 08:25** runs all predate it and all hit the Yoto 400 recorded
+  at `repair.py:24-27`; the **08:54:00 / 08:54:51 / 08:56:07** runs — in exactly
+  the documented `--card-id gzP2B,1WCvI,7FcVe` order — are the ones that landed.
+  Every data point accounted for.
+- **Blocker 1 is live on all three cards today, which is the strongest argument
+  for the second decision axis — and the ADR hedges it.** `--dry-run` on
+  2026-09-10 returns `already correct … nothing to do` for `gzP2B`, `1WCvI` and
+  `7FcVe`. `CardPlan.outcome` returns `"already"` when `correct_keys` is empty, and
+  `repair_card` then returns at `:626-630` **before** the backup and before the
+  POST. **So a card needing only a label writes nothing at all** — a silent no-op
+  on the only three cards that can test the hypothesis. ADR §3.2's
+  `change_set`-based outcome is what fixes it, and `correct_keys` must be
+  **retired**, not kept alongside: any surviving caller is a latent
+  "writes nothing" bug of exactly this kind.
+- **Commit 2 is the most dangerous code in this repo and nothing else guards it.**
+  `verify_only_declared_changed` is the last line of defence before a live card in
+  a real account is rewritten, and a bug there **does not fail loudly — it
+  approves a bad write.** Three mitigations, all required: commit 2 is
+  behaviour-neutral and **`test_corrector_sets_only_format_everything_else_byte_identical`
+  (`test_repair.py:247`) must pass UNMODIFIED** through the retained
+  `apply_format_corrections` wrapper; the change-set asserts at most one edit per
+  path; and `apply_change_set` **raises** rather than creating a missing
+  intermediate container. **If an existing safety test cannot pass without being
+  weakened, stop and ask** — that is the signal behaviour changed.
+- **Commit 2 is never reverted, and that is the point of splitting it from 3.**
+  ADR §8 deliberately omits it from the backout levers: the change-set invariant
+  is worth keeping whatever happens to the hypothesis, because it closes blocker
+  2's **silent** half. Under format-only, a server that strips a field we declared
+  reported **`applied`** while the fix had not landed; under the change-set it
+  reports `verify-failed` with `unexpectedly REMOVED`. Given that `POST /content`
+  demonstrably enriches and derives — it adds **16 keys we never send** (ADR
+  §1.4) — that is the branch most likely to fire in the field. **Never revert 2 to
+  back out 3.**
+- **`--no-overlay-labels` is not a convenience, it is the in-code backout** (ADR
+  §8 lever 1), which is why it must ship **with** the intent rather than being
+  added if needed. It defaults **off** (labels on), so the default behaviour is
+  the intended one and the lever is explicit.
+- **The value is `"1"`, never `"01"`, and it must never be read from `key`.** The
+  real bodies carry `key: "01"`; Yoto's own sample app writes
+  `overlayLabel: "1"` in the **same object literal** as `key: "01"`. `key` is a
+  padded identifier; `overlayLabel` is display text. ⚠ **Deriving the label from
+  the card's own `key` is forbidden**: one path reading `key` and another
+  computing from the index could disagree, and two runs would flip-flop forever.
+  The only input is the positional ordinal, through the one shared helper.
+- **An existing non-empty `overlayLabel` is never overwritten.** This is not only
+  idempotency — it stops the tool flip-flopping against **another editor**. A user
+  who types `"Chapter 1"` in the Yoto app would otherwise have it reset to `"1"`
+  on every run, forever.
+- **`declined` must never cost a card the proven fix.** An unprobeable artifact is
+  a correctness hazard and blocks the card; a label we cannot confidently number
+  is not. Without `declined`, an unusually-shaped card would lose access to the
+  **proven** format fix because of the **unproven** label one. The plan also
+  settles what the ADR left ambiguous: a multi-track chapter declines **both**
+  levels, because writing the chapter label alone would leave the
+  schema-**required** track field missing while making a later run's idempotency
+  check see a labelled chapter and skip — a partial job that permanently hides
+  itself.
+- **⚠ `_VOLATILE_TOP_KEYS` (`repair.py:400`) gains no entry in this work. Not
+  one.** It would blind `_strip_volatile` to `overlayLabel` in **both** bodies, so
+  the verify could no longer see the field it exists to control — including a
+  value Yoto changed on its own. Two prior agents flagged this independently. ADR
+  §3.5's rollback tolerance is **not** a precedent and the difference is
+  structural: rollback-path-only, single-field, presence-only, report-line-only.
+- **The structural test gap is the real lesson, and it is why a test comment is a
+  deliverable.** Nothing in the suite is an **absolute** equality against a
+  **populated** chapter or track. `test_repair.py:257` does compare a whole body,
+  but against a **deepcopy of its own input** plus one known delta — relative, so
+  structurally blind to a field its fixture never had. `test_repair.py:141` is
+  absolute but against an **empty** chapter list. (⚠ The ADR §4.1's phrasing,
+  *"the only exact-equality assertion in the suite,"* is false as written — there
+  are several; the absolute-vs-relative distinction is the accurate version and
+  the stronger argument.) **That is how a schema-required field stayed missing for
+  the life of the project**, and the new test must carry a comment saying so.
+- **⚠ Assert on what a report string CONTAINS, never on what it lacks.** Item 20's
+  guard asserted `"100 MB" not in msg` and a ruling **deleted that number**, so the
+  guard went **vacuous and still passed** (`SESSION_STATE.md:175-178`). The three
+  rewritten summary strings are the same shape in the same file. A string change
+  can silently disarm the test that guarded the string.
+- **The report strings are self-contradicting today, not merely stale.** A card
+  whose format is already right but whose labels are missing would print
+  *"already correct (all 18 tracks 'opus')"* **and then write.** `already` now
+  means *every declared intent is satisfied*, not *every track is opus*.
+- **These three strings are copy that no handoff package owns — cross-reference
+  item 26, do not open a second ownership question.** Item 26 already records that
+  three of `_friendly_http`'s sentences are reachable only from `yoto/repair.py`,
+  and notes it is *"not plain LOW because `repair.py` mutates live production
+  cards, where a misleading error is read by someone deciding whether a write
+  landed."* The new strings inherit that verbatim. **No Designer pass is needed
+  for this row** (ADR §4.4) — this is a maintainer CLI with no UX.
+- **Do NOT restructure the card.** The N-chapters × 1-track shape is canonical per
+  Yoto's own examples and is **not** the bug — the real bodies prove 1, 5 and 18
+  chapters respectively. Three dead ends are confirmed and must not be revisited:
+  `playbackType` (the server stamps `"linear"` on all three regardless of chapter
+  count), missing `chapter.display` (every chapter and track in all ten bodies
+  carries a resolved `display.icon16x16`), and "the segments never became
+  chapters".
+- **⚠ Only a physical player can close this, and nobody on this project has one.**
+  The hypothesis — that `overlayLabel` gates the knob-browse UI — is **inference
+  from a required field plus an official example**, ~75–80%. **No Yoto document
+  says it**, and Yoto's own description says *"used in the app"*, not *the
+  player*. The maintainer's **daughter's** household has the player and can run
+  the whole loop herself (`SESSION_STATE.md:215-255`). Test on **`1WCvI`**
+  (5 real chapters) — **`gzP2B` is useless for this**, it has 1 chapter and would
+  show nothing under any hypothesis. **The question that matters is whether the
+  offline download completes**, with wifi off, watching the download-cloud icon:
+  streaming in the phone app will likely work even on a malformed card, which is
+  why this bug survived three releases. **A card that plays in the app is NOT
+  evidence of a fix.** And the **Wild Robot confound is still live** — do not test
+  `1WCvI` against a second Wild Robot card made by the save-to-folder path.
+- **One rollout step answers an open question for free.** After the first
+  successful `--apply` on `gzP2B`, immediately `--rollback` the fresh backup:
+  `restored` → `POST /content` **replaces**; `verify-failed` naming `overlayLabel`
+  → it **merges**, and §3.6's tolerance is what keeps that from reading as a
+  failure. **Record which.** The tolerance ships either way.
+- **This arc owns the v0.1.14 bump, which corrects the ADR.** ADR §3.6 says *"no
+  version bump"* — right about `__ASSET_V__` (nothing under `server/static/` is
+  touched) and **wrong about the release**: `updater.py` can only see a tagged
+  release, and commit 1 changes every card the app makes from here on. ⚠ **Write
+  the release note honestly** — describe what the app now *sends*, never a knob
+  behaviour nobody has observed.
 
 ### Item 25 — briefing notes
 
