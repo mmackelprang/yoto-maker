@@ -763,7 +763,57 @@ def _print_card_result(res: CardResult) -> None:
     print()
 
 
+def _make_console_safe() -> None:
+    """Never let a card's own text crash the CLI. Call this FIRST in `main`.
+
+    Card and track titles come straight out of Yoto's JSON (`iter_tracks` at :317,
+    `_card_title` via :585 and :677), and `_diff_paths` (:460-478) `repr()`s
+    arbitrary card field values into the problem strings - and Python 3's `repr()`
+    does NOT escape printable non-ASCII, so `{a!r}` is no protection. When stdout is
+    a pipe, a file, or a legacy Windows console, its codec is the locale's (cp1252
+    on the maintainer's box) and the write raises UnicodeEncodeError.
+
+    THIS IS NOT COSMETIC. `main` prints each card's result at :831, AFTER
+    `repair_card` has already POSTed at :648. A crash here means the write landed
+    and the operator cannot tell whether it verified, whether a backup was written,
+    or which card to roll back. Wild Robot (1WCvI) carries U+1F916 in all five
+    track titles (issue #31).
+
+    WHY `errors=` AND NOT `encoding=`. Setting only the error handler cannot make
+    any currently-working output worse: where the stream is already UTF-8 the
+    handler never fires, and where it is not, an unencodable character becomes
+    `\\U0001f916` instead of an exception. Forcing `encoding="utf-8"` would also fix
+    the crash but can turn a real OEM console's correct output into mojibake, so it
+    is rejected. `backslashreplace` over `replace` because `?` destroys information
+    an operator may be using to identify which track is which.
+
+    WHY NOT THE 2026-07-22 APPROACH. `516cbf7` ("ASCII-safe CLI output") replaced
+    em-dashes with hyphens in THIS FILE'S OWN LITERALS - 26 lines, one file. Every
+    character it removed is encodable in cp1252; it was fixing OEM-console mojibake.
+    A literal sweep cannot reach text that arrives over the wire, so it never
+    covered this and a second sweep would not either. `0240cbb`'s pre-merge review
+    then cleared "Unicode track titles are safe" on the strength of
+    `logging_setup.py:22`'s `encoding="utf-8"` - true of the LOG FILE, and the
+    console `print()` path was never in its scope.
+
+    WHY NOT `$env:PYTHONUTF8=1`. It works, and it is the only reason this tool has
+    ever completed a run - but it lives in two prose lines (`SESSION_STATE.md:245`
+    and the 2026-09-10 ADR's own command at :77) and in no code. The original
+    runbook omits it, which is exactly how issue #31 was filed. A fix that depends
+    on the operator remembering an env var is not a fix.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:          # already-replaced stream, or a frozen build
+            continue
+        try:
+            reconfigure(errors="backslashreplace")
+        except (ValueError, OSError):    # a stream that refuses reconfiguration
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _make_console_safe()          # BEFORE any print, including argparse's own
     parser = argparse.ArgumentParser(
         prog="python -m yoto_maker.repair",
         description="Repair the declared audio format on existing Yoto cards (mp3 -> opus), in place.",
