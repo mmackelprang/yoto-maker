@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from yoto_maker.yoto import repair as repair_mod
+from yoto_maker.yoto.client import CardSummary, YotoError
 from yoto_maker.yoto.repair import CardPlan, CardResult, TrackDecision, TrackRef
 
 ROBOT = "\U0001f916"          # U+1F916; encodable in NO single-byte Windows codepage
@@ -64,3 +65,155 @@ def test_print_card_result_survives_a_track_title_the_console_cannot_encode(monk
     assert "Wild Robot" in written
     assert ROBOT not in written                 # it could not be; it was escaped
     assert "\\U0001f916" in written             # losslessly, not dropped to '?'
+
+
+def test_the_backup_path_line_survives_a_username_the_console_cannot_encode(monkeypatch):
+    """`repair.py:742` - `print(f"  backup: {res.backup_path}")`.
+
+    The backup path is built from `get_config().data_dir`, i.e. it contains the
+    Windows account name, which is outside this project's control entirely. This
+    line is the one an operator needs MOST after a failed apply: it is the only
+    place the rollback argument is printed.
+    """
+    stream = _cp1252_stdout()
+    monkeypatch.setattr("sys.stdout", stream)
+    repair_mod._make_console_safe()
+    repair_mod._print_card_result(_result(backup_path=Path(f"C:/Users/{ROBOT}/b.json")))
+
+    written = stream.buffer.getvalue().decode("cp1252")
+    assert "backup: " in written
+    assert "b.json" in written                  # the whole path survived, not a prefix
+    assert ROBOT not in written
+    assert "\\U0001f916" in written
+
+
+def test_a_problem_string_built_by_repr_survives(monkeypatch):
+    """`repair.py:762` - THE WIDEST HOLE. `res.problems` is built by `_diff_paths`
+    as `f"{path}: {a!r} -> {b!r}"` over ARBITRARY card field values, so any string
+    Yoto ever puts in any field reaches this print.
+
+    The canary below is the point of the test: Python 3's `repr()` does NOT escape
+    printable non-ASCII, so `!r` is no protection whatsoever. If that ever changes,
+    this test says so instead of quietly stopping to exercise the hole.
+    """
+    assert ROBOT in repr(TITLE), "repr() now escapes non-ASCII; this row is moot"
+
+    stream = _cp1252_stdout()
+    monkeypatch.setattr("sys.stdout", stream)
+    repair_mod._make_console_safe()
+    repair_mod._print_card_result(_result(problems=[f"/title: 'a' -> {TITLE!r}"]))
+
+    written = stream.buffer.getvalue().decode("cp1252")
+    assert "! /title: 'a' ->" in written
+    assert ROBOT not in written
+    assert "\\U0001f916" in written
+
+
+# --------------------------------------------------------------------------- #
+# The `main`-driving rows. `main` calls `_make_console_safe()` itself, so these
+# also prove the call is wired up and not merely present.
+#
+# `setup_logging` (:780), `YotoClient` (:781) and `_backup_dir` (:826, which calls
+# `get_config`) are all monkeypatched, so no test here touches the network, the
+# real log file, or the real %LOCALAPPDATA%\YotoMaker\repair-backups tree.
+# --------------------------------------------------------------------------- #
+class _FakeClient:
+    """The whole surface `main` touches before it reaches a card."""
+
+    def __init__(self, summaries=()):
+        self._summaries = list(summaries)
+
+    def is_connected(self) -> bool:
+        return True
+
+    def list_my_cards(self) -> list:
+        return list(self._summaries)
+
+
+def _drive_main(monkeypatch, argv, *, summaries=(), backup_dir=None, repair_card=None):
+    """Run `main(argv)` against a forced cp1252 stdout and no real Yoto, logging or
+    backup directory. Returns (exit_code, what was written, decoded)."""
+    stream = _cp1252_stdout()
+    monkeypatch.setattr("sys.stdout", stream)
+    monkeypatch.setattr(repair_mod, "setup_logging", lambda *a, **k: None)
+    monkeypatch.setattr(repair_mod, "YotoClient", lambda *a, **k: _FakeClient(summaries))
+    monkeypatch.setattr(repair_mod, "_backup_dir", lambda: backup_dir)
+    if repair_card is not None:
+        monkeypatch.setattr(repair_mod, "repair_card", repair_card)
+    code = repair_mod.main(argv)
+    return code, stream.buffer.getvalue().decode("cp1252")
+
+
+def test_list_survives_a_card_title_the_console_cannot_encode(monkeypatch):
+    """`repair.py:793` - `--list` prints `s.title` straight from GET /content/mine.
+
+    `--list` is the command the CLI's own error at :716 tells the operator to run
+    ("Try --list, or pass --card-id"), so a crash here is a dead end: the recovery
+    path for one failure would be the second failure.
+    """
+    code, written = _drive_main(
+        monkeypatch, ["--list"],
+        summaries=[CardSummary("1WCvI", f"Wild Robot {ROBOT}", created_at="2026-07-22")])
+
+    assert code == 0
+    assert "1WCvI" in written
+    assert "(created 2026-07-22)" in written     # the whole line, not a truncation
+    assert ROBOT not in written
+    assert "\\U0001f916" in written
+
+
+def test_an_ambiguous_title_reports_every_candidate_without_crashing(monkeypatch):
+    """`repair.py:804` - `print(str(exc))` for a `resolve_targets` failure. The
+    ambiguous-title raise at `:723` interpolates EVERY candidate's `m.title`, so one
+    unencodable card in the account breaks disambiguation for all of them.
+
+    This is a refuse-to-guess path - the CLI will never auto-pick a card to mutate -
+    so the message IS the entire remedy. Crashing instead of printing it leaves the
+    operator with two cards, no card ids, and no way forward.
+    """
+    code, written = _drive_main(
+        monkeypatch, ["--title", "wild robot"],
+        summaries=[CardSummary("1WCvI", f"Wild Robot {ROBOT} (part 1)", track_count=5),
+                   CardSummary("7FcVe", f"Wild Robot {ROBOT} (part 2)", track_count=18)])
+
+    assert code == 2
+    assert "matched 2 cards" in written
+    assert "1WCvI" in written and "7FcVe" in written     # both candidates, not one
+    assert ROBOT not in written
+    assert written.count("\\U0001f916") == 2            # escaped per candidate
+
+
+def test_a_yoto_error_from_repair_card_does_not_crash_the_error_line(monkeypatch, tmp_path):
+    """`repair.py:828` - `print(f"{card_id}: ERROR - {exc}")`. A `YotoError`'s text
+    is `_friendly_http`'s prose (`client.py:587-590`, `:594-597`), which carries
+    U+2019 and U+2014.
+
+    ⚠ THE PLAN'S ROW FOR THIS SITE IS NOT SELF-SUFFICIENT, and this test is written
+    to say so rather than to pass vacuously. The message it proposes - "Yoto
+    wouldn't take that - too big." with U+2019 and U+2014 - CANNOT crash a cp1252
+    console: both characters are in cp1252 (0x92 and 0x97), which is §1.5's own
+    point about why `516cbf7` was fixing a different problem. A test raising only
+    that would pass identically with the guard deleted.
+
+    So the message carries the card title as well, and the assertions pin BOTH
+    halves, which is strictly more than the row asked for:
+
+      * the typography survives as REAL GLYPHS - evidence that `errors=` did not
+        damage output that already worked, i.e. the OEM-console mojibake that
+        `encoding="utf-8"` would have risked;
+      * the emoji survives as an ESCAPE rather than an exception.
+
+    Do NOT edit `client.py` to fix this. The guard makes that copy safe without
+    touching it, and its ownership is item 26's open question (plan §1.9).
+    """
+    def _boom(*a, **k):
+        raise YotoError(f"Yoto wouldn\u2019t take that \u2014 it was too big: {TITLE}")
+
+    code, written = _drive_main(monkeypatch, ["--card-id", "1WCvI"],
+                                backup_dir=tmp_path, repair_card=_boom)
+
+    assert code == 1
+    assert "1WCvI: ERROR - " in written
+    assert "wouldn\u2019t take that \u2014 it was too big" in written   # glyphs, not escapes
+    assert ROBOT not in written
+    assert "\\U0001f916" in written
