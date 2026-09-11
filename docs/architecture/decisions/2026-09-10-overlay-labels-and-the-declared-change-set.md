@@ -782,7 +782,7 @@ Also in scope: `test_repair.py:145` `test_real_fixture_pins_shape_trackurl_and_f
   repair path was the load-bearing half — without it there would have been nothing to test.**
 - **The create path ships value alone** (commit 1), for every card made from here on, whatever
   happens to the repair half.
-- **`declined` keeps the proven fix available** on a card the unproven one cannot number.
+- **`declined` keeps the format fix available** on a card the label intent cannot number.
 
 ### 4.4 Neutral
 
@@ -819,7 +819,10 @@ Also in scope: `test_repair.py:145` `test_real_fixture_pins_shape_trackurl_and_f
 - **Ground truth read for this ADR:** the ten real `GET /card` bodies in
   `%LOCALAPPDATA%\YotoMaker\repair-backups\` (§1.1, §1.4); `https://yoto.dev/myo/how-playlists-work.md`
   and `yotoplay/examples` `vanilla-js-html/src/upload.js`, both fetched 2026-09-10 (§1.2).
-- **Doc to update:** `docs/DESIGN.md:94`'s one-line `POST /content` shape description.
+- ✅ **Doc to update — DONE.** `docs/DESIGN.md:94`'s one-line `POST /content` shape description
+  now reads *"and `overlayLabel` at both levels — the label the player's knob browses"*. That
+  parenthetical was an **assertion** when written and is **confirmed on hardware as of
+  2026-09-11**; it needs no further edit.
 - ✅ **CLOSED 2026-09-11 — the physical-player test, which was the gate on the whole
   hypothesis, has been run.** This line previously read *"Open and still the gate on the whole
   hypothesis: `SESSION_STATE.md:215-255` — the physical-player test. Never closed."* It ran on
@@ -858,6 +861,15 @@ Also in scope: `test_repair.py:145` `test_real_fixture_pins_shape_trackurl_and_f
    nothing for it to browse. No claim is made here about which of the two it was, because the
    answer does not depend on it.
 
+   ⚠ **`ezeaM` is the 18-chapter BFG card, and everywhere else in this ADR that card is called
+   `7FcVe` — which is a STALE ID, not a second card.** `7FcVe` is a dead pre-re-make card:
+   abandoned 2026-07-22, absent from `GET /content/mine`, and now 404 on `GET /card`. The
+   correction is recorded in `docs/BUILDER_QUEUE.md` (*"the `7FcVe` mystery is SOLVED"*) and is
+   **not** back-propagated into this ADR's earlier sections, which date correctly to before it
+   was found. Read `7FcVe` at `:79`, `:106`, `:128` and in open question 1 as *"the 18-chapter
+   card, then believed to be `7FcVe`"*. **This exact stale ID propagated through four agents on
+   this arc because it lived only in untracked prose — do not let it look like two cards.**
+
    ⚠ **The negative branch of §8 was not taken, but §8 stays and so does the flag** — see the
    box at the top of this file. And **nothing here speaks to the offline download**: that was
    always a separate question on the same checklist and it remains open.
@@ -866,13 +878,22 @@ Also in scope: `test_repair.py:145` `test_real_fixture_pins_shape_trackurl_and_f
    apply on `gzP2B`, immediately `--rollback` the fresh backup and read the outcome.
    `restored` → replace; `verify-failed` naming `overlayLabel` → merge. **Builder verifies
    during the staged rollout; the tolerance ships either way.**
+   ✅ **CLOSED 2026-09-10 — it REPLACES.** The cheap test above was run exactly as written on
+   `gzP2B`: apply → rollback the fresh backup → re-read. The label was **gone** and `_diff_paths`
+   reported **no difference at all** against the pre-write backup, then it was re-applied. **So
+   §3.5's rollback tolerance never fires against today's API** — it ships as correct,
+   test-pinned, unexercised insurance. *(This closure pre-dates the 2026-09-11 hardware test and
+   is unrelated to it; it was left stale here and is recorded on the first pass that reopened
+   this file.)*
 4. **Does Yoto render `"1"` or would it accept `"01"`?** §3.4 decides unpadded on the
    strength of Yoto's own sample, and the decision is **reversible in one line** of
    `overlay_label()`. Worth a look on the player during the test of question 2, but it does
-   not gate anything. **Partially informed 2026-09-11, still open:** the unpadded form
-   demonstrably *works* — a list built from it rendered and was selectable — and nothing about
-   its appearance was reported as wrong. But the two forms were **not compared**, so `"01"` is
-   untested rather than ruled out. Unchanged conclusion, one line if it ever matters.
+   not gate anything. **Weakly informed 2026-09-11, still open:** the unpadded form
+   **did not prevent the list from appearing or being selected.** That is all it established —
+   **its on-screen appearance was not reported on in either direction**, because nobody was
+   asked to look at the rendering, and the two forms were never compared. So `"01"` is
+   **untested, not ruled out**, and the absence of a complaint is not evidence. Unchanged
+   conclusion, one line if it ever matters.
 5. **Should `overlayLabelOverride` ever be written?** Both levels have it, both
    `.nullable().optional()` (§1.2). **No** — out of scope, and named here only so a future
    reader knows it was seen and declined, not missed.
@@ -974,9 +995,13 @@ worth stating so nobody re-derives them as an argument for deletion:
 1. **It is the record of having hedged correctly.** The confidence was ~75–80% when the
    decision was made; that it came up on the right side does not make the hedge wrong, and a
    file that quietly erases its own caution teaches the next reader nothing.
-2. **Levers 2 and 4 are not hypothesis-specific.** The third branch of the decision rule below
-   — *anything on a repaired card regresses* — is still live, because `repair.py` still writes
-   to live cards and something unrelated can still go wrong on one.
+2. **Lever 2 is not hypothesis-specific, and the third branch of the decision rule below —
+   *anything on a repaired card regresses* — is still live**, because `repair.py` still writes
+   to live cards and something unrelated can still go wrong on one. That branch calls for
+   **lever 2 immediately, then 1 and 3**. (Lever 4 is *not* in it, and lever 4 is the most
+   hypothesis-specific lever of the four — which is the point: **levers 1 and 3 are reachable
+   from a non-hypothesis branch, so do not read them as deletable now that the hypothesis
+   holds.**)
 3. **The flag is cheap and load-bearing in tests.** Removing it is a code change with no
    benefit, and it is the only way to exercise the format-only path.
 

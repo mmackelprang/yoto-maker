@@ -18,7 +18,7 @@ Built to be usable by someone with little computer knowledge.
   that only what it meant to change actually changed, and does nothing at all if
   the card is already correct.
 
-### ✅ Confirmed on a real Yoto player — 2026-09-11
+### ✅ The chapter list — confirmed on a real Yoto player, 2026-09-11
 
 **Twisting the button on the player brings up the chapter list, and pressing it
 picks a chapter.** This was tried on a physical Yoto player on **2026-09-11**, on
@@ -290,10 +290,11 @@ Adding audio, pictures, and printing labels all work without it.
   library, per-track icons, and label PDF are all verified end-to-end.
 - The Yoto upload flow is implemented against Yoto's documented API and covered
   by tests with mocked responses; live upload needs your Client ID (above).
-- **The player's chapter list — confirmed on real hardware 2026-09-11.** On a card
-  numbered by v0.1.14, twisting the player's right-hand button brings up the
-  chapter list, and pressing it selects a chapter. See
-  *✅ Confirmed on a real Yoto player* under v0.1.14 above.
+- **The player's chapter list — confirmed on real hardware 2026-09-11.** On a
+  **card with more than one chapter**, numbered by v0.1.14, twisting the player's
+  right-hand button brings up the chapter list, and pressing it selects a chapter.
+  (A card with only one chapter has nothing to list, and never did.) See
+  *✅ The chapter list — confirmed on a real Yoto player* under v0.1.14 above.
 
 ## ❓ Not verified in v0.1.14
 
@@ -312,9 +313,9 @@ Adding audio, pictures, and printing labels all work without it.
   unpadded — `1`, `2`, … `18` — on the strength of Yoto's own example code, which
   puts `1` beside the padded `01` it uses for its internal name of the same track.
   A chapter list built from the unpadded form has now been seen working on a real
-  player and nothing about it was reported as looking wrong — but nobody compared
-  the two forms, so the padded alternative is untested rather than ruled out. If it
-  ever looks wrong, it is a one-line change.
+  player — but **nobody was asked to look at how the numbers themselves appear**, and
+  the two forms were never compared, so the padded alternative is untested rather
+  than ruled out. If it ever looks wrong, it is a one-line change.
 - **Whether Yoto keeps or discards a field left out of an update.** This matters
   only to undoing a repair: a backup taken before this release does not contain
   the new numbering, so restoring one asks Yoto to put the card back without it.
