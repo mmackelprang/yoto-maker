@@ -56,3 +56,10 @@ ui_*.png
 
 # Root-level screenshots from UAT (real assets live in subdirs)
 /*.png
+
+# Private working notes — never publish. These are untracked by intent, and on
+# 2026-09-10 a `git add -A` swept both onto the public remote for ~20 minutes.
+# Ignoring them makes that mistake impossible rather than merely discouraged.
+# HOW-TO-TEST-THE-CARDS.md is addressed to a child by name.
+/SESSION_STATE.md
+/HOW-TO-TEST-THE-CARDS.md
