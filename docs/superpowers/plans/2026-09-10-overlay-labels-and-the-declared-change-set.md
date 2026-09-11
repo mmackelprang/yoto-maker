@@ -1470,6 +1470,14 @@ Yoto's own player software expects"* — **not** *"twisting the knob now brings 
 chapter list."* `SESSION_STATE.md:254-255`'s rule applies with full force: a card that
 plays in the phone app is not evidence of anything.
 
+✅ **OVERTAKEN BY EVENTS 2026-09-11 — and the rule above still binds, just not here.** The
+knob behaviour **has** now been observed on a physical player, so the release note states it,
+as a **dated hardware confirmation of the chapter list only**. **Do not read the paragraph
+above as forbidding that** — it forbade claiming an *unobserved* behaviour, and this one was
+observed. The same rule still bites in full on what was **not** observed: the **offline
+download** (the phone-app sentence above applies to it word for word) and the **self-update
+swap-and-relaunch** step.
+
 ### Task 3.9 — Close item 29
 
 Mark ✅ with the PR link, add the Shipped row, and record the test count. The row moves
@@ -1543,6 +1551,27 @@ step says `--apply`.**
 
 ### 3.C ⚠ Verifiable **only** on physical hardware — and nobody on this project has a player
 
+> ✅ **RUN ON HARDWARE 2026-09-11 — C1 PASSED. C3 WAS NOT RUN.** The maintainer's daughter
+> tested on the physical player: **twisting the right-hand knob brings up the chapter list,
+> and pressing it selects a chapter.** So **C1 is answered YES** and ADR open question 2 is
+> closed.
+>
+> ⚠ **C1's *How* column below names `1WCvI`, but the card actually used is NOT claimed here.**
+> The outcome constrains it without testimony: only a multi-chapter labelled card can produce
+> a list at all, so it was `1WCvI` (5 chapters) or `ezeaM` (18 chapters, the BFG — the card
+> this plan elsewhere calls `7FcVe`, a stale ID). **`gzP2B` is excluded by the result itself.**
+> Nothing depends on which of the two, so no guess is recorded.
+>
+> ⚠ **C3 — the offline download — was NOT exercised and is still the open question**; it was
+> always separate from C1 and nothing was watched with wi-fi off. **C2 and C5 were not reported
+> on.** **C4 is only weakly informed:** the unpadded form did not prevent the list from
+> appearing or being selected, but **its on-screen appearance was not reported on in either
+> direction** — nobody was asked to look at the rendering, and the two forms were never
+> compared, so `"01"` is untested rather than ruled out.
+>
+> The section below is left exactly as written, because it is the test design that produced
+> the answer.
+
 **The entire hypothesis is unfalsifiable in this repo.** `overlayLabel` gating the
 knob-browse UI is **inference from a required field plus an official example** — no
 Yoto document says it, and Yoto's own description says *"used in the app"*, not *the
@@ -1601,6 +1630,11 @@ this ADR"* — the row exists, but it and the 2026-07-21 row both still read `pr
 **Open question 2** stays open and only hardware closes it. **Open question 5**
 (`overlayLabelOverride`) stands declined.
 
+✅ **BOTH ARE NOW CLOSED — the sentence above is as-planned, not as-is.** **OQ3 closed
+2026-09-10** by B10 exactly as predicted: `POST /content` **REPLACES**, it does not merge.
+**OQ2 closed 2026-09-11 on hardware** — the knob brings up the chapter list (ADR §6.2).
+OQ5 still stands declined.
+
 ---
 
 ## 5. Success criteria
@@ -1631,7 +1665,11 @@ this ADR"* — the row exists, but it and the 2026-07-21 row both still read `pr
 13. All three live cards move from `already correct` to `WOULD make N change(s)`, and
     back to `already correct` under `--no-overlay-labels`.
 14. v0.1.14 is tagged with an `.exe` asset, and the release note claims **only** what
-    the app now sends — never a knob behaviour nobody has observed.
+    the app now sends — never a knob behaviour nobody has observed. ✅ **Met as written at
+    release. Amended 2026-09-11:** the knob behaviour has since been **observed on hardware**,
+    so the note now also states that, dated. The criterion was *"never claim the unobserved"*,
+    not *"never mention the knob"* — it still binds the offline download and the self-update
+    step, neither of which is claimed.
 15. Every §3.7 record amendment landed; both `architecture/README.md` rows read
     `accepted`.
 16. The whole suite green. Baseline 401.
@@ -1655,3 +1693,7 @@ this ADR"* — the row exists, but it and the 2026-07-21 row both still read `pr
 - **Still open, and neither is this plan's to close:** whether `overlayLabel` gates the
   knob UI (hardware only, §3.C) and whether `POST /content` replaces or merges (B10
   answers it for free during the rollout; the tolerance ships either way).
+  ✅ **BOTH HAVE SINCE BEEN CLOSED, and neither was closed by this plan — as predicted.**
+  Replace-vs-merge: **replaces**, closed 2026-09-10 by B10. The knob UI: **yes, it gates
+  it**, closed 2026-09-11 on hardware (ADR §6.2). **What is still open is the offline
+  download**, which was never one of these two.

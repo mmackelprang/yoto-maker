@@ -21,6 +21,30 @@ absent or empty**. Ship the refactor and the intent as **two independently rever
 commits**, and gate the whole thing behind a `--no-overlay-labels` flag so the unproven half
 backs out without a revert.
 
+> ✅✅ **THE HYPOTHESIS IS CONFIRMED, ON HARDWARE — 2026-09-11.** `overlayLabel` **does**
+> gate the player's chapter-browse UI. On a **physical Yoto player**, on a multi-chapter card
+> this arc had labelled: **twisting the right-hand knob brings up the chapter list, and
+> pressing the knob selects a chapter.** Observed by the maintainer's daughter, 2026-09-11.
+> The result is **self-validating as to which card was used** — only a multi-chapter labelled
+> card can produce a chapter list at all under any hypothesis, so `gzP2B` (1 chapter) is
+> excluded by the outcome itself.
+>
+> - **Open question 2 is CLOSED — §6.2.**
+> - **§4.2.2 — *"we are writing an unproven field to live production cards"* — is
+>   DISCHARGED.** The field is no longer unproven.
+> - **The ~75–80% confidence figure is left standing wherever it appears** (§1.2, §6.2, §8)
+>   and is now **historical rather than live**. It was the right confidence to hold on
+>   2026-09-10, it is why §8 exists and why §3.7 split the commits the way it did, and
+>   deleting it would erase the only record that the uncertainty was handled properly. Read
+>   those figures as *"what was known then"*.
+> - **§8's backout plan stays, and `--no-overlay-labels` stays.** Their justification is now
+>   historical, not live. **Do not remove the flag.**
+>
+> ⚠ **What this test does NOT prove, and must not be read as proving:** that the
+> **offline-download** behaviour changed (§8's closing ⚠ still stands in full), or anything
+> about the self-update swap-and-relaunch step. The proven claim is narrow and exact: *the
+> player renders a browse list from `overlayLabel`, and selection from that list works.*
+>
 > ✅ **Open question 1 is CLOSED and §1.1 has been CORRECTED — 2026-09-10.** This box
 > originally warned that no repair write had ever landed and that this feature might
 > therefore be **inert**. **That was wrong.** The live read-only check reports
@@ -117,6 +141,10 @@ ahead of §3.7's sequence. After it lands the env var is optional: it only turns
 remains true, and it is Open question 2, not this one. What has changed is that a
 **repaired** card demonstrably exists to test.
 
+✅ **Superseded 2026-09-11: that test has now been run, and the chapter-list half of it passed
+(§6.2).** The sentence above is kept because it dates correctly to 2026-09-10. The
+offline-download half of the same checklist is still never-closed.
+
 ### 1.2 The finding this ADR acts on (established elsewhere; verified here only where cited)
 
 Yoto's published schema — `https://yoto.dev/myo/how-playlists-work.md`, fetched 2026-09-10 —
@@ -133,6 +161,15 @@ The document contains **no prose** about what `overlayLabel` does, where it rend
 relationship to the knob / chapter browsing. That absence is load-bearing: the hypothesis
 that this field gates the knob-browse UI is **inference from a required field plus an official
 example**, not a documented contract. It is ~75–80%, and §8 is written accordingly.
+
+✅ **CONFIRMED ON HARDWARE 2026-09-11 — and the paragraph above is left exactly as written.**
+The inference was correct: on a physical player, a multi-chapter card carrying `overlayLabel`
+brings up the chapter list when the right-hand knob is twisted, and pressing the knob selects
+a chapter. **Both facts in that paragraph remain true** — Yoto still documents nothing about
+this field's relationship to the knob, and the decision to ship it *was* taken on inference
+rather than on a contract. What has changed is only the last sentence's ~75–80%: that was the
+honest confidence on 2026-09-10 and it is **kept as the record of having been appropriately
+uncertain**, not as a live estimate. It is also why §8 exists at all, and §8 stays.
 
 `yoto_maker/yoto/models.py` sends neither level. Verified independently here: `git log --all -S
 overlayLabel` returns **nothing**, and a repo-wide grep for `overlayLabel|overlay_label`
@@ -693,17 +730,26 @@ Also in scope: `test_repair.py:145` `test_real_fixture_pins_shape_trackurl_and_f
    ⚠ **`_VOLATILE_TOP_KEYS` (`:400`) must not gain an entry in this work.** If a future agent
    proposes it, the answer is in §1.3, and §3.5's rollback tolerance is **not** a precedent
    for it: rollback-path-only, single-field, presence-only, report-line-only.
-2. **We are writing an unproven field to live production cards.** §1.2: no Yoto document says
-   `overlayLabel` gates the knob UI, and the official description says *app*, not *player*.
-   §8 is the answer, and it is why commit 1 is separable and why the flag exists.
+2. ✅ **~~We are writing an unproven field to live production cards.~~ DISCHARGED
+   2026-09-11 — the field is proven.** The original concern is preserved below because it is
+   the reason §8 and the flag exist, but it no longer describes the present: *"§1.2: no Yoto
+   document says `overlayLabel` gates the knob UI, and the official description says app, not
+   player. §8 is the answer, and it is why commit 1 is separable and why the flag exists."*
+   **A physical player has now been driven** (2026-09-11): the knob brings up the chapter list
+   on a labelled multi-chapter card and selects from it. The field written to those live cards
+   is **schema-required, correctly valued, and now demonstrably load-bearing**. Yoto still
+   documents nothing about it — so the *documentation* gap in §1.2 is unchanged; what is
+   discharged is the *risk*, which was the cost this item was recording.
 3. ✅ **~~If Open question 1 returns reading (B), this feature is inert.~~ SETTLED
    2026-09-10 — it does not.** Yoto demonstrably persists a client-supplied track `format`
    (§1.1: all 24 tracks on all three cards read `opus`), so the mechanism `overlayLabel`
-   relies on is confirmed and **commit 3 IS to be built**. What remains unproven is not the
-   *mechanism* but the *hypothesis* — whether the field gates the knob-browse UI — which is
-   item 2 above and is settled only on a physical player. The distinction matters: a
-   mechanism failure would have made this work pointless, whereas a hypothesis failure
-   leaves a schema-required field correctly populated and costs only levers 1 and 3 (§8).
+   relies on is confirmed and **commit 3 IS to be built**. What remained unproven was not the
+   *mechanism* but the *hypothesis* — whether the field gates the knob-browse UI — which was
+   item 2 above and was settleable only on a physical player. The distinction mattered: a
+   mechanism failure would have made this work pointless, whereas a hypothesis failure would
+   have left a schema-required field correctly populated and cost only levers 1 and 3 (§8).
+   ✅ **Both halves are now closed: the mechanism on 2026-09-10 (here) and the hypothesis on
+   2026-09-11 (item 2 above, §6.2).** Neither failure branch was taken.
 4. **`already` changes meaning in a shipped, user-visible report.** Someone who has read
    *"already correct (all 18 tracks 'opus')"* before will read a different sentence. Small, but
    it is the operator's only window into a tool that mutates live cards.
@@ -731,10 +777,12 @@ Also in scope: `test_repair.py:145` `test_real_fixture_pins_shape_trackurl_and_f
   (§3.4, §4.1).
 - **The three live cards become testable.** The knob hypothesis cannot be falsified without a
   card that has the field, and the repair path is the only way to get one onto the
-  granddaughter's player without re-making cards by hand.
+  granddaughter's player without re-making cards by hand. ✅ **This is what actually happened:
+  a repaired multi-chapter card settled the hypothesis on hardware 2026-09-11 (§6.2). The
+  repair path was the load-bearing half — without it there would have been nothing to test.**
 - **The create path ships value alone** (commit 1), for every card made from here on, whatever
   happens to the repair half.
-- **`declined` keeps the proven fix available** on a card the unproven one cannot number.
+- **`declined` keeps the format fix available** on a card the label intent cannot number.
 
 ### 4.4 Neutral
 
@@ -771,9 +819,16 @@ Also in scope: `test_repair.py:145` `test_real_fixture_pins_shape_trackurl_and_f
 - **Ground truth read for this ADR:** the ten real `GET /card` bodies in
   `%LOCALAPPDATA%\YotoMaker\repair-backups\` (§1.1, §1.4); `https://yoto.dev/myo/how-playlists-work.md`
   and `yotoplay/examples` `vanilla-js-html/src/upload.js`, both fetched 2026-09-10 (§1.2).
-- **Doc to update:** `docs/DESIGN.md:94`'s one-line `POST /content` shape description.
-- **Open and still the gate on the whole hypothesis:** `SESSION_STATE.md:215-255` — the
-  physical-player test. Never closed.
+- ✅ **Doc to update — DONE.** `docs/DESIGN.md:94`'s one-line `POST /content` shape description
+  now reads *"and `overlayLabel` at both levels — the label the player's knob browses"*. That
+  parenthetical was an **assertion** when written and is **confirmed on hardware as of
+  2026-09-11**; it needs no further edit.
+- ✅ **CLOSED 2026-09-11 — the physical-player test, which was the gate on the whole
+  hypothesis, has been run.** This line previously read *"Open and still the gate on the whole
+  hypothesis: `SESSION_STATE.md:215-255` — the physical-player test. Never closed."* It ran on
+  2026-09-11 and the knob brings up the chapter list (§6.2). ⚠ **Only the chapter-list half of
+  that checklist is answered.** Its offline-download question (wi-fi off, watch the
+  download-cloud icon) is **untouched by this result** and is still open.
 
 ---
 
@@ -787,18 +842,58 @@ Also in scope: `test_repair.py:145` `test_real_fixture_pins_shape_trackurl_and_f
    **blocker 1 (§1.3) bites on all three cards today** — which is what makes the second
    decision axis (§3.2) mandatory rather than defensive. Full evidence, plus the two code
    facts that explain why the original on-disk inference failed: **§1.1**.
-2. **Does `overlayLabel` actually gate the knob-browse UI?** ~75–80%, and no Yoto document
-   says so (§1.2). **Settled only by the physical-player test** (`SESSION_STATE.md:232-236`);
-   **the granddaughter's household decides it.** §8 is what happens on a negative.
+2. ✅ **CLOSED 2026-09-11 — YES, on hardware. `overlayLabel` gates the knob-browse UI.**
+   The question as asked was *"Does `overlayLabel` actually gate the knob-browse UI? ~75–80%,
+   and no Yoto document says so (§1.2). Settled only by the physical-player test
+   (`SESSION_STATE.md:232-236`); the granddaughter's household decides it. §8 is what happens
+   on a negative."* It was settled exactly there, by exactly them.
+
+   **The evidence, stated as what was observed rather than as a conclusion:** on a physical
+   Yoto player, on a multi-chapter card this arc had labelled, **twisting the right-hand knob
+   brought up the chapter list, and pressing the knob selected a chapter.** Tested by the
+   maintainer's daughter, 2026-09-11. The before state is issue #31 itself — the same class of
+   card, unlabelled, produced no list at all — so this is a genuine before/after on the one
+   variable this arc changed.
+
+   **Which card: answered by the outcome, not by testimony.** A chapter list can only appear on
+   a multi-chapter card, so the card was `1WCvI` (5 chapters) or `ezeaM` (18 chapters), and
+   `gzP2B` (1 chapter) is **excluded by the result itself** — under any hypothesis there is
+   nothing for it to browse. No claim is made here about which of the two it was, because the
+   answer does not depend on it.
+
+   ⚠ **`ezeaM` is the 18-chapter BFG card, and everywhere else in this ADR that card is called
+   `7FcVe` — which is a STALE ID, not a second card.** `7FcVe` is a dead pre-re-make card:
+   abandoned 2026-07-22, absent from `GET /content/mine`, and now 404 on `GET /card`. The
+   correction is recorded in `docs/BUILDER_QUEUE.md` (*"the `7FcVe` mystery is SOLVED"*) and is
+   **not** back-propagated into this ADR's earlier sections, which date correctly to before it
+   was found. Read `7FcVe` at `:79`, `:106`, `:128` and in open question 1 as *"the 18-chapter
+   card, then believed to be `7FcVe`"*. **This exact stale ID propagated through four agents on
+   this arc because it lived only in untracked prose — do not let it look like two cards.**
+
+   ⚠ **The negative branch of §8 was not taken, but §8 stays and so does the flag** — see the
+   box at the top of this file. And **nothing here speaks to the offline download**: that was
+   always a separate question on the same checklist and it remains open.
 3. **Is `POST /content` a replace or a merge for the inner card object?** Drives whether
    §3.5's rollback tolerance ever fires. **Cheap test:** after the first successful label
    apply on `gzP2B`, immediately `--rollback` the fresh backup and read the outcome.
    `restored` → replace; `verify-failed` naming `overlayLabel` → merge. **Builder verifies
    during the staged rollout; the tolerance ships either way.**
+   ✅ **CLOSED 2026-09-10 — it REPLACES.** The cheap test above was run exactly as written on
+   `gzP2B`: apply → rollback the fresh backup → re-read. The label was **gone** and `_diff_paths`
+   reported **no difference at all** against the pre-write backup, then it was re-applied. **So
+   §3.5's rollback tolerance never fires against today's API** — it ships as correct,
+   test-pinned, unexercised insurance. *(This closure pre-dates the 2026-09-11 hardware test and
+   is unrelated to it; it was left stale here and is recorded on the first pass that reopened
+   this file.)*
 4. **Does Yoto render `"1"` or would it accept `"01"`?** §3.4 decides unpadded on the
    strength of Yoto's own sample, and the decision is **reversible in one line** of
    `overlay_label()`. Worth a look on the player during the test of question 2, but it does
-   not gate anything.
+   not gate anything. **Weakly informed 2026-09-11, still open:** the unpadded form
+   **did not prevent the list from appearing or being selected.** That is all it established —
+   **its on-screen appearance was not reported on in either direction**, because nobody was
+   asked to look at the rendering, and the two forms were never compared. So `"01"` is
+   **untested, not ruled out**, and the absence of a complaint is not evidence. Unchanged
+   conclusion, one line if it ever matters.
 5. **Should `overlayLabelOverride` ever be written?** Both levels have it, both
    `.nullable().optional()` (§1.2). **No** — out of scope, and named here only so a future
    reader knows it was seen and declined, not missed.
@@ -892,6 +987,26 @@ directed on 2026-09-10.
 
 ## 8. Backout plan
 
+✅ **HISTORICAL AS OF 2026-09-11 — and kept in full, deliberately.** The hypothesis this plan
+hedged against is **confirmed on hardware** (§6.2), so no lever below is expected to fire. The
+section is **not** deleted and **`--no-overlay-labels` is NOT removed**, for three reasons
+worth stating so nobody re-derives them as an argument for deletion:
+
+1. **It is the record of having hedged correctly.** The confidence was ~75–80% when the
+   decision was made; that it came up on the right side does not make the hedge wrong, and a
+   file that quietly erases its own caution teaches the next reader nothing.
+2. **Lever 2 is not hypothesis-specific, and the third branch of the decision rule below —
+   *anything on a repaired card regresses* — is still live**, because `repair.py` still writes
+   to live cards and something unrelated can still go wrong on one. That branch calls for
+   **lever 2 immediately, then 1 and 3**. (Lever 4 is *not* in it, and lever 4 is the most
+   hypothesis-specific lever of the four — which is the point: **levers 1 and 3 are reachable
+   from a non-hypothesis branch, so do not read them as deletable now that the hypothesis
+   holds.**)
+3. **The flag is cheap and load-bearing in tests.** Removing it is a code change with no
+   benefit, and it is the only way to exercise the format-only path.
+
+**Read everything below as "what was planned for, and why", not as "what is about to happen".**
+
 The hypothesis is ~75–80%. **Four levers, cheapest first, and the commit split in §3.7 is what
 makes levers 1 and 3 cheap.**
 
@@ -915,8 +1030,9 @@ is what makes that possible.
 **The decision rule, so nobody re-derives it under pressure.** The trigger is the
 physical-player test at `SESSION_STATE.md:215-255`, run on a label-repaired card:
 
-- **The knob brings up a chapter list →** hypothesis confirmed. Keep everything; close issue
-  #31; the ratification amendments in §7 stand.
+- ✅ **The knob brings up a chapter list →** hypothesis confirmed. Keep everything; close issue
+  #31; the ratification amendments in §7 stand. **⬅ THIS IS THE BRANCH THAT FIRED, 2026-09-11.**
+  Everything is kept, the §7 amendments stand, and issue #31 is closed by the maintainer.
 - **The knob still brings up nothing, and the card is otherwise healthy →** hypothesis
   falsified. **Lever 1** immediately (stop writing the field to anything else) and **lever 3**
   (stop writing it on create). **Lever 2 is optional and probably unnecessary** — a schema-
@@ -931,6 +1047,10 @@ physical-player test at `SESSION_STATE.md:215-255`, run on a label-repaired card
 
 ⚠ `SESSION_STATE.md:254-255`: **streaming in the phone app will likely work even on a
 malformed card.** A card that plays in the app is **not** evidence of a fix. The question that
-settles this is *does the offline download complete* — with wifi off, watching the
-download-cloud icon. And `SESSION_STATE.md:247-249`'s **Wild Robot confound is still live**:
-do not test `1WCvI` against a second Wild Robot card.
+settles the **offline-download** half is *does the offline download complete* — with wifi off,
+watching the download-cloud icon. And `SESSION_STATE.md:247-249`'s **Wild Robot confound is
+still live**: do not test `1WCvI` against a second Wild Robot card.
+
+⚠ **This paragraph is UNAFFECTED by the 2026-09-11 confirmation and stays exactly as live as it
+was.** The chapter list was watched appearing on the hardware; **the offline download was not**.
+Those were always two questions on one checklist, and only the first is answered.
