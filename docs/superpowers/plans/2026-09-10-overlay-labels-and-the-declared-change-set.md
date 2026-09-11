@@ -1543,6 +1543,15 @@ step says `--apply`.**
 
 ### 3.C ⚠ Verifiable **only** on physical hardware — and nobody on this project has a player
 
+> ✅ **RUN ON HARDWARE 2026-09-11 — C1 PASSED. C3 WAS NOT RUN.** The maintainer's daughter
+> tested on the physical player: **twisting the right-hand knob brings up the chapter list,
+> and pressing it selects a chapter.** So **C1 is answered YES** and ADR open question 2 is
+> closed. ⚠ **C3 — the offline download — was NOT exercised and is still the open question**;
+> it was always separate from C1 and nothing was watched with wi-fi off. **C4 is partially
+> informed**: the unpadded form rendered and worked, but the two forms were not compared.
+> **C2 and C5 were not reported on.** The section below is left exactly as written, because it
+> is the test design that produced the answer.
+
 **The entire hypothesis is unfalsifiable in this repo.** `overlayLabel` gating the
 knob-browse UI is **inference from a required field plus an official example** — no
 Yoto document says it, and Yoto's own description says *"used in the app"*, not *the
