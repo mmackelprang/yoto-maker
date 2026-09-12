@@ -5,7 +5,7 @@ tested directly. Field names follow Yoto's documented MYO content model.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

@@ -790,7 +790,13 @@ Also in scope: `test_repair.py:145` `test_real_fixture_pins_shape_trackurl_and_f
   needed** — with the §4.2.5 caveat that the three report strings are copy, in a file item 26
   already has an open ownership question about.
 - The local draft is untouched; `draft.py` does not change.
-- All three live cards are 1 chapter : 1 track, so `declined` never fires on them.
+- All three live cards carry **one track per chapter** — `gzP2B` 1×1, `1WCvI` 5×1, `ezeaM`
+  18×1, read from the real bodies — so `declined` never fires on them. `declined` keys on a
+  chapter holding *more than one* track (`repair.py:583`) or none (`:570`), not on the card's
+  chapter count. ⚠ Worded as "1 chapter : 1 track" until 2026-09-11, when a reviewer read that
+  ratio as a count, took it to contradict §1.2's "5, 18 and 1 chapters", and reported the line
+  as false. The claim was right; the phrasing invited the misreading. `repair.py:542` carries
+  the same sentence with its arithmetic attached — keep the two in step.
 
 ---
 
